@@ -1,0 +1,36 @@
+{
+  "version": "0.1.0",
+  "commit": "cf13d50",
+  "go_version": "go version go1.25.3 darwin/arm64",
+  "build_platform": "arm64/Darwin",
+  "cgo": true,
+  "trimpath": true,
+  "reproducible": true,
+  "binary_sha256_build1": "129be34496a6817a73d2566eca384a85bf9ce2a4204a9472be6000003f5bede7",
+  "binary_sha256_build2": "129be34496a6817a73d2566eca384a85bf9ce2a4204a9472be6000003f5bede7",
+  "module_count": 2,
+  "module_metadata_sha256": "8d5d4f8d5a233d34d938f6549d2edff74f80fe74ac4b1012a55929ca7258a016",
+  "supply_chain_tools": {
+    "govulncheck": "NOT_INSTALLED",
+    "syft": "NOT_INSTALLED",
+    "trivy": "NOT_INSTALLED",
+    "shellcheck": "NOT_INSTALLED"
+  },
+  "build_info": [
+    "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/tmp.wBVBeMvPga/onboardd-1: go1.25.3",
+    "\tpath\tgithub.com/baicie/account-onboarding/cmd/onboardd",
+    "\tmod\tgithub.com/baicie/account-onboarding\tv0.0.0-20261024171912-cf13d50e7f3e+dirty\t",
+    "\tdep\tgithub.com/mattn/go-sqlite3\tv1.14.32\th1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=",
+    "\tbuild\t-buildmode=exe",
+    "\tbuild\t-compiler=gc",
+    "\tbuild\t-trimpath=true",
+    "\tbuild\tCGO_ENABLED=1",
+    "\tbuild\tGOARCH=arm64",
+    "\tbuild\tGOOS=darwin",
+    "\tbuild\tGOARM64=v8.0",
+    "\tbuild\tvcs=git",
+    "\tbuild\tvcs.revision=cf13d50e7f3ee14f2a800bbf2171e7264136177a",
+    "\tbuild\tvcs.time=2026-10-24T17:19:12Z",
+    "\tbuild\tvcs.modified=true"
+  ]
+}

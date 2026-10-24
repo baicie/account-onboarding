@@ -1,0 +1,56 @@
+# R6 P3 deployment/supply-chain audit — 2026-10-24T17:34:35Z
+
+## release provenance
+{
+  "version": "0.1.0",
+  "commit": "cf13d50",
+  "reproducible": true,
+  "binary_sha256_build1": "129be34496a6817a73d2566eca384a85bf9ce2a4204a9472be6000003f5bede7",
+  "module_count": 2,
+  "supply_chain_tools": {
+    "govulncheck": "NOT_INSTALLED",
+    "syft": "NOT_INSTALLED",
+    "trivy": "NOT_INSTALLED",
+    "shellcheck": "NOT_INSTALLED"
+  }
+}
+
+## binary version
+onboardd 0.1.0 commit cf13d50
+
+## go build metadata (head)
+./bin/onboardd: go1.25.3
+	path	github.com/baicie/account-onboarding/cmd/onboardd
+	mod	github.com/baicie/account-onboarding	v0.0.0-20261024171912-cf13d50e7f3e+dirty	
+	dep	github.com/mattn/go-sqlite3	v1.14.32	h1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=
+	build	-buildmode=exe
+	build	-compiler=gc
+
+## tools availability (no installs performed)
+caddy: NOT_INSTALLED
+nginx: NOT_INSTALLED
+syft: NOT_INSTALLED
+trivy: NOT_INSTALLED
+govulncheck: NOT_INSTALLED
+shellcheck: NOT_INSTALLED
+cosign: NOT_INSTALLED
+
+## deployment artifacts
+deploy/examples/Caddyfile
+deploy/examples/nginx.conf
+docs/deployment/README.md
+docs/deployment/backup-restore.md
+docs/deployment/first-deploy-checklist.md
+docs/deployment/rollback.md
+docs/deployment/security-gate.md
+docs/deployment/supply-chain.md
+docs/deployment/tls-ingress.md
+
+## workflow YAML
+valid: container-acceptance ['docker']
+
+## example config syntax
+caddy/nginx not installed -> config syntax validation NOT_RUN
+
+## production changes
+none: no DNS/Worker/D1/proxy/image/registry/production deployment was modified

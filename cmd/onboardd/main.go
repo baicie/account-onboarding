@@ -37,7 +37,7 @@ func main() {
 		case "healthcheck":
 			os.Exit(healthcheck())
 		case "version":
-			fmt.Println("onboardd " + api.Version)
+			fmt.Println("onboardd " + api.Version + " commit " + api.Commit)
 			return
 		case "migrate":
 			if err := runMigrate(); err != nil {

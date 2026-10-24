@@ -1,0 +1,45 @@
+# Reference ONLY — not applied by this repository.
+# Production TLS ingress for account-onboarding. The app listens on loopback
+# 127.0.0.1:8788 and trusts X-Forwarded-Proto only when
+# ONBOARD_TRUST_PROXY_HEADERS=1. Do not expose 8788 directly.
+{
+	email ops@example.com
+}
+
+onboarding.example.com {
+	encode zstd gzip
+
+	# TLS: Caddy manages ACME certs/renewal automatically (TLS1.2+ by default).
+	# HSTS: enable after the domain is confirmed HTTPS-only.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Strip client-supplied forwarding headers; Caddy overwrites X-Forwarded-*
+	# for its upstream, but keep this explicit for defense in depth.
+	request_header -Forwarded
+	request_header -X-Real-IP
+
+	reverse_proxy 127.0.0.1:8788 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-For {remote_host}
+		# Do not buffer the readiness probes.
+		flush_interval -1
+	}
+
+	# Optional: restrict the console/API to a private network.
+	# @internal remote_ip 10.0.0.0/8 192.168.0.0/16 127.0.0.1
+	# handle @internal { reverse_proxy 127.0.0.1:8788 }
+	# respond 404
+
+	log {
+		output file /var/log/caddy/onboarding.log
+		format json
+		# Redact sensitive inputs at the log pipeline; never log bodies.
+	}
+}

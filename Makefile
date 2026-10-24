@@ -33,9 +33,12 @@ help:
 	@echo "  make ops-test        internal/ops reliability tests"
 	@echo "  make clean           remove build artifacts"
 
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_LDFLAGS ?= -X github.com/baicie/account-onboarding/internal/api.Version=$(VERSION) -X github.com/baicie/account-onboarding/internal/api.Commit=$(COMMIT)
+
 build:
 	@mkdir -p $(dir $(BIN))
-	$(GO) build -trimpath -o $(BIN) ./cmd/onboardd
+	$(GO) build -trimpath -ldflags "$(BUILD_LDFLAGS)" -o $(BIN) ./cmd/onboardd
 
 test:
 	$(GO) test ./... -count=1

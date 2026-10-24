@@ -22,7 +22,13 @@ import (
 )
 
 // Version is the service version reported by /v1/meta.
-const Version = "0.1.0"
+// Version and Commit are injected at build time (-ldflags -X ...). The defaults
+// keep `go run`/tests working without build metadata.
+var Version = "0.1.0"
+
+// Commit is the source revision the binary was built from (short SHA or
+// "unknown"); exposed by `onboardd version` for release provenance.
+var Commit = "unknown"
 
 // Server wires the API to storage, the engine and providers.
 type Server struct {

@@ -11,6 +11,8 @@
 #   - /run/secrets/onboarding_master_key is the read-only master key
 FROM golang:1.25-bookworm AS build
 
+ARG VERSION=0.1.0
+ARG COMMIT=unknown
 WORKDIR /src
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libc6-dev ca-certificates \
@@ -21,7 +23,9 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/onboardd ./cmd/onboardd
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath \
+    -ldflags="-s -w -X github.com/baicie/account-onboarding/internal/api.Version=${VERSION} -X github.com/baicie/account-onboarding/internal/api.Commit=${COMMIT}" \
+    -o /out/onboardd ./cmd/onboardd
 
 FROM debian:bookworm-slim
 
