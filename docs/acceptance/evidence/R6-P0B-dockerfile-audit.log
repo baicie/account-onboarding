@@ -1,0 +1,25 @@
+PASS multi-stage build (golang builder -> debian runtime)
+PASS no :latest base image
+PASS runtime USER is 10001:10001
+PASS HEALTHCHECK with start-period
+PASS HEALTHCHECK uses onboardd healthcheck (readyz-based)
+PASS ENTRYPOINT fixed to onboardd
+PASS EXPOSE 8788
+PASS VOLUME /app/data
+PASS no secret values baked into image ENV
+PASS Dockerfile does not copy secrets/data
+PASS apt lists cleaned
+PASS go build uses -trimpath
+PASS CGO enabled for sqlite driver
+PASS no privileged build step
+PASS named build stage
+PASS .dockerignore excludes .sandbox
+PASS .dockerignore excludes root /data
+PASS .dockerignore excludes root /secrets
+PASS .dockerignore excludes deploy/data
+PASS .dockerignore excludes deploy/secrets
+PASS .dockerignore excludes bin
+PASS .dockerignore excludes .git
+WARN base image tags are not pinned by digest (documented P2-6)
+WARN no OCI labels (documented P2-6)
+SUMMARY pass=22 fail=0 warn=2

@@ -3,6 +3,7 @@ package storage_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -503,5 +504,47 @@ func TestMailReceiptsAreAtomicWithStepCommit(t *testing.T) {
 	}
 	if consumed, _ := s.MessageConsumed(ctx, run.ID, "fake-mailbox", "msg-2"); consumed {
 		t.Fatal("receipt leaked across runs")
+	}
+}
+
+// TestDatabaseFilesAreOwnerOnly enforces local confidentiality: the SQLite
+// database, WAL and SHM must not be readable by group/other users. SQLite
+// creates them with the process umask, so the store hardens them explicitly.
+func TestDatabaseFilesAreOwnerOnly(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data") // created by Store.Open (0750)
+	path := filepath.Join(dir, "perm.sqlite")
+	s, err := storage.Open(context.Background(), storage.Options{
+		Path: path, HMACKey: []byte("perm-test-hmac-key"),
+		Redactor: security.NewRedactor(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	// Force a write so the WAL exists.
+	createRun(t, s, "perm-key", "validate")
+	if claim, err := s.ClaimNext(context.Background(), claimReq("worker", time.Minute)); err != nil || claim == nil {
+		t.Fatalf("claim: %v %v", err, claim)
+	}
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		info, err := os.Stat(p)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			t.Fatalf("stat %s: %v", p, err)
+		}
+		if perm := info.Mode().Perm(); perm&0o077 != 0 {
+			t.Fatalf("%s permissions = %04o, want owner-only (0600)", filepath.Base(p), perm)
+		}
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm&0o007 != 0 {
+		// The store creates the data dir 0750: no group/other write, no other
+		// read/traverse for the database directory.
+		t.Fatalf("data dir permissions = %04o, want 0750", perm)
 	}
 }

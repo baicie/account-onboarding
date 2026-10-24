@@ -7,6 +7,10 @@
 /data/
 /secrets/
 /.sandbox/
+/deploy/data/
+/deploy/secrets/
+/deploy/.env
+/deploy/.env.*
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

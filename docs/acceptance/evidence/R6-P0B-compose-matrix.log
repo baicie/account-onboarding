@@ -1,0 +1,31 @@
+PASS default compose config exit 0
+PASS default: read_only=true
+PASS default: user=10001:10001
+PASS default: cap_drop=ALL
+PASS default: no-new-privileges
+PASS default: restart=unless-stopped
+PASS default: healthcheck uses onboardd healthcheck
+PASS default: no secret values in environment
+PASS default: admin token via file
+PASS default: master key via file
+PASS default: published only on 127.0.0.1:8788 (['127.0.0.1:8788:8788'])
+PASS default: no wildcard port publish
+PASS default: compose secrets mounted by name
+PASS isolated override config exit 0
+PASS override: read_only=true
+PASS override: user=10001:10001
+PASS override: cap_drop=ALL
+PASS override: no-new-privileges
+PASS override: restart=unless-stopped
+PASS override: healthcheck uses onboardd healthcheck
+PASS override: no secret values in environment
+PASS override: admin token via file
+PASS override: master key via file
+PASS override: published only on 127.0.0.1:28788 (['127.0.0.1:28788:8788'])
+PASS override: no wildcard port publish
+PASS override: compose secrets mounted by name
+PASS override without R51_* env fails (1)
+PASS preflight passes with valid test secrets
+PASS preflight warns about owner UID != 10001
+PASS preflight fails closed when secrets are missing
+SUMMARY pass=6 fail=0

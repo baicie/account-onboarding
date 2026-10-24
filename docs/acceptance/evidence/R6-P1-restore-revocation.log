@@ -1,0 +1,12 @@
+PASS service started (fresh DB, schema 3)
+PASS run completed before backup (24282de7-fbfe-4949-b23d-a917c41aec6b)
+PASS login + CSRF acquired
+PASS revocation row in source DB (1)
+PASS encrypted backup exit 0
+PASS verify backup exit 0
+PASS restore exit 0
+PASS service started on restored database
+PASS run preserved after restore
+PASS readyz true after restore
+PASS revoked session still rejected after restore
+SUMMARY pass=11 fail=0

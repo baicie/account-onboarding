@@ -1,0 +1,19 @@
+# R6 P0-B3 shell/script static audit — 2026-10-24T17:25:17Z
+
+## shellcheck
+NOT_RUN: shellcheck not installed (no installs allowed)
+
+## bash -n over all shell scripts
+files=24
+bash_n_exit=0
+
+## strict mode (set -euo pipefail) in runtime/deploy/test scripts
+WARN no strict mode: tests/r0/smoke.sh
+WARN no strict mode: tests/sandbox/status.sh
+(no WARN lines above = all scripts strict)
+
+## docker_acceptance.sh isolation audit
+## 1. destructive/global commands (comments excluded; must be none)
+(none)
+compose override config: exit 0
+daemon: not available (docker info exit 1)

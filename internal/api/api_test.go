@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -844,5 +845,60 @@ func TestTemplateFilterAppliedBeforePagination(t *testing.T) {
 	_ = json.Unmarshal(body, &page)
 	if len(page.Items) != 1 || page.Items[0].Template != "github-existing-email" {
 		t.Fatalf("template filter applied after pagination: %+v", page.Items)
+	}
+}
+
+// TestConcurrentHTTPReadsAndWrites exercises the API under concurrency: parallel
+// authenticated reads must stay 200, and parallel run creations with distinct
+// idempotency keys must all be accepted and persisted (SQLite single-writer
+// queueing, rate-limit bucket configured high for the test env).
+func TestConcurrentHTTPReadsAndWrites(t *testing.T) {
+	e := newEnv(t, nil)
+	const readers = 24
+	var wg sync.WaitGroup
+	statuses := make([]int, readers)
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			status, _ := e.request(t, http.MethodGet, "/v1/runs?limit=5", nil, adminToken, nil)
+			statuses[i] = status
+		}(i)
+	}
+	wg.Wait()
+	for i, status := range statuses {
+		if status != http.StatusOK {
+			t.Fatalf("concurrent read %d = %d", i, status)
+		}
+	}
+	const writers = 10
+	createStatus := make([]int, writers)
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			req := map[string]any{
+				"template": "sandbox-email-verify-oidc", "mode": "sandbox-e2e",
+				"mailbox_provider": "fake-mailbox", "identity_provider": "fake-identity",
+				"oauth_provider": "fake-oauth", "sandbox_provider": "fake-sandbox",
+			}
+			status, _ := e.request(t, http.MethodPost, "/v1/runs", req, adminToken, map[string]string{
+				"Idempotency-Key": fmt.Sprintf("concurrent-%d", i),
+			})
+			createStatus[i] = status
+		}(i)
+	}
+	wg.Wait()
+	for i, status := range createStatus {
+		if status != http.StatusAccepted {
+			t.Fatalf("concurrent create %d = %d", i, status)
+		}
+	}
+	page, err := e.store.ListRuns(context.Background(), storage.RunListFilter{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) < writers {
+		t.Fatalf("persisted runs = %d, want >= %d", len(page.Items), writers)
 	}
 }

@@ -151,7 +151,27 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		s.Close()
 		return nil, err
 	}
+	if err := hardenDatabaseFiles(opts.Path); err != nil {
+		s.Close()
+		return nil, err
+	}
 	return s, nil
+}
+
+// hardenDatabaseFiles restricts the SQLite database and its WAL/SHM sidecars to
+// the owner (0600). SQLite creates these files with the process umask (0644 on a
+// default umask), which would let other local users read encrypted secrets and
+// workflow metadata. The lock file is already created with 0600.
+func hardenDatabaseFiles(path string) error {
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(p, 0o600); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue // WAL/SHM may not exist yet; SQLite copies the DB mode.
+			}
+			return fmt.Errorf("storage: restrict %s permissions: %w", filepath.Base(p), err)
+		}
+	}
+	return nil
 }
 
 func dsn(path string, write bool) string {

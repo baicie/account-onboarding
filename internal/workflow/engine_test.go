@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -502,4 +503,30 @@ func TestCredentialExpiryAfterOAuthRequiresReauthorization(t *testing.T) {
 			t.Fatalf("verify_credential status = %s", st.Status)
 		}
 	}
+}
+
+// TestEngineStartStopDoesNotLeakGoroutines guards worker lifecycle: repeated
+// Start/Stop cycles must return to the baseline goroutine count (no leaked
+// ticker/worker goroutines after shutdown).
+func TestEngineStartStopDoesNotLeakGoroutines(t *testing.T) {
+	baseline := runtime.NumGoroutine()
+	for i := 0; i < 5; i++ {
+		h := newHarness(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		h.engine.Start(ctx)
+		time.Sleep(25 * time.Millisecond)
+		h.engine.Stop()
+		cancel()
+		// The harness also owns two sql.DB pools; close them so this test
+		// measures engine goroutines, not database/sql connection openers.
+		_ = h.store.Close()
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine() <= baseline+4 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("goroutine leak: baseline=%d now=%d", baseline, runtime.NumGoroutine())
 }
