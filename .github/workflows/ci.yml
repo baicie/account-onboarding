@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: build vet test-race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (race)
+        run: go test ./... -race -count=1
+
+      - name: Provider contract tests
+        run: go test ./internal/provider/... ./internal/mailx/... -race -count=1
+
+  formatting:
+    name: gofmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Check formatting
+        run: |
+          out="$(gofmt -l $(find cmd internal -name '*.go'))"
+          if [ -n "$out" ]; then
+            echo "unformatted files:"
+            echo "$out"
+            exit 1
+          fi
+
+  compose-config:
+    name: validate compose manifest (no daemon)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config
+        run: docker compose -f deploy/compose.yaml config >/dev/null

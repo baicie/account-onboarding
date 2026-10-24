@@ -1,0 +1,476 @@
+openapi: 3.1.0
+info:
+  title: Moonbyte Account Onboarding Control API
+  version: 0.1.0
+  description: |
+    Control-plane contract for the self-hosted account-onboarding service.
+    This service orchestrates already-authorized identities and self-owned
+    mailboxes; it does not create third-party accounts, automate consent, or
+    bypass platform controls.
+
+    Status: implemented in R0 (fake providers) and extended in R1/R3. Live
+    Cloudflare, GitHub and WorkBuddy calls are opt-in and disabled by default.
+
+    Secrets are never returned. Message bodies, verification links, OTPs, OAuth
+    state and tokens never appear in responses, events or logs.
+servers:
+  - url: http://127.0.0.1:8788
+    description: Default loopback listener (ONBOARD_LISTEN)
+security:
+  - OperatorBearer: []
+tags:
+  - name: system
+  - name: runs
+  - name: providers
+  - name: audit
+paths:
+  /healthz:
+    get:
+      operationId: liveness
+      summary: Unauthenticated liveness probe (no sensitive data)
+      security: []
+      responses:
+        '200':
+          description: process alive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /readyz:
+    get:
+      operationId: readiness
+      summary: Private readiness probe (DB writable, WAL, schema version, keyring)
+      responses:
+        '200':
+          description: ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503':
+          description: not ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+  /v1/meta:
+    get:
+      operationId: getMeta
+      summary: Version, deployment mode, schema version and workflow templates
+      responses:
+        '200':
+          description: service metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Meta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/providers:
+    get:
+      operationId: listProviders
+      summary: Provider catalog with activation gates and restriction reasons
+      responses:
+        '200':
+          description: providers and activation gates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProviderDescriptor' }
+                  mode: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/runs:
+    post:
+      operationId: createRun
+      summary: Create a durable run (idempotent)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRunRequest' }
+      responses:
+        '202':
+          description: run accepted (or idempotent replay of the existing run)
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: provider is disabled or not authorized (no network call is made)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: idempotency key reused with a different request body
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      operationId: listRuns
+      summary: List runs, newest first
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, description: RunState filter }
+        - name: template
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: paginated runs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/runs/{id}:
+    get:
+      operationId: getRun
+      summary: Run state, steps and operator action flags
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '200':
+          description: run state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/runs/{id}/events:
+    get:
+      operationId: listRunEvents
+      summary: Redacted, append-only event history
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - name: after_seq
+          in: query
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: redacted events only
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/runs/{id}/resume:
+    post:
+      operationId: resumeRun
+      summary: Resume a run waiting for an operator action
+      description: |
+        Legal only from WAITING_USER_ACTION, RETRY_WAIT or REAUTHORIZE_REQUIRED.
+        The operator must be shown which existing identity is about to be acted
+        on; the service never auto-approves third-party consent.
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '202':
+          description: resume requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: illegal transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /v1/runs/{id}/cancel:
+    post:
+      operationId: cancelRun
+      summary: Request cancellation
+      description: |
+        Cancellation stops subsequent calls and releases the lease. It does not
+        assume remote rollback and never deletes real third-party resources.
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '202':
+          description: cancellation requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: run is already terminal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /v1/audit:
+    get:
+      operationId: listAudit
+      summary: Recent operator audit entries (redacted)
+      responses:
+        '200':
+          description: audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    OperatorBearer:
+      type: http
+      scheme: bearer
+      description: |
+        Admin token loaded from a secret file. Compared in constant time. The
+        browser console uses an HttpOnly + SameSite=Strict session cookie plus
+        CSRF token instead; tokens are never stored in localStorage.
+  parameters:
+    RunID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+  responses:
+    BadRequest:
+      description: invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: authentication required
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, const: ok }
+        version: { type: string }
+    Readiness:
+      type: object
+      properties:
+        ready: { type: boolean }
+        schema_version: { type: integer }
+        wal: { type: string }
+        reason: { type: string }
+    Meta:
+      type: object
+      properties:
+        version: { type: string }
+        mode: { type: string }
+        schema_version: { type: integer }
+        started_at: { type: string, format: date-time }
+        templates:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              mode: { type: string }
+    CreateRunRequest:
+      type: object
+      additionalProperties: false
+      required: [template, mode, mailbox_provider, identity_provider, oauth_provider]
+      properties:
+        template:
+          type: string
+          enum:
+            - sandbox-email-verify-oidc
+            - cloudflare-mail-smoke
+            - github-existing-email
+            - oauth-existing-account
+        mode:
+          type: string
+          enum: [sandbox-e2e, cloudflare-integration, real-account]
+        mailbox_provider: { type: string }
+        identity_provider: { type: string }
+        oauth_provider: { type: string }
+        email_provider:
+          type: string
+          description: Existing-account email manager (GitHub official API)
+        credential_provider:
+          type: string
+          description: Credential verifier (defaults to the OAuth provider)
+        sandbox_provider:
+          type: string
+          description: Sandbox automation driver (defaults to the identity provider)
+        existing_identity_ref:
+          type: string
+          description: |
+            Required for real-account templates. An opaque reference to an
+            account the operator already owns; never a password or token.
+        idempotency_key:
+          type: string
+          description: Optional body alias for the header; must match when both are present
+    RunSummary:
+      type: object
+      required: [id, status, template, mode, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, description: RunState }
+        template: { type: string }
+        mode: { type: string }
+        current_step: { type: string }
+        action_required: { type: boolean }
+        last_error_class: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deadline_at: { type: string, format: date-time }
+        authorization_url:
+          type: string
+          description: |
+            Present only while WAITING_USER_ACTION and only for adapters that
+            return a vendor authorization URL. The embedded single-use state is
+            stored encrypted and never logged.
+    StepSummary:
+      type: object
+      required: [name, status]
+      properties:
+        name: { type: string }
+        status: { type: string }
+        attempt_count: { type: integer }
+        failure_count: { type: integer }
+        error_class: { type: string }
+        error_summary: { type: string }
+        waiting_reason: { type: string }
+        next_retry_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    RunDetail:
+      allOf:
+        - $ref: '#/components/schemas/RunSummary'
+        - type: object
+          properties:
+            steps:
+              type: array
+              items: { $ref: '#/components/schemas/StepSummary' }
+            links:
+              type: object
+              additionalProperties: { type: string }
+    RunPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RunSummary' }
+        next_cursor: { type: string }
+    Event:
+      type: object
+      required: [seq, type, created_at]
+      properties:
+        seq: { type: integer }
+        type:
+          type: string
+          enum:
+            - RUN_CREATED
+            - STEP_STARTED
+            - STEP_SUCCEEDED
+            - STEP_RETRY_SCHEDULED
+            - HUMAN_ACTION_REQUIRED
+            - OAUTH_STARTED
+            - OAUTH_EXPIRED
+            - RUN_RESUMED
+            - RUN_CANCEL_REQUESTED
+            - RUN_COMPLETED
+            - RUN_FAILED
+            - RUN_CANCELLED
+        step: { type: string }
+        payload:
+          type: object
+          description: |
+            Strict allowlist: provider, resource_alias, http_status, latency_ms,
+            failure_class, next_retry_at, attempt, operation_key, mailbox_alias,
+            message_key_hmac, deadline_at, reason, contract_version,
+            subject_alias, credential_ref_kind, waiting_for, resume_state.
+        created_at: { type: string, format: date-time }
+    ProviderDescriptor:
+      type: object
+      required: [name, kind, contract_version, enabled, live]
+      properties:
+        name: { type: string }
+        kind:
+          type: string
+          enum: [mailbox, identity, oauth, credential, email, sandbox]
+        contract_version: { type: string }
+        enabled: { type: boolean }
+        live: { type: boolean }
+        capabilities:
+          type: array
+          items: { type: string }
+        restriction_reason:
+          type: string
+          description: Why an adapter is disabled (for example missing platform permission)
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        actor: { type: string }
+        action: { type: string }
+        run_id: { type: string }
+        detail: { type: object }
+        created_at: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [class, message]
+          properties:
+            class:
+              type: string
+              enum:
+                - VALIDATION
+                - NOT_AUTHORIZED
+                - AUTH_REQUIRED
+                - AUTH_EXPIRED
+                - RATE_LIMITED
+                - UPSTREAM_TRANSIENT
+                - TIMEOUT_UNCERTAIN
+                - PROVIDER_BUG
+                - CANCELLED
+                - NOT_FOUND
+                - CONFLICT
+                - INTERNAL
+            message: { type: string, description: Public-safe summary, never a secret }
+            request_id: { type: string }
+x-implementation-notes:
+  - R0: fake providers, durable engine, SQLite WAL, leases/fencing, API and UI implemented.
+  - R1: Mailpit and Cloudflare mailbox adapters with contract tests; live Cloudflare smoke NOT_RUN without credentials.
+  - R2: sandbox Keycloak + Mailpit E2E is the next gate; Playwright is optional and may be replaced by a Go OIDC driver (ADR pending).
+  - R3: GitHub official /user/emails adapter and permission-gated WorkBuddy adapter implemented; live calls NOT_RUN.
+  - R4: backup/restore, key rotation, redaction scan and deployment hardening evidence tracked in docs/acceptance/R4.md.

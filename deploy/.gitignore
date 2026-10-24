@@ -1,0 +1,11 @@
+# Real deployment secrets must never be committed.
+#
+# Only *.example files are tracked. Keep the master keyring, operator token and
+# any provider credentials here (mode 0600) and back the keyring up separately
+# from database snapshots.
+secrets/*
+!secrets/*.example
+data/
+*.key
+*.token
+*.keyring

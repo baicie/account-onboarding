@@ -1,0 +1,82 @@
+
+=== environment ===
+go version go1.25.3 darwin/arm64
+15.7.7
+arm64
+
+=== build / vet / test of R0-scope packages (exit codes are real) ===
+go build ./... exit=0
+go vet ./... exit=0
+go test <R0 packages> -race -count=1 exit=0
+packages_ok=6
+packages_fail=0
+
+=== prepare isolated state (loopback only) ===
+
+=== liveness / readiness ===
+{"status":"ok","version":"0.1.0"}
+
+readyz_unauth=401
+{"ready":true,"schema_version":2,"wal":"wal"}
+
+
+=== create sandbox run (6 steps, fake providers) ===
+{
+    "id": "7a5ad1f2-d41a-4395-be2c-b6235eb178dd",
+    "status": "CREATED",
+    "template": "sandbox-email-verify-oidc",
+    "mode": "sandbox-e2e",
+    "action_required": false,
+    "created_at": "2026-10-24T13:18:50Z",
+    "updated_at": "2026-10-24T13:18:50Z",
+    "deadline_at": "2026-10-24T13:48:50Z",
+    "links": {
+        "self": "/v1/runs/7a5ad1f2-d41a-4395-be2c-b6235eb178dd"
+    }
+final_status=COMPLETED
+steps: [('validate', 'SUCCEEDED'), ('prepare_mailbox', 'SUCCEEDED'), ('request_verification', 'SUCCEEDED'), ('wait_email', 'SUCCEEDED'), ('oauth', 'SUCCEEDED'), ('verify_credential', 'SUCCEEDED')]
+action_required: False last_error_class: 
+
+=== event timeline (redacted) ===
+['RUN_CREATED', 'STEP_STARTED', 'STEP_SUCCEEDED', 'STEP_STARTED', 'STEP_SUCCEEDED', 'STEP_STARTED', 'STEP_SUCCEEDED', 'STEP_STARTED', 'STEP_SUCCEEDED', 'STEP_STARTED', 'OAUTH_STARTED', 'STEP_SUCCEEDED', 'STEP_STARTED', 'STEP_SUCCEEDED', 'RUN_COMPLETED']
+payload_keys: ['attempt', 'deadline_at', 'failure_class', 'next_retry_at', 'operation_key', 'provider', 'reason', 'resume_state']
+
+=== idempotency: replay returns the same run id ===
+replay_id_matches: True
+
+=== idempotency conflict (different body, same key) => 409 ===
+conflict_status=409
+{"error":{"class":"CONFLICT","message":"idempotency key was reused with a different request body","request_id":"req-1792847930680226000-10"}}
+
+
+=== strict body: unknown field (account_count) => 400 ===
+unknown_field_status=400
+{"error":{"class":"VALIDATION","message":"invalid JSON body","request_id":"req-1792847930707373000-11"}}
+
+
+=== operator action: waiting run, resume, then cancel ===
+waiting_status=WAITING_USER_ACTION
+action_required: True current_step: request_verification
+resume_status=202
+cancel_status=202
+cancelled_status=CANCELLED
+cancel_again_status=409
+
+=== console UI (HttpOnly session + CSRF) ===
+login_page=200
+login=303
+dashboard=200
+run_page=200
+csrf_field=name="csrf"
+ui_create_without_csrf=403
+
+=== secret leak scan over API responses ===
+no secret references or JWTs in run JSON, event JSON or console HTML
+
+=== restart durability (SIGTERM + same DB/master key) ===
+persisted_status: COMPLETED steps: 6
+replay_after_restart_matches: True
+
+=== result ===
+R0 SMOKE: PASS
+evidence dir: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/r0-evidence

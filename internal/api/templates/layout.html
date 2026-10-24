@@ -1,0 +1,35 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Account Onboarding</title>
+<link rel="stylesheet" href="/ui/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/ui/">Account Onboarding</a> <span class="badge">v{{.Version}}</span></div>
+  {{if .SignedIn}}
+  <nav>
+    <a href="/ui/">Runs</a>
+    <form method="post" action="/ui/logout" class="inline">
+      <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+      <button type="submit" class="link">Sign out</button>
+    </form>
+  </nav>
+  {{end}}
+</header>
+<main>
+{{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+{{if .Notice}}<div class="alert notice">{{.Notice}}</div>{{end}}
+{{template "content" .}}
+</main>
+<footer>
+  <span>Loopback operator console</span>
+  <span>·</span>
+  <span>Events are redacted; secrets are never displayed</span>
+</footer>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,23 @@
+# Build artifacts
+/bin/
+/dist/
+/onboardd
+
+# Local runtime state; never bake the database, WAL files or secrets into an image
+/data/
+/secrets/
+/.sandbox/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# VCS and editor noise
+.git
+.github
+.editorconfig
+*.md
+!docs/**
+
+# Local env files
+.env
+.env.*

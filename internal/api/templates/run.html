@@ -1,0 +1,84 @@
+{{define "content"}}
+<p class="crumbs"><a href="/ui/">← All runs</a></p>
+<h1>Run <code>{{.Run.ID}}</code></h1>
+
+<section class="summary card">
+  <div class="summary-row"><span class="label">Status</span><span class="pill state-{{stateClass .Run.Status}}">{{.Run.Status}}</span></div>
+  <div class="summary-row"><span class="label">Template</span><span>{{.Run.Template}} <span class="muted">({{.Run.Mode}})</span></span></div>
+  <div class="summary-row"><span class="label">Current step</span><span>{{.Run.CurrentStep}}{{if not .Run.CurrentStep}}—{{end}}</span></div>
+  {{if .Run.LastErrorClass}}<div class="summary-row"><span class="label">Last failure</span><span class="pill off">{{.Run.LastErrorClass}}</span></div>{{end}}
+  <div class="summary-row"><span class="label">Created</span><span>{{.Run.CreatedAt}}</span></div>
+  <div class="summary-row"><span class="label">Updated</span><span>{{.Run.UpdatedAt}}</span></div>
+  <div class="summary-row"><span class="label">Deadline</span><span>{{.Run.DeadlineAt}}</span></div>
+</section>
+
+{{if .Run.ActionRequired}}
+<section class="card warning">
+  <h2>Operator action required</h2>
+  {{if .AuthorizationURL}}
+  <p>The account holder must complete authorization in the official vendor page. This console never automates consent.</p>
+  <p><a class="button" href="{{.AuthorizationURL}}" rel="noopener noreferrer" target="_blank">Open official authorization page</a></p>
+  {{else}}
+  <p>Complete the vendor-side confirmation (for example a GitHub verification email) and then request a resume.</p>
+  {{end}}
+  <form method="post" action="/ui/runs/{{.Run.ID}}/resume" class="inline">
+    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+    <button type="submit">Resume run</button>
+  </form>
+</section>
+{{end}}
+
+<section class="card">
+  <h2>Steps</h2>
+  <ol class="steps">
+    {{range .Steps}}
+    <li>
+      <div class="step-head">
+        <strong>{{.Name}}</strong>
+        <span class="pill state-{{stateClass .Status}}">{{.Status}}</span>
+      </div>
+      <div class="muted small">
+        attempts {{.Attempts}}{{if .Failures}} · failures {{.Failures}}{{end}}
+        {{if .ErrorClass}} · <span class="err">{{.ErrorClass}}</span>{{end}}
+        {{if .ErrorSummary}} · {{.ErrorSummary}}{{end}}
+        {{if .WaitingReason}} · waiting for {{.WaitingReason}}{{end}}
+        {{if .NextRetryAt}} · retry at {{fmtMS .NextRetryAt}}{{end}}
+      </div>
+    </li>
+    {{end}}
+  </ol>
+</section>
+
+<section class="card">
+  <h2>Event timeline</h2>
+  <table>
+    <thead><tr><th>#</th><th>Type</th><th>Step</th><th>Payload</th><th>Time (UTC)</th></tr></thead>
+    <tbody>
+    {{range .Events}}
+      <tr>
+        <td>{{.Seq}}</td>
+        <td><code>{{.Type}}</code></td>
+        <td>{{.Step}}</td>
+        <td class="muted small">{{.Payload}}</td>
+        <td>{{fmtUnix .CreatedAt}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="5" class="muted">No events yet.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Danger zone</h2>
+  {{if .IsTerminal}}
+  <p class="muted">This run is in a terminal state; it can no longer be resumed or cancelled.</p>
+  {{else}}
+  <form method="post" action="/ui/runs/{{.Run.ID}}/cancel" class="inline">
+    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+    <button type="submit" class="danger">Cancel run</button>
+  </form>
+  <p class="muted small">Cancelling stops subsequent calls. It does not delete a real third-party address or credential, and it does not assume remote rollback.</p>
+  {{end}}
+</section>
+{{end}}

@@ -1,0 +1,104 @@
+# account-onboarding — local-build deployment contract (R4).
+#
+# This file is intentionally runnable from a checkout: it builds the image from
+# the repository root Dockerfile instead of pulling an unpublished GHCR tag.
+#
+#   deploy/scripts/preflight.sh                      # validate secrets/key/data dir (no daemon)
+#   docker compose -f deploy/compose.yaml config     # static validation (no daemon)
+#   docker compose -f deploy/compose.yaml build      # requires a Docker daemon (NOT_RUN here)
+#   docker compose -f deploy/compose.yaml up -d      # requires a Docker daemon (NOT_RUN here)
+#
+# Run deploy/scripts/preflight.sh BEFORE `up`: it checks the secret files,
+# master-key format (raw/hex/base64/JSON keyring), admin/viewer tokens, compose
+# file and data-dir writability without printing secret values. Exit 0 = ready.
+#
+# Secret files are NOT committed. Create them before `up`:
+#   deploy/secrets/onboarding_master_key  (32 raw bytes | 64 hex | base64 | JSON keyring)
+#   deploy/secrets/onboard_admin_token    (operator console/API token)
+# See deploy/secrets/*.example and scripts/README notes. deploy/.gitignore keeps
+# the real files out of Git.
+name: account-onboarding
+
+services:
+  onboarding:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: account-onboarding:local
+    restart: unless-stopped
+    # The image already runs as 10001:10001; repeating it here pins the contract.
+    user: "10001:10001"
+
+    environment:
+      # 0.0.0.0 is needed INSIDE the container. Config validation refuses it
+      # unless ONBOARD_ALLOW_PUBLIC_LISTEN=1, which is safe here only because the
+      # host publishing below is loopback-only (127.0.0.1:8788) and the service is
+      # not reachable from other interfaces without an explicit ingress proxy.
+      ONBOARD_LISTEN: "0.0.0.0:8788"
+      ONBOARD_ALLOW_PUBLIC_LISTEN: "1"
+      ONBOARD_DB_PATH: "/app/data/state.sqlite"
+      ONBOARD_MODE: "sandbox"
+      ONBOARD_MAX_CONCURRENCY: "2"
+      ONBOARD_LOG_LEVEL: "info"
+
+      # Secrets are files, never env values.
+      ONBOARD_MASTER_KEY_FILE: "/run/secrets/onboarding_master_key"
+      ONBOARD_ADMIN_TOKEN_FILE: "/run/secrets/onboard_admin_token"
+
+      # Fake providers are for offline tests only; the deployed service always
+      # uses explicit providers, and every live adapter is disabled by default.
+      ONBOARD_FAKE_PROVIDERS: "false"
+      ONBOARD_CLOUDFLARE_ENABLED: "false"
+      ONBOARD_CLOUDFLARE_BASE_URL: "https://api.moonbyte.top"
+      ONBOARD_GITHUB_ENABLED: "false"
+      ONBOARD_WORKBUDDY_ENABLED: "false"
+      ONBOARD_KEYCLOAK_ENABLED: "false"
+      ONBOARD_MAILPIT_ENABLED: "false"
+      ONBOARD_OIDC_ENABLED: "false"
+
+    ports:
+      # Loopback-only publishing. Do not change to "8788:8788" without a
+      # reviewed TLS ingress proxy and a private-network boundary.
+      - "127.0.0.1:8788:8788"
+
+    volumes:
+      # SQLite + WAL is the only writable path. Create it on the host owned by
+      # 10001:10001 before `up`: mkdir -p deploy/data && sudo chown 10001:10001 deploy/data
+      - ./data:/app/data
+
+    secrets:
+      - onboarding_master_key
+      - onboard_admin_token
+
+    # Hardening: read-only root filesystem, no privilege escalation, no caps,
+    # bounded PID/memory/CPU, private tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+
+    healthcheck:
+      test: ["CMD", "/app/onboardd", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# docker compose reads these host files; deploy/scripts/preflight.sh validates
+# their existence, permissions and key format before `up`.
+secrets:
+  onboarding_master_key:
+    # JSON keyring ({"current":N,"keys":{...}}) is preferred so rotation works;
+    # a single raw/hex/base64 32-byte key is accepted for first boot.
+    file: ./secrets/onboarding_master_key
+  onboard_admin_token:
+    file: ./secrets/onboard_admin_token
+
+# Sandbox fixtures (Keycloak + Mailpit) belong to R2 test tooling and must never
+# be started from this production-shaped compose file.

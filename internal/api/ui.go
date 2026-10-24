@@ -1,0 +1,457 @@
+package api
+
+import (
+	"embed"
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/baicie/account-onboarding/internal/errs"
+	"github.com/baicie/account-onboarding/internal/provider"
+	"github.com/baicie/account-onboarding/internal/security"
+	"github.com/baicie/account-onboarding/internal/storage"
+	"github.com/baicie/account-onboarding/internal/workflow"
+	"github.com/baicie/account-onboarding/internal/workflow/state"
+)
+
+//go:embed templates/*.html templates/app.css
+var uiFS embed.FS
+
+const sessionCookieName = "onboard_session"
+
+type page struct{ tmpl *template.Template }
+
+func loadPages() (map[string]*page, error) {
+	funcs := template.FuncMap{
+		"fmtMS": func(ms *int64) string {
+			if ms == nil || *ms == 0 {
+				return "—"
+			}
+			return time.UnixMilli(*ms).UTC().Format("2006-01-02 15:04:05Z")
+		},
+		"fmtUnix": func(ms int64) string {
+			if ms == 0 {
+				return "—"
+			}
+			return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04:05Z")
+		},
+		"stateClass": func(s string) string {
+			return strings.ToLower(strings.ReplaceAll(s, "_", "-"))
+		},
+		"short": func(id string) string {
+			if len(id) > 8 {
+				return id[:8]
+			}
+			return id
+		},
+		"json": func(v any) string {
+			raw, err := json.Marshal(v)
+			if err != nil {
+				return "{}"
+			}
+			return string(raw)
+		},
+	}
+	layout, err := template.New("layout").Funcs(funcs).ParseFS(uiFS, "templates/layout.html")
+	if err != nil {
+		return nil, err
+	}
+	pages := map[string]*page{}
+	for _, name := range []string{"login", "dashboard", "run"} {
+		clone, err := layout.Clone()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := clone.ParseFS(uiFS, "templates/"+name+".html"); err != nil {
+			return nil, fmt.Errorf("parse %s page: %w", name, err)
+		}
+		pages[name] = &page{tmpl: clone}
+	}
+	return pages, nil
+}
+
+func (p *page) render(w http.ResponseWriter, status int, data any) error {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if err := p.tmpl.ExecuteTemplate(w, "layout", data); err != nil {
+		// The response may already be partially written; the handler logs the
+		// underlying cause so a broken template is visible in operations.
+		_, _ = w.Write([]byte("template error"))
+		return err
+	}
+	return nil
+}
+
+type pageData struct {
+	Title     string
+	Version   string
+	CSRFToken string
+	SignedIn  bool
+	Actor     string
+	Error     string
+	Notice    string
+}
+
+type statRow struct {
+	Status string
+	Count  int
+}
+
+type runRow struct {
+	ID             string
+	Status         string
+	Template       string
+	Mode           string
+	CurrentStep    string
+	ActionRequired bool
+	ErrorClass     string
+	CreatedAt      int64
+	UpdatedAt      int64
+}
+
+type templateRow struct {
+	Name  string
+	Mode  string
+	Steps int
+}
+
+type dashboardPage struct {
+	pageData
+	Runs           []runRow
+	Providers      []provider.Descriptor
+	Templates      []templateRow
+	Stats          []statRow
+	IdempotencyKey string
+	Form           createForm
+}
+
+type createForm struct {
+	Template            string
+	MailboxProvider     string
+	IdentityProvider    string
+	OAuthProvider       string
+	EmailProvider       string
+	CredentialProvider  string
+	SandboxProvider     string
+	ExistingIdentityRef string
+}
+
+type stepRow struct {
+	Name          string
+	Status        string
+	Attempts      int64
+	Failures      int64
+	ErrorClass    string
+	ErrorSummary  string
+	WaitingReason string
+	NextRetryAt   *int64
+}
+
+type eventRow struct {
+	Seq       int64
+	Type      string
+	Step      string
+	Payload   string
+	CreatedAt int64
+}
+
+type runPage struct {
+	pageData
+	Run              workflow.RunSummary
+	Steps            []stepRow
+	Events           []eventRow
+	CanResume        bool
+	CanCancel        bool
+	IsTerminal       bool
+	AuthorizationURL string
+	TemplateSteps    []string
+}
+
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		notFoundResponse(w, r)
+		return
+	}
+	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+}
+
+func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	if info, ok := s.authenticate(r); ok && info.Via == "cookie" {
+		http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+		return
+	}
+	s.renderLogin(w, http.StatusOK, "")
+}
+
+func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	if err := r.ParseForm(); err != nil {
+		s.renderLogin(w, http.StatusBadRequest, "Invalid form submission.")
+		return
+	}
+	if !s.originAllowed(r) {
+		s.renderLogin(w, http.StatusForbidden, "Origin check failed.")
+		return
+	}
+	token := strings.TrimSpace(r.PostFormValue("token"))
+	if s.Cfg.AdminToken == "" {
+		s.renderLogin(w, http.StatusServiceUnavailable, "Admin token is not configured; the console is locked.")
+		return
+	}
+	if token == "" || !security.ConstantTimeEqual(token, s.Cfg.AdminToken) {
+		_ = s.Store.Audit(r.Context(), "anonymous", "auth.login_failed", "", nil)
+		s.renderLogin(w, http.StatusUnauthorized, "Invalid operator token.")
+		return
+	}
+	value, _, _, err := s.Signer.IssueWithID(time.Now().Unix())
+	if err != nil {
+		s.renderLogin(w, http.StatusInternalServerError, "Could not create a session.")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    value,
+		Path:     "/ui",
+		HttpOnly: true,
+		Secure:   s.secureCookie(r),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(s.Cfg.SessionTTL.Seconds()),
+	})
+	_ = s.Store.Audit(r.Context(), "operator", "auth.login", "", nil)
+	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+}
+
+func (s *Server) renderLogin(w http.ResponseWriter, status int, message string) {
+	if err := s.pages["login"].render(w, status, pageData{
+		Title:   "Sign in",
+		Version: s.Version,
+		Error:   message,
+	}); err != nil {
+		s.Log.Error("render login page", "error", err)
+	}
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Revoke the session server-side so a copied cookie cannot be replayed
+	// after an explicit logout, even though the cookie itself is HttpOnly.
+	if info, ok := authInfoFrom(r); ok && info.SessionID != "" {
+		s.revokeSession(info.SessionID, time.Now().Add(s.Cfg.SessionTTL))
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookieName, Value: "", Path: "/ui", HttpOnly: true, MaxAge: -1,
+		SameSite: http.SameSiteStrictMode,
+	})
+	_ = s.Store.Audit(r.Context(), "operator", "auth.logout", "", nil)
+	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	runs, err := s.Store.ListRuns(r.Context(), storage.RunListFilter{Limit: 50})
+	if err != nil {
+		http.Error(w, "could not load runs", http.StatusInternalServerError)
+		return
+	}
+	counts, err := s.Store.CountByStatus(r.Context())
+	if err != nil {
+		counts = map[string]int{}
+	}
+	catalog := s.Registry.Catalog()
+	rows := make([]runRow, 0, len(runs.Items))
+	for _, run := range runs.Items {
+		rows = append(rows, runRow{
+			ID: run.ID, Status: run.Status, Template: run.Template, Mode: run.Mode,
+			CurrentStep: run.CurrentStep, ActionRequired: run.ActionRequired,
+			ErrorClass: run.LastErrorClass, CreatedAt: run.CreatedAtMS, UpdatedAt: run.UpdatedAtMS,
+		})
+	}
+	stats := make([]statRow, 0, len(state.AllRunStates))
+	for _, st := range state.AllRunStates {
+		count := counts[string(st)]
+		if count == 0 {
+			continue
+		}
+		stats = append(stats, statRow{Status: string(st), Count: count})
+	}
+	templates := make([]templateRow, 0, 4)
+	for _, t := range s.Engine.Templates() {
+		templates = append(templates, templateRow{Name: t.Name, Mode: t.Mode, Steps: len(t.Steps)})
+	}
+	form := createForm{
+		Template:           "sandbox-email-verify-oidc",
+		MailboxProvider:    pickEnabled(catalog, provider.KindMailbox),
+		IdentityProvider:   pickEnabled(catalog, provider.KindIdentity),
+		OAuthProvider:      pickEnabled(catalog, provider.KindOAuth),
+		EmailProvider:      pickEnabled(catalog, provider.KindEmail),
+		CredentialProvider: pickEnabled(catalog, provider.KindCredential),
+		SandboxProvider:    pickEnabled(catalog, provider.KindSandbox),
+	}
+	if err := s.pages["dashboard"].render(w, http.StatusOK, dashboardPage{
+		pageData: pageData{
+			Title:     "Runs",
+			Version:   s.Version,
+			CSRFToken: info.CSRF,
+			SignedIn:  true,
+			Actor:     info.Actor,
+			Error:     r.URL.Query().Get("error"),
+			Notice:    r.URL.Query().Get("notice"),
+		},
+		Runs: rows, Providers: catalog, Templates: templates, Stats: stats,
+		IdempotencyKey: security.NewID(), Form: form,
+	}); err != nil {
+		s.Log.Error("render dashboard page", "error", err)
+	}
+}
+
+func pickEnabled(catalog []provider.Descriptor, kind provider.Kind) string {
+	for _, d := range catalog {
+		if d.Kind == kind && d.Enabled {
+			return d.Name
+		}
+	}
+	return ""
+}
+
+func (s *Server) handleRunPage(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	id := r.PathValue("id")
+	run, err := s.Store.GetRun(r.Context(), id)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+	steps, err := s.Store.ListSteps(r.Context(), id)
+	if err != nil {
+		http.Error(w, "could not load steps", http.StatusInternalServerError)
+		return
+	}
+	events, err := s.Store.ListEvents(r.Context(), id, 0, 200)
+	if err != nil {
+		http.Error(w, "could not load events", http.StatusInternalServerError)
+		return
+	}
+	summary := s.Engine.Summarize(r.Context(), run)
+	stepRows := make([]stepRow, 0, len(steps))
+	for _, st := range steps {
+		stepRows = append(stepRows, stepRow{
+			Name: st.Name, Status: st.Status, Attempts: st.AttemptCount, Failures: st.FailureCount,
+			ErrorClass: st.ErrorClass, ErrorSummary: st.ErrorSummary,
+			WaitingReason: st.WaitingReason, NextRetryAt: st.NextRetryAtMS,
+		})
+	}
+	eventRows := make([]eventRow, 0, len(events))
+	for _, ev := range events {
+		payload, _ := json.Marshal(ev.Payload)
+		eventRows = append(eventRows, eventRow{
+			Seq: ev.Seq, Type: ev.Type, Step: ev.Step,
+			Payload: string(payload), CreatedAt: ev.CreatedAtMS,
+		})
+	}
+	var templateSteps []string
+	if t, ok := s.Engine.Template(run.Template); ok {
+		templateSteps = t.StepNames()
+	}
+	status := state.RunState(run.Status)
+	if err := s.pages["run"].render(w, http.StatusOK, runPage{
+		pageData: pageData{
+			Title:     "Run " + shortID(run.ID),
+			Version:   s.Version,
+			CSRFToken: info.CSRF,
+			SignedIn:  true,
+			Actor:     info.Actor,
+			Error:     r.URL.Query().Get("error"),
+			Notice:    r.URL.Query().Get("notice"),
+		},
+		Run:              summary,
+		Steps:            stepRows,
+		Events:           eventRows,
+		CanResume:        status.NeedsManualResume(),
+		CanCancel:        !status.IsTerminal() && run.Status != "CANCEL_REQUESTED",
+		IsTerminal:       status.IsTerminal(),
+		AuthorizationURL: summary.AuthorizationURL,
+		TemplateSteps:    templateSteps,
+	}); err != nil {
+		s.Log.Error("render run page", "error", err, "run_id", id)
+	}
+}
+
+func (s *Server) handleCreateRunUI(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/ui/?error="+url.QueryEscape("invalid form"), http.StatusSeeOther)
+		return
+	}
+	info, _ := authInfoFrom(r)
+	idem := strings.TrimSpace(r.PostFormValue("idempotency_key"))
+	if idem == "" {
+		idem = security.NewID()
+	}
+	req := workflow.CreateRunRequest{
+		Template:            strings.TrimSpace(r.PostFormValue("template")),
+		Mode:                templateMode(s.Engine, r.PostFormValue("template")),
+		MailboxProvider:     strings.TrimSpace(r.PostFormValue("mailbox_provider")),
+		IdentityProvider:    strings.TrimSpace(r.PostFormValue("identity_provider")),
+		OAuthProvider:       strings.TrimSpace(r.PostFormValue("oauth_provider")),
+		EmailProvider:       strings.TrimSpace(r.PostFormValue("email_provider")),
+		CredentialProvider:  strings.TrimSpace(r.PostFormValue("credential_provider")),
+		SandboxProvider:     strings.TrimSpace(r.PostFormValue("sandbox_provider")),
+		ExistingIdentityRef: strings.TrimSpace(r.PostFormValue("existing_identity_ref")),
+	}
+	sum, _, err := s.createRun(r.Context(), req, idem, info.Actor)
+	if err != nil {
+		http.Redirect(w, r, "/ui/?error="+url.QueryEscape(errs.SummaryOf(err)), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/ui/runs/"+sum.ID, http.StatusSeeOther)
+}
+
+func templateMode(e *workflow.Engine, name string) string {
+	if t, ok := e.Template(strings.TrimSpace(name)); ok {
+		return t.Mode
+	}
+	return ""
+}
+
+func (s *Server) handleResumeUI(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	id := r.PathValue("id")
+	if _, err := s.Store.RequestResume(r.Context(), id); err != nil {
+		http.Redirect(w, r, "/ui/runs/"+id+"?error="+url.QueryEscape(errs.SummaryOf(err)), http.StatusSeeOther)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), info.Actor, "run.resume", id, nil)
+	http.Redirect(w, r, "/ui/runs/"+id+"?notice=resume+requested", http.StatusSeeOther)
+}
+
+func (s *Server) handleCancelUI(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	id := r.PathValue("id")
+	if _, err := s.Store.RequestCancel(r.Context(), id); err != nil {
+		http.Redirect(w, r, "/ui/runs/"+id+"?error="+url.QueryEscape(errs.SummaryOf(err)), http.StatusSeeOther)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), info.Actor, "run.cancel", id, nil)
+	http.Redirect(w, r, "/ui/runs/"+id+"?notice=cancellation+requested", http.StatusSeeOther)
+}
+
+func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
+	raw, err := uiFS.ReadFile("templates/app.css")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(raw)
+}
+
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
+}

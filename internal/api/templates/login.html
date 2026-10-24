@@ -1,0 +1,12 @@
+{{define "content"}}
+<section class="narrow">
+  <h1>Operator sign in</h1>
+  <p class="muted">This console is bound to the loopback interface. Authentication uses the admin token loaded from a secret file; the token is never stored in the browser.</p>
+  <form method="post" action="/ui/login" class="card">
+    <label for="token">Admin token</label>
+    <input type="password" id="token" name="token" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+  </form>
+  <p class="muted small">The UI session is an HttpOnly, SameSite=Strict cookie with CSRF protection.</p>
+</section>
+{{end}}

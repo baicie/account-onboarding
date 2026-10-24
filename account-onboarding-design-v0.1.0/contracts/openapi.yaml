@@ -1,0 +1,143 @@
+openapi: 3.1.0
+info:
+  title: Moonbyte Account Onboarding Control API
+  version: 0.1.0
+  description: "Design contract only; not implemented yet. Never exposes secrets/OTPs."
+servers:
+  - url: http://127.0.0.1:8788
+security:
+  - OperatorBearer: []
+paths:
+  /healthz:
+    get:
+      security: []
+      operationId: liveness
+      responses:
+        '200':
+          description: alive
+  /readyz:
+    get:
+      operationId: readiness
+      responses:
+        '200': {description: ready}
+        '503': {description: unavailable}
+  /v1/providers:
+    get:
+      operationId: listProviders
+      responses:
+        '200': {description: providers and activation gates}
+  /v1/runs:
+    post:
+      operationId: createRun
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, minLength: 8, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateRunRequest'}
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunSummary'}
+        '400': {description: invalid request}
+        '401': {description: authentication required}
+        '403': {description: provider not authorized}
+        '409': {description: idempotency conflict; same key different body}
+    get:
+      operationId: listRuns
+      parameters:
+        - in: query
+          name: cursor
+          schema: {type: string}
+        - in: query
+          name: status
+          schema: {type: string}
+      responses:
+        '200': {description: paginated runs}
+  /v1/runs/{id}:
+    get:
+      operationId: getRun
+      parameters:
+        - {$ref: '#/components/parameters/RunID'}
+      responses:
+        '200':
+          description: run state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunSummary'}
+        '404': {description: not found}
+  /v1/runs/{id}/events:
+    get:
+      operationId: listRunEvents
+      parameters:
+        - {$ref: '#/components/parameters/RunID'}
+      responses:
+        '200': {description: redacted events only}
+  /v1/runs/{id}/resume:
+    post:
+      operationId: resumeRun
+      parameters:
+        - {$ref: '#/components/parameters/RunID'}
+      responses:
+        '202': {description: resume requested}
+        '409': {description: illegal transition}
+  /v1/runs/{id}/cancel:
+    post:
+      operationId: cancelRun
+      parameters:
+        - {$ref: '#/components/parameters/RunID'}
+      responses:
+        '202': {description: cancellation requested}
+        '409': {description: terminal run}
+components:
+  securitySchemes:
+    OperatorBearer:
+      type: http
+      scheme: bearer
+      description: server-side secret; never stored in localStorage
+  parameters:
+    RunID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    CreateRunRequest:
+      type: object
+      additionalProperties: false
+      required: [template, mode, mailbox_provider, identity_provider, oauth_provider]
+      properties:
+        template:
+          type: string
+          enum: [sandbox-email-verify-oidc, cloudflare-mail-smoke, github-existing-email, oauth-existing-account]
+        mode:
+          type: string
+          enum: [sandbox-e2e, cloudflare-integration, real-account]
+        mailbox_provider: {type: string}
+        identity_provider: {type: string}
+        oauth_provider: {type: string}
+        existing_identity_ref:
+          type: string
+          description: required for real-account; ref not password/token
+        idempotency_key:
+          type: string
+          description: optional body alias for header, must match if both present
+    RunSummary:
+      type: object
+      required: [id, status, template, mode, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string}
+        template: {type: string}
+        mode: {type: string}
+        current_step: {type: string}
+        action_required: {type: boolean}
+        last_error_class: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}

@@ -1,0 +1,44 @@
+# DESIGN TEMPLATE: ghcr image not published yet. This file becomes runnable after R0.
+services:
+  onboarding:
+    image: ghcr.io/baicie/account-onboarding:0.1.0
+    restart: unless-stopped
+    user: "10001:10001"
+    environment:
+      ONBOARD_LISTEN: "0.0.0.0:8788"
+      ONBOARD_DB_PATH: "/app/data/state.sqlite"
+      ONBOARD_MODE: "sandbox"
+      ONBOARD_MAX_CONCURRENCY: "2"
+      ONBOARD_CLOUDFLARE_BASE_URL: "https://api.moonbyte.top"
+      ONBOARD_CLOUDFLARE_ENABLED: "false"
+      ONBOARD_GITHUB_ENABLED: "false"
+      ONBOARD_WORKBUDDY_ENABLED: "false"
+      ONBOARD_MASTER_KEY_FILE: "/run/secrets/onboarding_master_key"
+    ports:
+      - "127.0.0.1:8788:8788"
+    volumes:
+      - ./data:/app/data
+    secrets:
+      - onboarding_master_key
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "/app/onboardd", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+secrets:
+  onboarding_master_key:
+    file: ./secrets/onboarding_master_key
+
+# Run an isolated test compose with Keycloak + Mailpit only in R2;
+# do not start sandbox Keycloak in production by default.

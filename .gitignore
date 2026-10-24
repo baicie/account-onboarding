@@ -1,0 +1,16 @@
+# local runtime state and secrets
+/data/
+/secrets/
+/.sandbox/
+/tmp/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# go / build artifacts
+/bin/
+/dist/
+/onboardd
+coverage.out
+*.test
