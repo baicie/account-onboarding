@@ -3,7 +3,7 @@
 - 开始时间：2026-10-25T01:22+08:00（Asia/Shanghai）
 - 目标截止：2026-10-25T12:00+08:00
 - 基线 HEAD：`cf13d50`（R5.1-B 收口版；提示词中的 `0d78e8d` 已被 R5.1-B 超越，以仓库实际为准）
-- 当前 HEAD：以 `git log --oneline -1` 为准（本轮修复提交后为最终 HEAD）
+- 当前 HEAD：以 `git log --oneline -1` 为准（最终提交在证据再生之后）
 - 工作树：干净
 - Docker daemon：**不可用**（`docker info` exit 1，client 29.7.2 / compose v5.5.0，无 server）
 - 已确认基线：`make verify` **exit 0**；`docker compose -f deploy/compose.yaml config` **exit 0**
@@ -61,6 +61,8 @@
 | 01:52 | `bash tests/cloudflare/live_preflight.sh`（configcheck） | 0 | 正/负配置校验 PASS；`--live`/未知参数 exit 2 |
 | 01:53 | `make verify` + 全量 race | 0 | 325 顶层（320 PASS+5 SKIP）/ 634 含子测试，0 FAIL |
 | 01:53 | `bash tests/r51/{dockerfile_audit,compose_matrix,isolation_audit}.sh` | 0/0/0 | 23 PASS/2 WARN；compose 含 VERSION/COMMIT；隔离审计 0 |
+| 01:55 | `make verify`/race/scan | 0 | 325 顶层（320 PASS+5 SKIP）/ 634 含子测试；28 份 evidence scan 0 |
+| 01:56 | `scripts/release_info.sh`（干净 HEAD 再生） | 0 | reproducible=true，commit=最终 HEAD，vcs_dirty=false |
 
 ## Blocker
 

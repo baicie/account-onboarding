@@ -30,7 +30,7 @@ for t in govulncheck syft trivy shellcheck; do
   if command -v "$t" >/dev/null 2>&1; then v="$("$t" --version 2>&1 | head -1)"; else v="NOT_INSTALLED"; fi
   TOOLS="$(python3 -c 'import json,sys;d=json.loads(sys.argv[1]);d[sys.argv[2]]=sys.argv[3];print(json.dumps(d))' "$TOOLS" "$t" "$v")"
 done
-python3 - "$OUT" "$VERSION" "$COMMIT" "$SHA1" "$SHA2" "$REPRO" "$MOD_COUNT" "$MOD_SHA" "$TOOLS" "$TMP/onboardd-1" <<'PY'
+python3 - "$OUT" "$VERSION" "$COMMIT" "$SHA1" "$SHA2" "$REPRO" "$MOD_COUNT" "$MOD_SHA" "$TOOLS" "$TMP/onboardd-1" "$DIRTY" "$CGO_ENV" "$LDFLAGS" <<'PY'
 import json, os, subprocess, sys
 out, version, commit, sha1, sha2, repro, mod_count, mod_sha, tools, binary, dirty, cgo_env, ldflags = sys.argv[1:14]
 go_version = subprocess.run(["go","version"],capture_output=True,text=True).stdout.strip()
