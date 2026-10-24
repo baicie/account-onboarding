@@ -33,7 +33,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 294 top-level tests / 616 including subtests PASS, 0 FAIL, 5 opt-in SKIP** (after R5-A)
+- `go test ./... -count=1` → **29 packages (14 with test files), 311 top-level tests (306 PASS + 5 opt-in SKIP) / 620 passes including subtests, 0 FAIL** (after R5 post-review fixes, HEAD measured)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -228,6 +228,8 @@ Remaining open items after closure (all disclosed in `REVIEW.md` §8.6):
 | P2-3 | Logout revocation is a **process-memory** map: after a restart, a pre-logout cookie remains valid until its TTL; multi-instance does not share it | documented limitation; no per-user session store in v0.1.0 |
 | P2-8 | No in-service resource compensation/cleanup (`MailboxCleaner` has no caller); real addresses are operator-managed | documented |
 | P2 | WorkBuddy authorization-URL host not pinned, in-memory rate limiter (single instance), trusted-proxy header caveat, image digest pinning, rotation/restore downtime orchestration | documented P2/deployment items |
+| P2 | Admin-token rotation does not revoke existing browser sessions; rollback to the pre-R5 binary loses durable revocation semantics | rotate the master key (invalidates all sessions) before rollback; documented in `R5.md` §6 |
+| P2 | Deleting the `session_revocations` table is not auto-healed (by design); `/readyz` reports 503 | restore from backup or recreate per migration 0003 |
 
 ## 11. R5 release readiness (2026-10-24)
 
@@ -236,11 +238,11 @@ commands are in [`R5.md`](R5.md).
 
 | Gate | Result | Evidence |
 |---|---|---|
-| R5-A durable session revocation | **PASS** | migration 0003 → schema 3; logout revocation in SQLite; concurrent/double logout, restart Server, expiry/prune and v2→v3 migration tests; real `onboardd` SIGTERM restart script **11/11 PASS** |
+| R5-A durable session revocation | **PASS** | migration 0003 → schema 3; logout revocation in SQLite bound to the cookie's own expiry (`max(now+TTL, cookie exp)`); concurrent/double logout, restart Server, expiry/prune, fail-closed-on-store-error and v2→v3 migration tests; real `onboardd` SIGTERM restart script **11/11 PASS**; `/readyz` additionally probes the revocation table |
 | R5-A existing mechanisms re-check | **PASS** | atomic mail receipts, lease fencing, key rotation, encrypted backup/restore targeted tests + full race suite |
 | R5-B container acceptance | **NOT_RUN** | `docker info` / `docker build` exit 1 (no daemon); `docker compose config` exit 0 (static audit only) |
 | R5-C Cloudflare live | **NOT_RUN** (read-only audit PASS) | no network request, no credentials/authorization; contract/retention/redaction audit and reproducible live plan in `R5.md` §4 |
-| R5-D identity/platform boundaries | **PASS (bounds)**; live **NOT_RUN** | provider catalog all live providers disabled; WorkBuddy without permission ack refused; GitHub without token refused; non-loopback listen refused; TLS ingress still `NOT_RUN` |
+| R5-D identity/platform boundaries | **PASS (bounds)**; live **NOT_RUN** | provider catalog all live providers disabled; WorkBuddy without permission ack refused; GitHub without token refused; non-loopback listen refused (archived in `evidence/R5-provider-boundaries.log`, 5/5); TLS ingress still `NOT_RUN` |
 | Final verdict | **LOCAL_RC_READY / DEPLOYMENT_BLOCKED / not LIVE_READY** | `R5.md` §6 |
 
 Release environment is local sandbox only; Docker build/run, TLS ingress,

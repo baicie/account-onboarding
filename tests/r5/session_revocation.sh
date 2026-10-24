@@ -4,8 +4,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$ROOT/.sandbox/r5/session-revocation"
-BIN="$ROOT/bin/onboardd"
-PORT=18796
+BIN="${R5_BIN:-$ROOT/bin/onboardd}"
+PORT="${R5_PORT:-18796}"
 BASE="http://127.0.0.1:$PORT"
 PASS=0; FAIL=0
 ok() { PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
@@ -15,6 +15,11 @@ cleanup() {
 }
 trap cleanup EXIT
 rm -rf "$WORK"; mkdir -p "$WORK"
+# Build in-script so a concurrently running `make verify` cannot leave a stale
+# binary behind (REVIEW-R5 P2-3). Set R5_SKIP_BUILD=1 to use an existing binary.
+if [ "${R5_SKIP_BUILD:-0}" != "1" ]; then
+  ( cd "$ROOT" && go build -trimpath -o "$BIN" ./cmd/onboardd )
+fi
 umask 077
 head -c 32 /dev/urandom > "$WORK/master.key"
 head -c 32 /dev/urandom | base64 > "$WORK/admin.token"

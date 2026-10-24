@@ -316,26 +316,35 @@ func (s *SessionSigner) Verify(value string, nowUnix int64) (csrf string, ok boo
 
 // VerifyFull validates a cookie value and returns its CSRF token and session id.
 func (s *SessionSigner) VerifyFull(value string, nowUnix int64) (csrf, sessionID string, ok bool) {
+	csrf, sessionID, _, ok = s.VerifySession(value, nowUnix)
+	return csrf, sessionID, ok
+}
+
+// VerifySession is VerifyFull plus the cookie's own expiry (unix seconds). The
+// logout path needs the real cookie expiry so a later reduction of the session
+// TTL cannot shorten a revocation below the lifetime of an already-issued
+// cookie.
+func (s *SessionSigner) VerifySession(value string, nowUnix int64) (csrf, sessionID string, expiresAt int64, ok bool) {
 	parts := strings.Split(value, ".")
 	if len(parts) != 2 {
-		return "", "", false
+		return "", "", 0, false
 	}
 	expected := s.sign(parts[0])
 	if !ConstantTimeEqual(expected, parts[1]) {
-		return "", "", false
+		return "", "", 0, false
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", "", false
+		return "", "", 0, false
 	}
 	var payload sessionPayload
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "", "", false
+		return "", "", 0, false
 	}
 	if payload.Expiry < nowUnix || payload.CSRF == "" {
-		return "", "", false
+		return "", "", 0, false
 	}
-	return payload.CSRF, payload.SessionID, true
+	return payload.CSRF, payload.SessionID, payload.Expiry, true
 }
 
 func (s *SessionSigner) sign(encoded string) string {

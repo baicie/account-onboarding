@@ -196,11 +196,12 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 // ---------------------------------------------------------------------------
 
 type authInfo struct {
-	Actor     string
-	Role      string // "admin" or "viewer" (read-only)
-	Via       string
-	CSRF      string
-	SessionID string
+	Actor          string
+	Role           string // "admin" or "viewer" (read-only)
+	Via            string
+	CSRF           string
+	SessionID      string
+	SessionExpires int64 // unix seconds from the signed cookie payload
 }
 
 type authKeyType struct{}
@@ -260,7 +261,7 @@ func (s *Server) authenticate(r *http.Request) (authInfo, bool) {
 	if err != nil {
 		return authInfo{}, false
 	}
-	csrf, sessionID, ok := s.Signer.VerifyFull(cookie.Value, time.Now().Unix())
+	csrf, sessionID, expiresAt, ok := s.Signer.VerifySession(cookie.Value, time.Now().Unix())
 	if !ok {
 		return authInfo{}, false
 	}
@@ -278,7 +279,8 @@ func (s *Server) authenticate(r *http.Request) (authInfo, bool) {
 	if revoked {
 		return authInfo{}, false
 	}
-	return authInfo{Actor: "operator", Role: "admin", Via: "cookie", CSRF: csrf, SessionID: sessionID}, true
+	return authInfo{Actor: "operator", Role: "admin", Via: "cookie", CSRF: csrf,
+		SessionID: sessionID, SessionExpires: expiresAt}, true
 }
 
 func (s *Server) csrfValid(r *http.Request, info authInfo) bool {
@@ -492,7 +494,8 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "database unavailable"})
 		return
 	}
-	ready := health.Writable && health.SchemaVersion >= 2 && strings.EqualFold(health.WALMode, "wal")
+	ready := health.Writable && health.SchemaVersion >= 3 && health.SessionRevocationsReady &&
+		strings.EqualFold(health.WALMode, "wal")
 	if len(s.Cfg.MasterKey) != 32 {
 		ready = false
 	}

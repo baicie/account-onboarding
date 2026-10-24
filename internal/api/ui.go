@@ -254,7 +254,16 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	if err := s.Store.RevokeSession(r.Context(), info.SessionID, now, now.Add(s.Cfg.SessionTTL)); err != nil {
+	// Bind the revocation to the cookie's own expiry, not just the current
+	// configuration: an operator may lower ONBOARD_SESSION_TTL after the cookie
+	// was issued, and pruning must never resurrect an already-logged-out cookie.
+	revokeUntil := now.Add(s.Cfg.SessionTTL)
+	if info.SessionExpires > 0 {
+		if cookieExpiry := time.Unix(info.SessionExpires, 0).UTC(); cookieExpiry.After(revokeUntil) {
+			revokeUntil = cookieExpiry
+		}
+	}
+	if err := s.Store.RevokeSession(r.Context(), info.SessionID, now, revokeUntil); err != nil {
 		s.Log.Error("revoke session failed; logout aborted", "error_class", "storage")
 		http.Error(w, "could not revoke the session; retry the logout", http.StatusInternalServerError)
 		return

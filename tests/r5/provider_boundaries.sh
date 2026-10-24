@@ -6,8 +6,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$ROOT/.sandbox/r5/provider-boundaries"
-BIN="$ROOT/bin/onboardd"
-PORT=18798
+BIN="${R5_BIN:-$ROOT/bin/onboardd}"
+PORT="${R5_PROVIDER_PORT:-18798}"
 BASE="http://127.0.0.1:$PORT"
 PASS=0; FAIL=0
 ok() { PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
@@ -15,6 +15,9 @@ bad() { FAIL=$((FAIL+1)); printf 'FAIL %s\n' "$1"; }
 cleanup() { if [ -n "${PID:-}" ] && kill -0 "$PID" 2>/dev/null; then kill -TERM "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; fi; }
 trap cleanup EXIT
 rm -rf "$WORK"; mkdir -p "$WORK"; umask 077
+if [ "${R5_SKIP_BUILD:-0}" != "1" ]; then
+  ( cd "$ROOT" && go build -trimpath -o "$BIN" ./cmd/onboardd )
+fi
 head -c 32 /dev/urandom > "$WORK/master.key"
 head -c 32 /dev/urandom | base64 > "$WORK/admin.token"
 BASE_ENV=(env ONBOARD_LISTEN="127.0.0.1:$PORT" ONBOARD_DB_PATH="$WORK/state.sqlite"
@@ -57,6 +60,14 @@ set +e
 RC=$?
 set -e
 [ "$RC" -ne 0 ] && ok "C: GitHub without token file refused (exit $RC)" || bad "C: GitHub without token file started (exit $RC)"
+
+# D) Non-loopback listen is refused by default (deployment/TLS precondition).
+set +e
+"${BASE_ENV[@]}" ONBOARD_LISTEN=0.0.0.0:18799 "$BIN" > "$WORK/server-nonloopback.log" 2>&1
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && grep -qi "is not loopback" "$WORK/server-nonloopback.log" \
+  && ok "D: non-loopback listen refused (exit $RC)" || bad "D: non-loopback guard (exit $RC)"
 
 echo "SUMMARY pass=$PASS fail=$FAIL"
 [ "$FAIL" = "0" ]

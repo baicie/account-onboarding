@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -216,5 +217,71 @@ func TestSessionRejectedWhenRevocationStoreUnavailable(t *testing.T) {
 	status, location := getDashboardWithCookie(t, e.client, e.ts.URL, cookieValue)
 	if status != http.StatusSeeOther || !strings.Contains(location, "/ui/login") {
 		t.Fatalf("cookie accepted while revocation store is unavailable: %d %q", status, location)
+	}
+}
+
+// TestLogoutRevocationOutlivesShortenedSessionTTL is the regression for REVIEW-R5
+// P2-1: the revocation must be bound to the cookie's own expiry, not to the
+// current configuration. A cookie issued with a 10s TTL, then logged out after
+// the operator lowered SessionTTL to 1s, must stay revoked for the full 10s.
+func TestLogoutRevocationOutlivesShortenedSessionTTL(t *testing.T) {
+	e := newEnv(t, nil)
+	signer := security.NewSessionSigner(e.cfg.MasterKey, 10)
+	cfg := e.cfg
+	cfg.SessionTTL = time.Second
+	srv, err := api.New(cfg, e.store, e.engine, e.reg, e.sec, e.log, signer, security.NewRedactor(adminToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := newTestServer(t, srv)
+
+	// Login through the short-TTL server; the signed cookie itself lives 10s.
+	loginReq, _ := http.NewRequest(http.MethodPost, base+"/ui/login",
+		strings.NewReader(url.Values{"token": {adminToken}}.Encode()))
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginReq.Header.Set("Origin", base)
+	resp, err := e.client.Do(loginReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login = %d", resp.StatusCode)
+	}
+	var cookieValue string
+	for _, c := range resp.Cookies() {
+		if c.Name == "onboard_session" {
+			cookieValue = c.Value
+		}
+	}
+	if cookieValue == "" {
+		t.Fatal("no session cookie")
+	}
+	dashReq, _ := http.NewRequest(http.MethodGet, base+"/ui/", nil)
+	dashReq.Header.Set("Cookie", "onboard_session="+cookieValue)
+	dash, err := e.client.Do(dashReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(dash.Body)
+	dash.Body.Close()
+	m := csrfPattern.FindSubmatch(body)
+	if len(m) != 2 {
+		t.Fatal("csrf token missing")
+	}
+	if status := postLogout(t, e.client, base, cookieValue, string(m[1])); status != http.StatusSeeOther {
+		t.Fatalf("logout = %d", status)
+	}
+	// Wait past the *new* (1s) TTL, then trigger the opportunistic prune via a
+	// fresh login. With the old bug the row expired at ~1s and was pruned here.
+	time.Sleep(1200 * time.Millisecond)
+	if status := postLoginRaw(t, e.client, base); status != http.StatusSeeOther {
+		t.Fatalf("fresh login = %d", status)
+	}
+	if status, location := getDashboardWithCookie(t, e.client, base, cookieValue); status != http.StatusSeeOther || !strings.Contains(location, "/ui/login") {
+		t.Fatalf("revocation expired before the cookie did: %d %q", status, location)
+	}
+	if n, _ := e.store.CountSessionRevocations(context.Background()); n != 1 {
+		t.Fatalf("revocation rows = %d, want 1", n)
 	}
 }

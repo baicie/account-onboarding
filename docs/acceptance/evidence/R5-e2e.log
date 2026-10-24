@@ -1,61 +1,61 @@
 === RUN   TestCrashRecoveryRestartsInWaitingEmail
-    crash_recovery_test.go:39: run f8620ea4-66ab-4c45-9d01-3f23b32135e3 durably waiting: status=WAITING_EMAIL step=wait_email
-    crash_recovery_test.go:59: pre-crash identity: subject=fd6ec2ea-0090-4d63-994b-23e038cceb84 email=onboardf8620ea466ab@moonbyte.top emailVerified=false
-    crash_recovery_test.go:64: SIGKILL delivered at 2026-10-24T14:55:02.068799Z
-    crash_recovery_test.go:81: durable state after crash: status=WAITING_EMAIL subject=fd6ec2ea-0090-4d63-994b-23e038cceb84 request_verification_attempts=1
-    crash_recovery_test.go:93: run resumed and completed: status=COMPLETED updated_at=2026-10-24T14:55:03Z (resume latency ~2026-10-24T14:55:03Z)
-    crash_recovery_test.go:152: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T145451-d39c80/evidence-crash-recovery.json
+    crash_recovery_test.go:39: run dddc4762-87c1-4cb9-b4ee-1f64ddb37bde durably waiting: status=WAITING_EMAIL step=wait_email
+    crash_recovery_test.go:59: pre-crash identity: subject=a25b4aad-bdd4-4247-b992-33f9cdef346b email=onboarddddc476287c1@moonbyte.top emailVerified=false
+    crash_recovery_test.go:64: SIGKILL delivered at 2026-10-24T15:17:20.888016Z
+    crash_recovery_test.go:81: durable state after crash: status=WAITING_EMAIL subject=a25b4aad-bdd4-4247-b992-33f9cdef346b request_verification_attempts=1
+    crash_recovery_test.go:93: run resumed and completed: status=COMPLETED updated_at=2026-10-24T15:17:22Z (resume latency ~2026-10-24T15:17:22Z)
+    crash_recovery_test.go:152: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T151712-810e79/evidence-crash-recovery.json
     crash_recovery_test.go:154: teardown: deleted 1 keycloak sandbox user(s)
     crash_recovery_test.go:155: teardown: deleted 1 mailpit message(s)
     crash_recovery_test.go:35: teardown: deleted 0 keycloak sandbox user(s)
---- PASS: TestCrashRecoveryRestartsInWaitingEmail (12.12s)
+--- PASS: TestCrashRecoveryRestartsInWaitingEmail (10.06s)
 === RUN   TestFiveSandboxIdentities
     five_identities_test.go:50: providers: 6 registered (credential/keycloak-test(enabled), email/github(disabled), identity/keycloak-test(enabled), mailbox/mailpit(enabled), oauth/workbuddy(disabled), sandbox/keycloak-test(enabled))
-    five_identities_test.go:64: created run 1: id=ef89f5ea-caa8-4325-8add-5d7347774643 status=CREATED
-    five_identities_test.go:64: created run 2: id=cf00d3d3-e17c-420e-aae6-9cccfc9a687f status=CREATED
-    five_identities_test.go:64: created run 3: id=86eb086b-5613-4e40-b37a-ac165a1d42e0 status=CREATED
-    five_identities_test.go:64: created run 4: id=68ed2d52-bf01-4ed6-bbfb-ceaa724d7c83 status=CREATED
-    five_identities_test.go:64: created run 5: id=6a73cc00-8e04-4512-8641-221f1bef3687 status=CREATED
+    five_identities_test.go:64: created run 1: id=53a23721-7f26-4761-9ff4-8d53d342f669 status=CREATED
+    five_identities_test.go:64: created run 2: id=64028e46-3857-402a-802a-ad9297389930 status=CREATED
+    five_identities_test.go:64: created run 3: id=02c29112-330b-47a7-9880-130a306f6b05 status=CREATED
+    five_identities_test.go:64: created run 4: id=a0e02239-3e5a-4903-9e43-3de70250ffd5 status=CREATED
+    five_identities_test.go:64: created run 5: id=2520626d-5f28-4d30-92c1-ac143aaed734 status=CREATED
     five_identities_test.go:255: 
         | # | run | status | subject | email | emailVerified | userinfo | emails | duration |
         |---|-----|--------|---------|-------|---------------|----------|--------|----------|
-        | 1 | ef89f5ea | COMPLETED | afbc7269-aee2-49eb-a992-fde1a4419347 | onboardef89f5eacaa8@moonbyte.top | true | true | 1 | 479ms |
-        | 2 | cf00d3d3 | COMPLETED | 7acd2bed-30a8-4275-93aa-1adcff1fba72 | onboardcf00d3d3e17c@moonbyte.top | true | true | 1 | 478ms |
-        | 3 | 86eb086b | COMPLETED | fabd25a1-d174-46a9-8661-e69817de7eb7 | onboard86eb086b5613@moonbyte.top | true | true | 1 | 769ms |
-        | 4 | 68ed2d52 | COMPLETED | aa8c9a9d-bef0-4ebe-abe6-48cce8e75145 | onboard68ed2d52bf01@moonbyte.top | true | true | 1 | 768ms |
-        | 5 | 6a73cc00 | COMPLETED | 84dbdf04-62de-4472-a201-309ca4cdf5a2 | onboard6a73cc008e04@moonbyte.top | true | true | 1 | 1008ms |
+        | 1 | 53a23721 | COMPLETED | e4b9f698-d968-4778-a741-a7b0c8647b3a | onboard53a237217f26@moonbyte.top | true | true | 1 | 383ms |
+        | 2 | 64028e46 | COMPLETED | 60323d7c-3aae-4a66-8ca7-0f717899d31f | onboard64028e463857@moonbyte.top | true | true | 1 | 453ms |
+        | 3 | 02c29112 | COMPLETED | bb3ed0f3-287f-420b-9a3a-d6892262789e | onboard02c29112330b@moonbyte.top | true | true | 1 | 557ms |
+        | 4 | a0e02239 | COMPLETED | 99aa689b-7868-444e-a18c-1551a4b8a5b7 | onboarda0e022393e5a@moonbyte.top | true | true | 1 | 684ms |
+        | 5 | 2520626d | COMPLETED | 2cff715b-cef1-4731-9082-24132a04ea9f | onboard2520626d5f28@moonbyte.top | true | true | 1 | 772ms |
         
-        P50=768ms P95=1008ms (n=5)
+        P50=557ms P95=772ms (n=5)
         
 
 | # | run | status | subject | email | emailVerified | userinfo | emails | duration |
 |---|-----|--------|---------|-------|---------------|----------|--------|----------|
-| 1 | ef89f5ea | COMPLETED | afbc7269-aee2-49eb-a992-fde1a4419347 | onboardef89f5eacaa8@moonbyte.top | true | true | 1 | 479ms |
-| 2 | cf00d3d3 | COMPLETED | 7acd2bed-30a8-4275-93aa-1adcff1fba72 | onboardcf00d3d3e17c@moonbyte.top | true | true | 1 | 478ms |
-| 3 | 86eb086b | COMPLETED | fabd25a1-d174-46a9-8661-e69817de7eb7 | onboard86eb086b5613@moonbyte.top | true | true | 1 | 769ms |
-| 4 | 68ed2d52 | COMPLETED | aa8c9a9d-bef0-4ebe-abe6-48cce8e75145 | onboard68ed2d52bf01@moonbyte.top | true | true | 1 | 768ms |
-| 5 | 6a73cc00 | COMPLETED | 84dbdf04-62de-4472-a201-309ca4cdf5a2 | onboard6a73cc008e04@moonbyte.top | true | true | 1 | 1008ms |
+| 1 | 53a23721 | COMPLETED | e4b9f698-d968-4778-a741-a7b0c8647b3a | onboard53a237217f26@moonbyte.top | true | true | 1 | 383ms |
+| 2 | 64028e46 | COMPLETED | 60323d7c-3aae-4a66-8ca7-0f717899d31f | onboard64028e463857@moonbyte.top | true | true | 1 | 453ms |
+| 3 | 02c29112 | COMPLETED | bb3ed0f3-287f-420b-9a3a-d6892262789e | onboard02c29112330b@moonbyte.top | true | true | 1 | 557ms |
+| 4 | a0e02239 | COMPLETED | 99aa689b-7868-444e-a18c-1551a4b8a5b7 | onboarda0e022393e5a@moonbyte.top | true | true | 1 | 684ms |
+| 5 | 2520626d | COMPLETED | 2cff715b-cef1-4731-9082-24132a04ea9f | onboard2520626d5f28@moonbyte.top | true | true | 1 | 772ms |
 
-P50=768ms P95=1008ms (n=5)
-    five_identities_test.go:273: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T145503-bd7c1c/evidence-five-identities.json
+P50=557ms P95=772ms (n=5)
+    five_identities_test.go:273: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T151722-3a3ccf/evidence-five-identities.json
     five_identities_test.go:282: teardown: deleted 5 keycloak sandbox user(s)
     five_identities_test.go:283: teardown: deleted 5 mailpit message(s)
     five_identities_test.go:23: teardown: deleted 0 keycloak sandbox user(s)
---- PASS: TestFiveSandboxIdentities (1.47s)
+--- PASS: TestFiveSandboxIdentities (1.00s)
 === RUN   TestIdempotencyKeyCreatesOneRun
-    idempotency_cancel_test.go:25: first create: status=202 run=0f58912c-7687-420e-9c58-ddafe2d46512
-    idempotency_cancel_test.go:26: second create (same key): status=202 run=0f58912c-7687-420e-9c58-ddafe2d46512
-    idempotency_cancel_test.go:103: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T145505-0806ca/evidence-idempotency.json
+    idempotency_cancel_test.go:25: first create: status=202 run=96f2e402-a973-4985-9e64-318b9c820671
+    idempotency_cancel_test.go:26: second create (same key): status=202 run=96f2e402-a973-4985-9e64-318b9c820671
+    idempotency_cancel_test.go:103: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T151723-0369e1/evidence-idempotency.json
     idempotency_cancel_test.go:105: teardown: deleted 1 keycloak sandbox user(s)
     idempotency_cancel_test.go:106: teardown: deleted 1 mailpit message(s)
     idempotency_cancel_test.go:20: teardown: deleted 0 keycloak sandbox user(s)
---- PASS: TestIdempotencyKeyCreatesOneRun (0.53s)
+--- PASS: TestIdempotencyKeyCreatesOneRun (0.52s)
 === RUN   TestCancelWhileWaitingEmail
-    idempotency_cancel_test.go:130: cancelling run a3d9f13d-48ad-4426-bdf2-14a2a53cd103 while status=WAITING_EMAIL
-    idempotency_cancel_test.go:235: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T145505-812db3/evidence-cancel.json
+    idempotency_cancel_test.go:130: cancelling run 145f09ec-e4ec-4ad2-89ca-53991c9843ac while status=WAITING_EMAIL
+    idempotency_cancel_test.go:235: evidence: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/.sandbox/e2e/run-20261024T151723-3fb254/evidence-cancel.json
     idempotency_cancel_test.go:241: teardown: deleted 1 keycloak sandbox user(s)
     idempotency_cancel_test.go:242: teardown: deleted 1 mailpit message(s)
     idempotency_cancel_test.go:126: teardown: deleted 0 keycloak sandbox user(s)
---- PASS: TestCancelWhileWaitingEmail (0.42s)
+--- PASS: TestCancelWhileWaitingEmail (0.41s)
 PASS
-ok  	github.com/baicie/account-onboarding/tests/e2e	44.852s
+ok  	github.com/baicie/account-onboarding/tests/e2e	12.227s

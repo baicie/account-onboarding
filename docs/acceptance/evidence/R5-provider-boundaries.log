@@ -3,4 +3,5 @@ PASS A: no live provider enabled; disabled gates registered
 PASS A: fake providers off
 PASS B: WorkBuddy without permission ack refused (exit 1)
 PASS C: GitHub without token file refused (exit 1)
-SUMMARY pass=4 fail=0
+PASS D: non-loopback listen refused (exit 1)
+SUMMARY pass=5 fail=0

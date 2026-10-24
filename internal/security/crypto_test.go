@@ -196,3 +196,23 @@ func b64Encode(b []byte) string {
 	}
 	return out.String()
 }
+
+func TestVerifySessionReturnsCookieExpiryAndSessionID(t *testing.T) {
+	ring, _ := NewKeyRing(bytes.Repeat([]byte{5}, 32))
+	signer := NewSessionSigner(ring.keys[1], 10)
+	value, csrf, sid, err := signer.IssueWithID(1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotCSRF, gotSID, exp, ok := signer.VerifySession(value, 1001)
+	if !ok || gotCSRF != csrf || gotSID != sid || exp != 1010 {
+		t.Fatalf("verify session = %q %q %d %v", gotCSRF, gotSID, exp, ok)
+	}
+	if _, _, _, ok := signer.VerifySession(value, 1020); ok {
+		t.Fatal("expired session accepted")
+	}
+	// VerifyFull keeps the previous API contract.
+	if gotCSRF, gotSID, ok := signer.VerifyFull(value, 1001); !ok || gotCSRF != csrf || gotSID != sid {
+		t.Fatalf("VerifyFull = %q %q %v", gotCSRF, gotSID, ok)
+	}
+}

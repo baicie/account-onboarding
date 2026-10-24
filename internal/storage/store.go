@@ -229,6 +229,10 @@ type Health struct {
 	SchemaVersion int    `json:"schema_version"`
 	WALMode       string `json:"wal_mode"`
 	Writable      bool   `json:"writable"`
+	// SessionRevocationsReady reports that the durable session-revocation table
+	// from migration 0003 is present. A missing table means cookie sessions
+	// cannot be revoked reliably, so /readyz must not report ready.
+	SessionRevocationsReady bool `json:"session_revocations_ready"`
 }
 
 // Health verifies schema version, WAL mode and write capability.
@@ -240,6 +244,12 @@ func (s *Store) Health(ctx context.Context) (Health, error) {
 	if err := s.readDB.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&h.WALMode); err != nil {
 		return h, fmt.Errorf("read journal mode: %w", err)
 	}
+	var tables int
+	if err := s.readDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='session_revocations'`).Scan(&tables); err != nil {
+		return h, fmt.Errorf("probe session revocation table: %w", err)
+	}
+	h.SessionRevocationsReady = tables == 1
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return h, fmt.Errorf("begin write probe: %w", err)

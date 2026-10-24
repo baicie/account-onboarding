@@ -141,3 +141,47 @@ func TestMigration0003AppliesToExistingV2Database(t *testing.T) {
 		t.Fatalf("post-upgrade revocation: revoked=%v err=%v", revoked, err)
 	}
 }
+
+// TestHealthProbesSessionRevocationTable verifies /readyz's underlying health
+// signal: a schema-3 database whose revocation table was dropped must not report
+// session-revocation readiness (the UI would otherwise silently fail closed on
+// every login while reporting ready).
+func TestHealthProbesSessionRevocationTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "health.sqlite")
+	ctx := context.Background()
+	s := openSessionStore(t, path)
+	health, err := s.Health(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.SchemaVersion != 3 || !health.SessionRevocationsReady {
+		t.Fatalf("health = %+v", health)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite3", "file:"+path+"?_foreign_keys=on")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, `DROP TABLE session_revocations`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Reopening does not re-apply migration 0003 (its version is recorded), so
+	// the missing table must be visible in health instead of silently healing.
+	degraded := openSessionStore(t, path)
+	defer degraded.Close()
+	health, err = degraded.Health(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.SchemaVersion != 3 || health.SessionRevocationsReady {
+		t.Fatalf("degraded health = %+v (want schema 3, revocations not ready)", health)
+	}
+	if err := degraded.RevokeSession(ctx, "sid", time.Now(), time.Now().Add(time.Hour)); err == nil {
+		t.Fatal("revocation succeeded without the revocation table")
+	}
+}
