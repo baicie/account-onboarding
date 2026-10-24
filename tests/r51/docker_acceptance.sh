@@ -53,7 +53,7 @@ docker run -d --name "$PROJECT-app" \
   --mount type=bind,src="$WORK/secrets/admin.token",dst=/run/secrets/onboard_admin_token,readonly \
   -e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1 \
   -e ONBOARD_DB_PATH=/app/data/state.sqlite -e ONBOARD_FAKE_PROVIDERS=true \
-  -e ONBOARD_DOMAIN=moonbyte.test -e ONBOARD_DOMAINS=moonbyte.test \
+  -e ONBOARD_DOMAINS=moonbyte.test \
   -e ONBOARD_SENDER_ALLOWLIST=moonbyte.test -e ONBOARD_LOG_LEVEL=warn \
   "$IMAGE" >/dev/null
 for _ in $(seq 1 120); do curl -fsS -m 1 "$BASE/healthz" >/dev/null 2>&1 && break; sleep 0.25; done
@@ -101,7 +101,8 @@ curl -sS "${H[@]}" "$BASE/v1/runs/$RUN1" | grep -q '"id"' && ok "runs preserved 
 
 echo "=== encrypted backup/restore against live container DB ==="
 ONBOARD_BACKUP_ENCRYPT=1 ONBOARD_KEYRING="$WORK/secrets/master.key" \
-  bash "$ROOT/scripts/backup.sh" --encrypt "$WORK/data/state.sqlite" "$WORK/backup" >/dev/null 2>&1 \
+  bash "$ROOT/scripts/backup.sh" --db "$WORK/data/state.sqlite" --out-dir "$WORK/backup" \
+  --encrypt --keyring "$WORK/secrets/master.key" >/dev/null 2>&1 \
   && ok "encrypted snapshot of container DB" || bad "encrypted backup"
 bash "$ROOT/scripts/verify_backup.sh" "$WORK/backup"/*.sqlite.enc --keyring "$WORK/secrets/master.key" >/dev/null 2>&1 \
   && ok "verify encrypted snapshot" || bad "verify snapshot"

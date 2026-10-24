@@ -141,16 +141,35 @@ func newProxyHandler(upstream *url.URL) http.Handler {
 	return proxy
 }
 
-// newRedirectHandler redirects plain HTTP to HTTPS on tlsPort.
+// newRedirectHandler redirects plain HTTP to HTTPS on tlsPort. The Host header
+// is validated against a loopback allowlist so the redirect cannot be used as an
+// open redirect primitive (and so this pattern is safe to copy into a real proxy).
 func newRedirectHandler(tlsPort string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := r.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
+		if !redirectHostAllowed(host) {
+			http.Error(w, "unknown host", http.StatusBadRequest)
+			return
+		}
 		target := "https://" + net.JoinHostPort(host, tlsPort) + r.URL.RequestURI()
 		http.Redirect(w, r, target, http.StatusPermanentRedirect)
 	})
+}
+
+// redirectHostAllowed accepts only loopback names/IPs (with or without brackets).
+func redirectHostAllowed(host string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	switch host {
+	case "localhost", "127.0.0.1", "[::1]", "::1":
+		return true
+	}
+	return false
 }
 
 func portOf(addr string) string {

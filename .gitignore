@@ -7,6 +7,9 @@
 *.sqlite-wal
 *.sqlite-shm
 *.db
+*.sqlite.lock
+*.db.lock
+*.sqlite3.lock
 
 # go / build artifacts
 /bin/
@@ -14,3 +17,4 @@
 /onboardd
 coverage.out
 *.test
+*.lock

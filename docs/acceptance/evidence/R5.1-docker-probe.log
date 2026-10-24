@@ -1,3 +1,6 @@
+# R5.1-B Docker environment probe (no daemon available)
+# host: Darwin arm64, 2026-10-24T16:20:05Z
+$ docker info
 Client:
  Version:    29.7.2
  Context:    desktop-linux
@@ -52,7 +55,19 @@ Client:
 Server:
 Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
 DOCKER_INFO_EXIT=1
+
+$ docker build -t account-onboarding:r51-probe .
 ERROR: Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
 DOCKER_BUILD_EXIT=1
+
+$ docker compose -f deploy/compose.yaml config
 COMPOSE_CONFIG_EXIT=0
-OVERRIDE_CONFIG_EXIT=0
+
+# isolated override requires R51_IMAGE/R51_DATA/R51_MASTER_KEY/R51_ADMIN_TOKEN
+$ docker compose -p r51-probe -f deploy/compose.yaml -f tests/r51/compose.override.yaml config   # without env
+OVERRIDE_CONFIG_NO_ENV_EXIT=1
+$ R51_IMAGE=... R51_DATA=... R51_MASTER_KEY=... R51_ADMIN_TOKEN=... docker compose -p r51-probe -f deploy/compose.yaml -f tests/r51/compose.override.yaml config
+OVERRIDE_CONFIG_WITH_ENV_EXIT=0
+
+$ bash tests/r51/docker_acceptance.sh
+NOT_RUN (exit 3): Docker daemon unavailable; see R5.1-docker-acceptance.log

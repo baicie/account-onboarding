@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -68,6 +67,24 @@ func TestRedirectHandlerRedirectsToHTTPSOnTLSListenPort(t *testing.T) {
 	if loc := rr.Header().Get("Location"); loc != "https://localhost:18443/ui/?x=1" {
 		t.Fatalf("location = %q", loc)
 	}
+	// A forged Host header must not turn the redirect into an open redirect.
+	evil := httptest.NewRequest(http.MethodGet, "http://evil.example:18080/healthz", nil)
+	evil.Host = "evil.example"
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, evil)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("forged Host status = %d, want 400", rr.Code)
+	}
+	for _, host := range []string{"localhost", "127.0.0.1", "[::1]", "localhost:18080"} {
+		if !redirectHostAllowed(host) {
+			t.Fatalf("redirectHostAllowed(%q) = false", host)
+		}
+	}
+	for _, host := range []string{"evil.example", "0.0.0.0", ""} {
+		if redirectHostAllowed(host) {
+			t.Fatalf("redirectHostAllowed(%q) = true", host)
+		}
+	}
 }
 
 func TestRequireLoopbackRejectsWildcardAndNonLoopback(t *testing.T) {
@@ -81,8 +98,5 @@ func TestRequireLoopbackRejectsWildcardAndNonLoopback(t *testing.T) {
 		if err := requireLoopback(addr); err != nil {
 			t.Fatalf("requireLoopback(%q) = %v", addr, err)
 		}
-	}
-	if !strings.Contains("ok", "ok") {
-		t.Fatal("unreachable")
 	}
 }

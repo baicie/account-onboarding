@@ -97,6 +97,8 @@ set -e
 # 2. HTTP -> HTTPS policy.
 REDIR="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "$BASE_HTTP/healthz")"
 case "$REDIR" in "308 https://localhost:$HTTPSPORT/healthz") ok "HTTP 308 to HTTPS ($REDIR)";; *) bad "HTTP redirect: $REDIR";; esac
+EVILHOST="$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: evil.example' "$BASE_HTTP/healthz")"
+[ "$EVILHOST" = "400" ] && ok "forged Host on HTTP listener rejected 400 (no open redirect)" || bad "forged Host = $EVILHOST"
 
 # 3. Login over TLS + cookie flags.
 curl -sS --cacert "$CA" -c "$WORK/jar" -D "$WORK/login.headers" -o /dev/null -X POST "$BASE_HTTPS/ui/login" \
@@ -130,6 +132,7 @@ C="$(curl -sS --cacert "$CA" -b "$WORK/jar" -o /dev/null -w '%{http_code}' -X PO
 C="$(curl -sS --cacert "$CA" -o /dev/null -w '%{http_code} %{redirect_url}' -H "Cookie: onboard_session=$COOKIE" "$BASE_HTTPS/ui/")"
 case "$C" in "303 "*"/ui/login") ok "old cookie rejected immediately";; *) bad "post-logout replay: $C";; esac
 kill -KILL "$APP_PID" 2>/dev/null || true
+wait "$APP_PID" 2>/dev/null || true
 sleep 0.3
 ( cd "$ROOT" && exec env ONBOARD_LISTEN="127.0.0.1:$APPPORT" ONBOARD_DB_PATH="$WORK/state.sqlite" \
   ONBOARD_MASTER_KEY_FILE="$WORK/master.key" ONBOARD_ADMIN_TOKEN_FILE="$WORK/admin.token" \

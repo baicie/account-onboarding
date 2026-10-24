@@ -56,10 +56,6 @@ type Options struct {
 	// TransitionValidator is called inside the commit transaction to enforce the
 	// workflow state machine. It must reject unknown edges.
 	TransitionValidator func(from, to string) error
-	// SkipInstanceLock disables the single-writer file lock. It exists for
-	// read-only tooling and migration tests that deliberately open a second
-	// handle; production code must never set it.
-	SkipInstanceLock bool
 }
 
 // Store is the SQLite persistence layer.
@@ -99,7 +95,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 
 	var lock *instanceLock
 	var err error
-	if !opts.SkipInstanceLock && opts.Path != ":memory:" {
+	if opts.Path != ":memory:" {
 		lock, err = acquireInstanceLock(opts.Path)
 		if err != nil {
 			return nil, err

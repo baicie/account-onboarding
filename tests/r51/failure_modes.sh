@@ -18,9 +18,6 @@ head -c 32 /dev/urandom | base64 > "$WORK/admin.token"
 (cd "$ROOT" && go build -trimpath -o bin/onboardd ./cmd/onboardd)
 TOKEN="$(cat "$WORK/admin.token")"
 
-env_for() { # $1=port $2=dbpath
-  echo "ONBOARD_LISTEN=127.0.0.1:$1 ONBOARD_DB_PATH=$2 ONBOARD_MASTER_KEY_FILE=$WORK/master.key ONBOARD_ADMIN_TOKEN_FILE=$WORK/admin.token ONBOARD_FAKE_PROVIDERS=true ONBOARD_DOMAINS=moonbyte.test ONBOARD_SENDER_ALLOWLIST=moonbyte.test ONBOARD_LOG_LEVEL=warn"
-}
 start() { # $1=port $2=dbpath $3=log
   ( cd "$ROOT" && exec env ONBOARD_LISTEN="127.0.0.1:$1" ONBOARD_DB_PATH="$2" \
       ONBOARD_MASTER_KEY_FILE="$WORK/master.key" ONBOARD_ADMIN_TOKEN_FILE="$WORK/admin.token" \
