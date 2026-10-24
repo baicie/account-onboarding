@@ -12,7 +12,8 @@ HITS="$(grep -vE '^[[:space:]]*#' "$SCRIPT" | grep -nE \
 if [ -z "$HITS" ]; then echo "(none)"; else echo "$HITS"; exit 1; fi
 echo
 echo "## 2. all docker invocations (isolated by \$PROJECT/\$IMAGE)"
-grep -nE '^[[:space:]]*(docker|[A-Z0-9_]+=.*docker)[^#]*' "$SCRIPT" | grep -vE '^[0-9]+:[[:space:]]*#' || true
+grep -nE '^[[:space:]]*(docker|[A-Z0-9_]+=.*docker)[^#]*' "$SCRIPT" | grep -vE '^[0-9]+:[[:space:]]*#' \
+  | sed -E 's/^([0-9]+:)[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=/\1<var>=/' || true
 echo
 echo "## 3. isolation identifiers"
 grep -nE '^(ID|PROJECT|IMAGE|WORK|PORT|BASE)=|--name|127\.0\.0\.1|\.sandbox/r51' "$SCRIPT" | head -25

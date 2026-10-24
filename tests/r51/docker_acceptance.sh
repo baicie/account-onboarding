@@ -55,7 +55,15 @@ JSON=(-H "Content-Type: application/json")
 ENVS=(-e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1
       -e ONBOARD_DB_PATH=/app/data/state.sqlite -e ONBOARD_FAKE_PROVIDERS=true
       -e ONBOARD_DOMAINS=moonbyte.test -e ONBOARD_SENDER_ALLOWLIST=moonbyte.test
+      -e ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key
+      -e ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/onboard_admin_token
       -e ONBOARD_LOG_LEVEL=warn -e ONBOARD_SESSION_TTL=1h)
+# Self-check: a public listen without an admin token is rejected by config
+# validation, so the token-file env is mandatory for every container below.
+case " ${ENVS[*]} " in
+  *" ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/onboard_admin_token "*) ;;
+  *) echo "internal error: ENVS is missing ONBOARD_ADMIN_TOKEN_FILE"; exit 1 ;;
+esac
 MOUNTS=(--mount type=bind,src="$WORK/secrets/master.key",dst=/run/secrets/onboarding_master_key,readonly
         --mount type=bind,src="$WORK/secrets/admin.token",dst=/run/secrets/onboard_admin_token,readonly)
 
@@ -112,6 +120,7 @@ docker inspect --format '{{json .HostConfig.SecurityOpt}}' "$PROJECT-app" | grep
   && ok "no-new-privileges" || bad "no-new-privileges"
 MODES="$(docker exec "$PROJECT-app" stat -c '%a' /run/secrets/onboarding_master_key /run/secrets/onboard_admin_token 2>/dev/null || true)"
 SECRET_OK=1
+[ -n "$MODES" ] || { SECRET_OK=0; MODES="<empty>"; }
 while IFS= read -r m; do
   [ -n "$m" ] || continue
   if [ $((8#$m & 022)) -ne 0 ]; then SECRET_OK=0; fi
@@ -144,6 +153,7 @@ ver = db.execute("select max(version) from schema_migrations").fetchone()[0]
 assert ver == 2, ver
 db.close()
 PY
+chmod 666 "$WORK/v2data/state.sqlite" # created by host python under umask 077
 run_app "$PROJECT-upgrade" 28790 "$WORK/v2data"
 wait_http 28790 /readyz 200 60 && ok "v2 database upgraded and /readyz 200" || bad "v2 upgrade readyz"
 [ "$(meta_schema 28790)" = "3" ] && ok "v2 -> schema 3 after container start" || bad "v2 upgrade schema"
@@ -264,13 +274,13 @@ docker rm -f "$PROJECT-badkeydata" >/dev/null 2>&1 || true
 
 mkdir -p "$WORK/rodata"; chmod 500 "$WORK/rodata"
 docker run -d --name "$PROJECT-ro" --read-only --cap-drop ALL --user 10001:10001 \
-  --tmpfs /tmp:size=8m -v "$WORK/rodata:/app/data" "${MOUNTS[@]}" "${ENVS[@]}" "$IMAGE" >/dev/null 2>&1 || true
+  --tmpfs /tmp:size=8m -p "127.0.0.1:28792:8788" -v "$WORK/rodata:/app/data" "${MOUNTS[@]}" "${ENVS[@]}" "$IMAGE" >/dev/null 2>&1 || true
 sleep 4
 RO_STATE="$(docker inspect --format '{{.State.Status}}' "$PROJECT-ro" 2>/dev/null || echo missing)"
 if [ "$RO_STATE" = "exited" ]; then
   ok "unwritable data directory fails closed (container exited)"
 else
-  RO_CODE="$(curl -sS -m 2 -o /dev/null -w '%{http_code}' "${AUTH[@]}" "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)"
+  RO_CODE="$(curl -sS -m 2 -o /dev/null -w '%{http_code}' "${AUTH[@]}" "http://127.0.0.1:28792/readyz" 2>/dev/null || true)"
   [ "$RO_CODE" != "200" ] && ok "unwritable data directory not ready (probe=$RO_CODE)" || bad "unwritable data dir reported ready"
 fi
 docker rm -f "$PROJECT-ro" >/dev/null 2>&1 || true

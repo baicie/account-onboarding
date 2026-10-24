@@ -45,7 +45,7 @@ ENV ONBOARD_LISTEN=0.0.0.0:8788 \
 EXPOSE 8788
 VOLUME ["/app/data"]
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
     CMD ["/app/onboardd", "healthcheck"]
 
 ENTRYPOINT ["/app/onboardd"]

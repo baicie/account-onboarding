@@ -121,8 +121,8 @@ validate_secret_file() {
 		# runtime/compose maps ownership, so surface it as an actionable warning.
 		local owner
 		owner="$(owner_uid "$path")"
-		if [ "$owner" != "10001" ] && [ "$owner" != "0" ] && [ "$owner" != "unknown" ]; then
-			warn "$label owner UID is $owner; the container runs as 10001 and may be unable to read it: sudo chown 10001:10001 '$path' (Linux), or verify secret ownership mapping in Docker Compose"
+		if [ "$owner" != "10001" ] && [ "$owner" != "unknown" ]; then
+			warn "$label owner UID is $owner; the container runs as 10001 and cannot read a 0400/0600 file owned by $owner (root included): sudo chown 10001:10001 '$path' (Linux), or verify secret ownership mapping in Docker Compose"
 		fi
 	fi
 	return 0
