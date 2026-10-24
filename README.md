@@ -38,6 +38,7 @@ engine with leases/fencing + typed provider contracts + minimal operator console
 | R2 | Local Keycloak + Mailpit sandbox, 5-identity fully automated email verification + OIDC PKCE, crash/restart, idempotency, cancel | **PASS (LOCAL SANDBOX)** — 5/5 through `/v1/runs`, crash/restart recovered, no duplicate identity; Playwright/Docker/real-platform **NOT_RUN** — [docs/acceptance/R2.md](docs/acceptance/R2.md) |
 | R3 | GitHub existing-account email management + permission-gated WorkBuddy adapter with fake contracts | **PASS** contract/fake; live GitHub and WorkBuddy **NOT_RUN** — [docs/acceptance/R3.md](docs/acceptance/R3.md) |
 | R4 | Backup/restore (incl. encrypted snapshots), key rotation, rate limiting, viewer RBAC, CSRF/CSP/SSRF audit, redaction scanning, deployment hardening | **PARTIAL** — all executable controls PASS; TLS ingress, Docker build/run, GHCR publish and real-platform live tests **NOT_RUN**; no P0 — [docs/acceptance/R4.md](docs/acceptance/R4.md), [audit](docs/security/R4-audit.md) |
+| R5 | Release readiness: durable SQLite session revocation, container audit, Cloudflare live prep, identity/platform boundaries | **LOCAL_RC_READY / DEPLOYMENT_BLOCKED** — R5-A and boundary gates PASS; Docker, TLS, live platforms **NOT_RUN** — [docs/acceptance/R5.md](docs/acceptance/R5.md) |
 
 Legend: **PASS** means the command was actually run with real output. **NOT_RUN**
 means the step needs credentials or infrastructure that is not available in this

@@ -2,12 +2,14 @@
 
 - **Date**: 2026-10-24 (Asia/Shanghai)
 - **Repository**: `/Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding`
-- **Git state**: local repository initialised; changes remain in the working tree
-  (local commit created after the independent review; **nothing was pushed**)
+- **Git state**: local commits `e557387` (v0.1.0 delivery), `3719026` (R5-A
+  durable session revocation) and the docs commit containing this report;
+  **nothing was pushed, merged, released or deployed**
 - **Design pack**: `account-onboarding-design-v0.1.0/` (v0.1.0, read-only input)
-- **Verdict**: the R0–R4 scope is implemented and exercised as far as this
-  environment permits. **No P0** findings. Remaining gaps are infrastructure or
-  live-platform items that are explicitly **NOT_RUN**, not hidden PARTIALs.
+- **Verdict**: **`LOCAL_RC_READY`** for the local release candidate;
+  **`DEPLOYMENT_BLOCKED`** until Docker/TLS/live-platform gates are executed;
+  **not `LIVE_READY`**. No P0 findings. Remaining gaps are infrastructure or
+  live-platform items explicitly marked **NOT_RUN**, not hidden PARTIALs.
 
 ## 1. Executive summary
 
@@ -25,12 +27,13 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R2** sandbox E2E | **PASS (LOCAL SANDBOX)** | **5/5** identities through `/v1/runs` on real local Keycloak 26.8.1 + Mailpit; SIGKILL restart recovery, idempotency, cancel; Playwright/Docker/real-platform **NOT_RUN** |
 | **R3** real existing identities | **PASS (contract/fake)** | GitHub official `/user/emails` adapter; permission-gated WorkBuddy adapter default-disabled with 410 → `REAUTHORIZE_REQUIRED`; live **NOT_RUN** |
 | **R4** reliability/security closure | **PARTIAL** | backup/restore (incl. encrypted snapshots), key rotation, rate limiting, viewer RBAC, CSRF/CSP/SSRF audit, redaction scan, load evidence **PASS**; TLS ingress, Docker build/run, GHCR and real live tests **NOT_RUN**; no P0 |
+| **R5** release readiness | **LOCAL_RC_READY** (2026-10-24) | R5-A durable SQLite session revocation (restart/并发/过期/迁移) **PASS**; R5-B Docker **NOT_RUN** (no daemon); R5-C Cloudflare live **NOT_RUN** (no authorization/credentials, read-only audit PASS); R5-D identity/platform boundaries **PASS**, live **NOT_RUN**; see [`R5.md`](R5.md) |
 | **Independent review** | **PASS (scoped)** after fixes | first pass PARTIAL (P0=0, P1=3, P2=11); two code-level P1s fixed and independently re-verified, TLS ingress reclassified as deployment `NOT_RUN`; see [`REVIEW.md`](REVIEW.md) §8 |
 
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 286 top-level tests / 608 including subtests PASS, 0 FAIL, 5 opt-in SKIP**
+- `go test ./... -count=1` → **29 packages (14 with test files), 294 top-level tests / 616 including subtests PASS, 0 FAIL, 5 opt-in SKIP** (after R5-A)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -226,7 +229,24 @@ Remaining open items after closure (all disclosed in `REVIEW.md` §8.6):
 | P2-8 | No in-service resource compensation/cleanup (`MailboxCleaner` has no caller); real addresses are operator-managed | documented |
 | P2 | WorkBuddy authorization-URL host not pinned, in-memory rate limiter (single instance), trusted-proxy header caveat, image digest pinning, rotation/restore downtime orchestration | documented P2/deployment items |
 
-## 11. Post-review verification
+## 11. R5 release readiness (2026-10-24)
+
+R5 executes the release-preparation round on top of `e557387`; details and
+commands are in [`R5.md`](R5.md).
+
+| Gate | Result | Evidence |
+|---|---|---|
+| R5-A durable session revocation | **PASS** | migration 0003 → schema 3; logout revocation in SQLite; concurrent/double logout, restart Server, expiry/prune and v2→v3 migration tests; real `onboardd` SIGTERM restart script **11/11 PASS** |
+| R5-A existing mechanisms re-check | **PASS** | atomic mail receipts, lease fencing, key rotation, encrypted backup/restore targeted tests + full race suite |
+| R5-B container acceptance | **NOT_RUN** | `docker info` / `docker build` exit 1 (no daemon); `docker compose config` exit 0 (static audit only) |
+| R5-C Cloudflare live | **NOT_RUN** (read-only audit PASS) | no network request, no credentials/authorization; contract/retention/redaction audit and reproducible live plan in `R5.md` §4 |
+| R5-D identity/platform boundaries | **PASS (bounds)**; live **NOT_RUN** | provider catalog all live providers disabled; WorkBuddy without permission ack refused; GitHub without token refused; non-loopback listen refused; TLS ingress still `NOT_RUN` |
+| Final verdict | **LOCAL_RC_READY / DEPLOYMENT_BLOCKED / not LIVE_READY** | `R5.md` §6 |
+
+Release environment is local sandbox only; Docker build/run, TLS ingress,
+GHCR/publish, Cloudflare/GitHub/WorkBuddy live remain **NOT_RUN**.
+
+## 12. Post-review verification
 
 The independent reviewer re-verified the fixed tree and updated
 [`REVIEW.md`](REVIEW.md) with the post-review evidence and final verdict:

@@ -14,6 +14,7 @@ live-platform success.
 | [R3.md](R3.md) | R3 | GitHub existing-account official email API adapter; permission-gated WorkBuddy control-plane adapter | **PASS** contract/fake; live **NOT_RUN** |
 | [R4.md](R4.md) | R4 | Backup/restore (encrypted option), key rotation, rate limiting, viewer RBAC, redaction scanning, HTTP hardening audit, deployment manifests | **PARTIAL** — executable controls PASS; TLS/Docker/GHCR/real-platform **NOT_RUN**; no P0 |
 | [REVIEW.md](REVIEW.md) | — | Independent adversarial P0/P1 review run against the real tree | see report |
+| [R5.md](R5.md) | R5 | Release readiness: durable session revocation, Docker/Compose audit, Cloudflare live prep, identity/platform boundaries | **LOCAL_RC_READY / DEPLOYMENT_BLOCKED**; R5-B/R5-C/live **NOT_RUN** |
 | [FINAL-REPORT.md](FINAL-REPORT.md) | — | Consolidated delivery report: phase verdicts, acceptance matrix, deviations, residual risks | see report |
 
 Supporting artifacts:
