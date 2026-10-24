@@ -75,7 +75,7 @@
 
 ## 结束状态（2026-10-25T02:00+08:00）
 
-- 最终 HEAD：`fe1c040`；工作树干净。
+- 最终 HEAD：以 `git log --oneline -1` 为准（本记录随最终提交；代码/证据 HEAD 为 `fe1c040`/`2e59b75`）；工作树干净。
 - 最终门禁：`make verify` 0；全量 race 0；325 顶层（320 PASS + 5 SKIP）/634 含子测试；沙箱 E2E 4/4（最终树）；TLS 26/26（R5.1 历史证据）；Docker 不可用 → 容器运行 **NOT_RUN**。
 - 清理：本地 Keycloak/Mailpit 已停止；无测试容器/网络/卷；发现并终止了一个**遗留的早期 R0 smoke 进程**（`127.0.0.1:8799`，4h51m，非本轮启动）及其 `go run` 子进程，并删除其 `/tmp/onboard-smoke` 临时目录；复查无 `onboardd`/ingress 监听。
 - 未 push/merge/release/deploy，未启动/安装 Docker，未调用真实 Cloudflare/GitHub/WorkBuddy，未修改 DNS/Worker/D1/生产反代。
