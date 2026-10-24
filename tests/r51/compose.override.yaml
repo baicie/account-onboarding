@@ -1,0 +1,20 @@
+# R5.1 isolated compose override. Used only with a temporary project name and
+# temporary data/secrets directories; never applied to the default project.
+services:
+  onboarding:
+    image: ${R51_IMAGE:?set R51_IMAGE to the test image id/tag}
+    ports: !override
+      - "127.0.0.1:28788:8788"
+    volumes: !override
+      - "${R51_DATA:?set R51_DATA to a temporary data directory}:/app/data"
+    secrets:
+      - source: onboarding_master_key
+        target: onboarding_master_key
+      - source: onboard_admin_token
+        target: onboard_admin_token
+
+secrets:
+  onboarding_master_key:
+    file: ${R51_MASTER_KEY:?set R51_MASTER_KEY to a temporary 32-byte key file}
+  onboard_admin_token:
+    file: ${R51_ADMIN_TOKEN:?set R51_ADMIN_TOKEN to a temporary token file}

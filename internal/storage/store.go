@@ -56,12 +56,17 @@ type Options struct {
 	// TransitionValidator is called inside the commit transaction to enforce the
 	// workflow state machine. It must reject unknown edges.
 	TransitionValidator func(from, to string) error
+	// SkipInstanceLock disables the single-writer file lock. It exists for
+	// read-only tooling and migration tests that deliberately open a second
+	// handle; production code must never set it.
+	SkipInstanceLock bool
 }
 
 // Store is the SQLite persistence layer.
 type Store struct {
 	writeDB  *sql.DB
 	readDB   *sql.DB
+	lock     *instanceLock
 	path     string
 	hmacKey  []byte
 	redactor *security.Redactor
@@ -92,8 +97,23 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	writeDSN := dsn(opts.Path, true)
 	readDSN := dsn(opts.Path, false)
 
+	var lock *instanceLock
+	var err error
+	if !opts.SkipInstanceLock && opts.Path != ":memory:" {
+		lock, err = acquireInstanceLock(opts.Path)
+		if err != nil {
+			return nil, err
+		}
+	}
+	releaseLock := func() {
+		if lock != nil {
+			lock.release()
+			lock = nil
+		}
+	}
 	writeDB, err := sql.Open("sqlite3", writeDSN)
 	if err != nil {
+		releaseLock()
 		return nil, fmt.Errorf("storage: open write db: %w", err)
 	}
 	writeDB.SetMaxOpenConns(1)
@@ -101,12 +121,14 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	writeDB.SetConnMaxLifetime(0)
 	if err := writeDB.PingContext(ctx); err != nil {
 		writeDB.Close()
+		releaseLock()
 		return nil, fmt.Errorf("storage: ping write db: %w", err)
 	}
 
 	readDB, err := sql.Open("sqlite3", readDSN)
 	if err != nil {
 		writeDB.Close()
+		releaseLock()
 		return nil, fmt.Errorf("storage: open read db: %w", err)
 	}
 	readDB.SetMaxOpenConns(opts.ReadConns)
@@ -115,12 +137,14 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if err := readDB.PingContext(ctx); err != nil {
 		writeDB.Close()
 		readDB.Close()
+		releaseLock()
 		return nil, fmt.Errorf("storage: ping read db: %w", err)
 	}
 
 	s := &Store{
 		writeDB:  writeDB,
 		readDB:   readDB,
+		lock:     lock,
 		path:     opts.Path,
 		hmacKey:  append([]byte(nil), opts.HMACKey...),
 		redactor: opts.Redactor,
@@ -150,6 +174,10 @@ func (s *Store) Close() error {
 	}
 	if s.readDB != nil {
 		errs = append(errs, s.readDB.Close())
+	}
+	if s.lock != nil {
+		s.lock.release()
+		s.lock = nil
 	}
 	return errors.Join(errs...)
 }

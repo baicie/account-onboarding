@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -183,5 +184,31 @@ func TestHealthProbesSessionRevocationTable(t *testing.T) {
 	}
 	if err := degraded.RevokeSession(ctx, "sid", time.Now(), time.Now().Add(time.Hour)); err == nil {
 		t.Fatal("revocation succeeded without the revocation table")
+	}
+}
+
+// TestSingleWriterInstanceLock enforces the documented single-instance contract:
+// a second Store on the same database path is refused while the first is open,
+// and is accepted again after Close. The kernel releases the lock on process
+// death (verified at the process level in tests/r51/failure_modes.sh).
+func TestSingleWriterInstanceLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "single.sqlite")
+	first := openSessionStore(t, path)
+	second, err := storage.Open(context.Background(), storage.Options{
+		Path: path, HMACKey: []byte("session-test-key"), Redactor: security.NewRedactor(),
+	})
+	if err == nil {
+		second.Close()
+		t.Fatal("second Store acquired the same database while the first was open")
+	}
+	if !strings.Contains(err.Error(), "single-writer") {
+		t.Fatalf("unexpected lock error: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again := openSessionStore(t, path)
+	if err := again.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

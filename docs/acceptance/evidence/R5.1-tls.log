@@ -1,0 +1,27 @@
+PASS TLS ingress and app started on loopback
+PASS TLS health 200 with test CA (localhost SAN)
+PASS openssl verify server cert against test CA
+PASS wrong hostname rejected (curl exit 35)
+PASS negotiated TLSv1.3
+PASS TLS 1.1 rejected (openssl exit 1)
+PASS HTTP 308 to HTTPS (308 https://localhost:18443/healthz)
+PASS login over HTTPS 303
+PASS session cookie has Secure
+PASS session cookie has HttpOnly
+PASS session cookie has SameSite=Strict
+PASS authenticated dashboard over HTTPS 200
+PASS CSRF token present
+PASS logout without CSRF rejected 403
+PASS cross-origin logout rejected 403
+PASS valid logout 303
+PASS old cookie rejected immediately
+tests/r51/tls_acceptance.sh: line 133: 27903 Killed: 9               ( cd "$ROOT" && exec env ONBOARD_LISTEN="127.0.0.1:$APPPORT" ONBOARD_DB_PATH="$WORK/state.sqlite" ONBOARD_MASTER_KEY_FILE="$WORK/master.key" ONBOARD_ADMIN_TOKEN_FILE="$WORK/admin.token" ONBOARD_FAKE_PROVIDERS=true ONBOARD_TRUST_PROXY_HEADERS=true ONBOARD_DOMAINS=moonbyte.test ONBOARD_SENDER_ALLOWLIST=moonbyte.test ONBOARD_LOG_LEVEL=warn ./bin/onboardd ) > "$WORK/onboardd-1.log" 2>&1
+PASS revocation survives SIGKILL + restart over TLS
+PASS fresh login after crash 303
+PASS forged X-Forwarded-Proto cannot downgrade Secure
+PASS untrusted X-Forwarded-Proto ignored (no Secure on plain HTTP)
+PASS non-loopback listen refused (exit 1)
+PASS all test listeners are loopback-only
+PASS X-Frame-Options DENY present
+PASS CSP present on login page
+SUMMARY pass=25 fail=0

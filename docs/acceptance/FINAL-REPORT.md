@@ -28,12 +28,13 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R3** real existing identities | **PASS (contract/fake)** | GitHub official `/user/emails` adapter; permission-gated WorkBuddy adapter default-disabled with 410 → `REAUTHORIZE_REQUIRED`; live **NOT_RUN** |
 | **R4** reliability/security closure | **PARTIAL** | backup/restore (incl. encrypted snapshots), key rotation, rate limiting, viewer RBAC, CSRF/CSP/SSRF audit, redaction scan, load evidence **PASS**; TLS ingress, Docker build/run, GHCR and real live tests **NOT_RUN**; no P0 |
 | **R5** release readiness | **LOCAL_RC_READY** (2026-10-24) | R5-A durable SQLite session revocation (restart/并发/过期/迁移) **PASS**; R5-B Docker **NOT_RUN** (no daemon); R5-C Cloudflare live **NOT_RUN** (no authorization/credentials, read-only audit PASS); R5-D identity/platform boundaries **PASS**, live **NOT_RUN**; see [`R5.md`](R5.md) |
+| **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 25/25** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **Independent review** | **PASS (scoped)** after fixes | first pass PARTIAL (P0=0, P1=3, P2=11); two code-level P1s fixed and independently re-verified, TLS ingress reclassified as deployment `NOT_RUN`; see [`REVIEW.md`](REVIEW.md) §8 |
 
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 311 top-level tests (306 PASS + 5 opt-in SKIP) / 620 passes including subtests, 0 FAIL** (after R5 post-review fixes, HEAD measured)
+- `go test ./... -count=1` → **29 packages (14 with test files), 315 top-level tests (310 PASS + 5 opt-in SKIP) / 624 passes including subtests, 0 FAIL** (after R5.1)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -249,7 +250,16 @@ commands are in [`R5.md`](R5.md).
 Release environment is local sandbox only; Docker build/run, TLS ingress,
 GHCR/publish, Cloudflare/GitHub/WorkBuddy live remain **NOT_RUN**.
 
-## 12. Post-review verification
+## 12. R5.1 container & TLS reliability (2026-10-24)
+
+| Gate | Result | Evidence |
+|---|---|---|
+| R5.1-C local HTTPS ingress | **PASS** | `tests/r51/tls_acceptance.sh` exit 0, **25/25**: test CA + hostname verification, TLS 1.3 negotiated / TLS 1.1 refused, HTTP 308→HTTPS, Secure+HttpOnly+SameSite=Strict, CSRF/Origin 403, logout+replay rejection, revocation survives SIGKILL+restart, forged Forwarded/X-Forwarded-* cannot downgrade or spoof, loopback-only listeners, non-loopback listen refused; [`R5.1.md`](R5.1.md) §2 |
+| R5.1-B Docker runtime | **NOT_RUN** | `docker info`/`docker build` exit 1 (daemon unavailable); `docker compose config` exit 0 (static only); isolated `docker_acceptance.sh` prepared (exit 3 = NOT_RUN); **no image, no digest** |
+| R5.1-D reliability | container **NOT_RUN**; process-level **PASS** | single-writer `flock` lock (second instance refused, released on SIGKILL), missing revocation table `/readyz` 503 + cookie fail-closed, missing master key fail-closed, sandbox E2E 4/4 PASS (crash/idempotency/cancel) |
+| Verdict | **DEPLOYMENT_BLOCKED** | TLS passed, but Docker/container acceptance is the remaining deployment blocker; **not CONTAINER_RC_READY / not LIVE_READY** |
+
+## 13. Post-review verification
 
 The independent reviewer re-verified the fixed tree and updated
 [`REVIEW.md`](REVIEW.md) with the post-review evidence and final verdict:

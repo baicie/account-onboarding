@@ -1,0 +1,8 @@
+PASS first instance healthy
+PASS second instance refused while first holds the DB (single-writer)
+PASS lock released after SIGKILL; fresh instance healthy
+PASS readyz true after crash restart
+PASS missing master key fails closed (exit 1)
+PASS missing revocation table -> /readyz 503 (ready:false)
+PASS cookie session rejected (303 login) when revocation table is missing
+SUMMARY pass=7 fail=0
