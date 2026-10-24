@@ -38,6 +38,9 @@ type env struct {
 	engine *workflow.Engine
 	reg    *provider.Registry
 	world  *fake.World
+	sec    *secrets.Service
+	log    *slog.Logger
+	signer *security.SessionSigner
 }
 
 func newEnv(t *testing.T, mutate func(*config.Config, *provider.Registry)) *env {
@@ -111,7 +114,8 @@ func newEnv(t *testing.T, mutate func(*config.Config, *provider.Registry)) *env 
 		engine.Stop()
 		_ = store.Close()
 	})
-	return &env{ts: ts, client: client, cfg: cfg, store: store, engine: engine, reg: reg, world: world}
+	return &env{ts: ts, client: client, cfg: cfg, store: store, engine: engine, reg: reg,
+		world: world, sec: sec, log: log, signer: signer}
 }
 
 func (e *env) request(t *testing.T, method, path string, body any, token string, headers map[string]string) (int, []byte) {

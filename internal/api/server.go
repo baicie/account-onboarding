@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -42,9 +41,6 @@ type Server struct {
 
 	generalLimiter *rateLimiter
 	loginLimiter   *rateLimiter
-
-	revokedMu sync.Mutex
-	revoked   map[string]int64 // session id -> unix expiry
 }
 
 // New builds the HTTP server.
@@ -75,7 +71,6 @@ func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 		pages:          pages,
 		generalLimiter: newRateLimiter(cfg.RateLimitPerMinute, time.Minute),
 		loginLimiter:   newRateLimiter(cfg.LoginRateLimitPerMinute, time.Minute),
-		revoked:        map[string]int64{},
 	}, nil
 }
 
@@ -266,7 +261,21 @@ func (s *Server) authenticate(r *http.Request) (authInfo, bool) {
 		return authInfo{}, false
 	}
 	csrf, sessionID, ok := s.Signer.VerifyFull(cookie.Value, time.Now().Unix())
-	if !ok || s.sessionRevoked(sessionID) {
+	if !ok {
+		return authInfo{}, false
+	}
+	if s.Store == nil {
+		return authInfo{}, false
+	}
+	revoked, err := s.Store.SessionRevoked(r.Context(), sessionID, time.Now())
+	if err != nil {
+		// Fail closed: a session must never be accepted when the durable
+		// revocation state cannot be read.
+		s.Log.Warn("session revocation lookup failed; rejecting session",
+			"error_class", "storage_unavailable")
+		return authInfo{}, false
+	}
+	if revoked {
 		return authInfo{}, false
 	}
 	return authInfo{Actor: "operator", Role: "admin", Via: "cookie", CSRF: csrf, SessionID: sessionID}, true
@@ -454,39 +463,6 @@ func (s *Server) summarizeFor(ctx context.Context, run storage.Run, role string)
 		sum.AuthorizationURL = ""
 	}
 	return sum
-}
-
-// revokeSession records a session id until its natural expiry.
-func (s *Server) revokeSession(sessionID string, expiresAt time.Time) {
-	if sessionID == "" {
-		return
-	}
-	s.revokedMu.Lock()
-	defer s.revokedMu.Unlock()
-	now := time.Now()
-	for sid, exp := range s.revoked {
-		if exp <= now.Unix() {
-			delete(s.revoked, sid)
-		}
-	}
-	s.revoked[sessionID] = expiresAt.Unix()
-}
-
-func (s *Server) sessionRevoked(sessionID string) bool {
-	if sessionID == "" {
-		return true
-	}
-	s.revokedMu.Lock()
-	defer s.revokedMu.Unlock()
-	exp, ok := s.revoked[sessionID]
-	if !ok {
-		return false
-	}
-	if exp <= time.Now().Unix() {
-		delete(s.revoked, sessionID)
-		return false
-	}
-	return true
 }
 
 // handleHealthz is intentionally unauthenticated and secret-free.

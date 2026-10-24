@@ -1,0 +1,12 @@
+PASS first onboardd start + /healthz 200
+PASS UI login 303
+PASS session cookie issued
+PASS authenticated dashboard 200
+PASS CSRF token present
+PASS logout 303
+PASS revocation row persisted (rows=1)
+PASS first onboardd stopped
+PASS second onboardd start + /healthz 200
+PASS old cookie rejected after restart (303 /ui/login)
+PASS fresh login after restart 303
+SUMMARY pass=11 fail=0

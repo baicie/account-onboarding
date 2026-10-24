@@ -207,11 +207,17 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		s.renderLogin(w, http.StatusUnauthorized, "Invalid operator token.")
 		return
 	}
-	value, _, _, err := s.Signer.IssueWithID(time.Now().Unix())
+	value, _, sessionID, err := s.Signer.IssueWithID(time.Now().Unix())
 	if err != nil {
 		s.renderLogin(w, http.StatusInternalServerError, "Could not create a session.")
 		return
 	}
+	// Opportunistically prune expired revocations so the table stays bounded
+	// without a separate maintenance process.
+	if _, err := s.Store.PruneSessionRevocations(r.Context(), time.Now()); err != nil {
+		s.Log.Warn("prune session revocations failed", "error_class", "storage")
+	}
+	_ = sessionID
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    value,
@@ -236,10 +242,22 @@ func (s *Server) renderLogin(w http.ResponseWriter, status int, message string) 
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	// Revoke the session server-side so a copied cookie cannot be replayed
-	// after an explicit logout, even though the cookie itself is HttpOnly.
-	if info, ok := authInfoFrom(r); ok && info.SessionID != "" {
-		s.revokeSession(info.SessionID, time.Now().Add(s.Cfg.SessionTTL))
+	// Revoke the session durably before clearing the cookie: a copied cookie
+	// must not be re-authorised after logout, even across a process restart.
+	info, _ := authInfoFrom(r)
+	if info.SessionID == "" {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	if s.Store == nil {
+		http.Error(w, "session store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	now := time.Now()
+	if err := s.Store.RevokeSession(r.Context(), info.SessionID, now, now.Add(s.Cfg.SessionTTL)); err != nil {
+		s.Log.Error("revoke session failed; logout aborted", "error_class", "storage")
+		http.Error(w, "could not revoke the session; retry the logout", http.StatusInternalServerError)
+		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookieName, Value: "", Path: "/ui", HttpOnly: true, MaxAge: -1,
