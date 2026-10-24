@@ -14,6 +14,7 @@
   `git ls-tree -r HEAD | sha256sum` = `88a84a3879a2e86b0904317bf370f36084c6dcbde2074c927b90d67837cef123`（详见 §8）。
   ⚠️ 审查期间工作树出现**非我产生的**未提交修改 `docs/acceptance/R5.1.md`（Lead 于 00:13 补了 §4.2 两行进程级证据、修正 §8 的 HEAD 表述）；
   我的冻结以 **HEAD 树**为准，并在 §7 区分"已提交版 / 工作树版"。
+- **最终复核（2026-10-25T00:26–00:45+08:00）：§9 关闭全部 4 项 P2（HEAD `db2619a`）；最终判定见 §10。**
 
 > 边界：未 push/merge/deploy、未 start Docker/安装软件/改宿主机配置、未调用真实 Cloudflare/GitHub/WorkBuddy，
 > 未修改系统信任库；测试 CA/证书仅落在 gitignored 的 `.sandbox/r51/`。审查结束时无遗留监听进程。
@@ -174,7 +175,7 @@ TLS 验收是**真实执行、真实验证**（测试 CA + 主机名 + 协议 + 
 
 ---
 
-## 8. 冻结与哈希
+## 8. 冻结与哈希（首轮快照，HEAD `9eed291`；最终冻结见 §9.1）
 
 | 项 | 值 |
 |---|---|
@@ -204,20 +205,72 @@ TLS 验收是**真实执行、真实验证**（测试 CA + 主机名 + 协议 + 
 
 ---
 
-## 9. 结论：`DEPLOYMENT_BLOCKED` 是否成立？
+## 9. Post-review P2 closure (Lead fixes)（HEAD `db2619a`）
 
-**成立，且必须保持。** 逐项判定：
+> 本轮只做复核，未改代码/配置/他人文档。首轮报告（§1–§8）保持不变；本节关闭 §1.2 的 4 项 P2 + §1.3 的 P3 清理。
+
+### 9.1 冻结与变更范围
+
+| 项 | 值 |
+|---|---|
+| HEAD | `db2619a60c63a85f686c42c4f9d148b8826ef87b`（base：首轮 `9eed291`） |
+| 工作树 | 冻结时 `git status --porcelain` 为空（干净）；本报告追加 §9/§10 后唯一变更即本文件（未提交，待 Lead 收口） |
+| HEAD 树清单 | `git ls-tree -r HEAD \| sha256sum` = `d8c6247aa909188577c5e73bd110a8baa3da42c2ab118b9f2fad61f1703fe060` |
+| 差异 | 12 文件：`.gitignore`、`FINAL-REPORT.md`、`R5.1.md`、本报告（被收录）、2 份证据、`store.go`、3 个 `tests/r51` 脚本、ingress 2 文件 |
+| 关键 blob hash | `store.go 3348858a`；`ingress/main.go 7b150459`；`ingress/main_test.go b3525fd0`；`docker_acceptance.sh 6ee9648b`；`failure_modes.sh 2fe4777b`；`tls_acceptance.sh e75374b7`；`.gitignore 53e9ab74`；`R5.1.md 5785f059`；`FINAL-REPORT.md 5669c871`；`R5.1-tls.log db23c81e`；`R5.1-docker-probe.log d8c00b5c` |
+
+### 9.2 P2 逐项关闭核验
+
+| 编号 | Lead 修复 | 我的独立复核 | 状态 |
+|---|---|---|---|
+| **P2-1** 备份调用参数 | `docker_acceptance.sh` 改为 `backup.sh --db … --out-dir … --encrypt --keyring …`，`verify_backup.sh <enc> --keyring …` | `bash -n` 全脚本 **0**；按新参数对**真实 DB** 复跑：`backup.sh` **exit 0**（生成 `.sqlite.enc`）、`verify_backup.sh` **exit 0**（`verify_backup: OK`）；旧的"位置参数"形式已不存在 | **CLOSED** |
+| **P2-2** 跳转 Host 验证 | 新增 `redirectHostAllowed`（loopback allowlist），非允许 Host → **400**；单测 + TLS 脚本加 forged-Host 断言 | 我实测：`localhost`/`127.0.0.1`/`[::1]`/`localhost:18080` → **308 且目标正确**；`evil.example`/`localhost.evil.com`/`0.0.0.0` → **400 无 Location**；TLS 脚本 **26/26 PASS**（新增 `PASS forged Host … 400`）；ingress 单测 3/3 PASS（含 `evil.example`→400） | **CLOSED** |
+| **P2-3** 单写锁运维语义 | `SkipInstanceLock` 移除（锁无条件启用，`:memory:` 除外）；R5.1.md §4.1 增加滚动升级/迁移/backup、restore 停机语义与 advisory 边界；§6 新增 4 条风险行 | `grep -rn SkipInstanceLock` **0 命中**；`store.go` 中 `if opts.Path != ":memory:"` 无条件加锁；服务运行时 `onboardd migrate` 仍被拒绝（我复跑：**exit 1**，`another onboardd instance already owns … (single-writer only)`）；failure_modes **7/7**（第二实例拒绝、SIGKILL 释放仍成立）；四行风险（旧版双写窗口/migrate-restore fail-closed/advisory 边界/Windows 不支持）均已写入 | **CLOSED** |
+| **P2-4** override 命令可复现 | R5.1.md §1 给出完整 `R51_*` 命令并注明"无 env → 1 / 有 env → 0"；probe 日志记录命令与两个退出码 | `R5.1-docker-probe.log` 含 `$ docker info`→`DOCKER_INFO_EXIT=1`、`$ docker build`→`DOCKER_BUILD_EXIT=1`、`COMPOSE_CONFIG_EXIT=0`、stdin 无 env→`OVERRIDE_CONFIG_NO_ENV_EXIT=1`、带 env→`OVERRIDE_CONFIG_WITH_ENV_EXIT=0`；我此前/本轮实测两个 exit code 与日志一致 | **CLOSED** |
+| **P3 清理** | 时间戳补全；TLS 日志去 `Killed: 9`；`.gitignore` 加锁文件；删无意义断言/未用 `env_for()`/`ONBOARD_DOMAIN` typo；移除 `SkipInstanceLock` | `grep -c "Killed: 9" R5.1-tls.log` = **0**；`R5.1.md:3` 时间戳完整；`.gitignore` 含 `*.sqlite.lock`/`*.db.lock`/`*.sqlite3.lock`/`*.lock`；ingress 单测无 `strings.Contains("ok","ok")`；`failure_modes.sh` 无 `env_for`；`docker_acceptance.sh` 无 `ONBOARD_DOMAIN=`（单数） | **CLOSED** |
+
+### 9.3 本轮命令与真实退出码（HEAD `db2619a`）
+
+| # | 命令 | 退出码 | 结果 |
+|---|---|---:|---|
+| 1 | `bash -n tests/r51/*.sh`（3 个脚本） | **0/0/0** | 语法通过 |
+| 2 | `bash tests/r51/tls_acceptance.sh` | **0** | **26/26 PASS**（含 `PASS forged Host on HTTP listener rejected 400`） |
+| 3 | `bash tests/r51/failure_modes.sh` | **0** | **7/7 PASS** |
+| 4 | `go test ./tests/r51/ingress/ -count=1` | **0** | 3/3 PASS（含 forged Host→400 断言） |
+| 5 | `go test ./internal/storage/ -run TestSingleWriterInstanceLock -count=1` | **0** | PASS |
+| 6 | `make verify` | **0** | fmt + vet + 全量 race + build |
+| 7 | `go test ./... -race -count=1` | **0** | 29 包全绿 |
+| 8 | 计数：`go test ./... -v` | 0 | **315 顶层（310 PASS + 5 SKIP）/ 624 PASS 含子测试（629 RUN）/ 0 FAIL** —— 与文档一致 |
+| 9 | `docker info` / `docker build` / `docker images` | **1 / 1 / 1** | daemon 不可用（诚实 NOT_RUN） |
+| 10 | `bash tests/r51/docker_acceptance.sh` | **3** | `NOT_RUN`（未构建/未启动容器） |
+| 11 | 本地真实 DB：`backup.sh --db … --out-dir … --encrypt --keyring …` / `verify_backup.sh` | **0 / 0** | 加密快照生成并校验通过（P2-1 修复有效） |
+| 12 | 服务运行时 `onboardd migrate`（同一 DB） | **1** | `single-writer` 拒绝（新语义，文档已写） |
+| 13 | 我的单写/ingress 快速探针（Host 边界 7 例 + 锁） | 手动核对 | 允许 Host→308；`evil.example`/`localhost.evil.com`/`0.0.0.0`→400；无遗留监听 |
+
+### 9.4 残余 P3（不阻塞，建议顺手改）
+
+1. `README.md:42` 仍写 "TLS ingress **PASS (25/25)**"——应为 **26/26**（同一轮 FINAL-REPORT 的 §11 行已更新，§12 表格行仍 25/25）。
+2. `docs/acceptance/FINAL-REPORT.md:257`（§12 表）仍写 **25/25**——应为 26/26（正文其余已更新）。
+3. `docs/acceptance/R5.1.md:56` 小节标题仍写 "（… exit 0，25/25 PASS）"——正文/SUMMARY 已是 26；建议同步。
+4. `docs/acceptance/R5.1.md` 头部仍保留 "R5.1 代码提交：见 `git log --oneline -1`（报告文档随后一个提交）" 与 "最终代码 HEAD：见文末 §8（提交后填写）"——实际代码/文档同属一个提交，§8 现为"审查后 P2 收口"、§9 才是提交与冻结；建议改为明确 `db2619a` 或直接写"见 §9"。
+5. `R5.1.md` §9 提交与冻结写 "审查后 P2 收口见 `9eed291` 之后的提交"——可顺手写死 `db2619a`，便于审计。
+
+---
+
+## 10. 结论（最终复核，HEAD `db2619a`）：`DEPLOYMENT_BLOCKED` 是否成立？
+
+**成立，且必须保持。** 逐项判定（相对首轮仅更新"P2 已关闭"与 TLS 26/26）：
 
 | 判定 | 是否成立 | 依据 |
 |---|---|---|
-| **TLS ingress PASS** | **成立（限"隔离 loopback 测试 ingress"）** | 我独立复跑 25/25：真实测试 CA + 主机名校验（错误 host 被拒）+ TLS1.2 下限（1.1/1.0 被拒）+ HTTP 308 + Secure/HttpOnly/SameSite + CSRF/Origin 403 + SIGKILL 后重放拒绝 + 客户端转发头被剥离/覆盖 + 非回环 listen/upstream 拒绝。无 `-k`/skip-verify。 |
-| **Docker/容器 NOT_RUN** | **成立** | `docker info/build/images/ps` 全 exit 1；无守护进程即无镜像/digest；`docker_acceptance.sh` exit **3**；唯一容器证据是 `compose config` 静态 exit 0。**没有**把静态检查/进程级测试写成容器 PASS。 |
-| **不是 `CONTAINER_RC_READY`** | **成立** | 未构建镜像、未起容器、未做容器级健康检查/非 root/只读/卷持久化/SIGKILL/重建/故障注入；且容器门禁脚本自身有 P2-1，修复前不能执行。 |
+| **TLS ingress PASS** | **成立（限"隔离 loopback 测试 ingress"）** | 我独立复跑 **26/26**：真实测试 CA + 主机名校验（错误 host 被拒）+ TLS1.2 下限（1.1/1.0 被拒）+ HTTP 308 + **伪造 Host → 400（无开放重定向）** + Secure/HttpOnly/SameSite + CSRF/Origin 403 + SIGKILL 后重放拒绝 + 客户端转发头被剥离/覆盖 + 非回环 listen/upstream 拒绝。无 `-k`/skip-verify。 |
+| **Docker/容器 NOT_RUN** | **成立** | `docker info/build/images` 全 exit 1；无守护进程即无镜像/digest；`docker_acceptance.sh` exit **3**；唯一容器证据是 `compose config` 静态 exit 0。**没有**把静态检查/进程级测试写成容器 PASS。 |
+| **不是 `CONTAINER_RC_READY`** | **成立** | 未构建镜像、未起容器、未做容器级健康检查/非 root/只读/卷持久化/SIGKILL/重建/故障注入；容器门禁脚本虽已修正（P2-1）但**仍从未被真正执行**（exit 3 NOT_RUN）。 |
 | **不是 `LIVE_READY`** | **成立** | 无任何真实 Cloudflare/GitHub/WorkBuddy 成功证据；TLS 只到测试 ingress，生产反代/域名/HSTS/证书轮换均未做。 |
-| **R5.1 = PASS（本轮已执行范围）** | **成立** | TLS + 单写锁 + 进程级可靠性均可复现；无 P0/P1。**但**：P2-1 必须先修再跑容器门禁；P2-2 修前不要把该 ingress 模式复制到生产；P2-3 的升级顺序必须写进部署文档。 |
+| **R5.1 = PASS（本轮已执行范围）** | **成立（维持）** | TLS 26/26 + 单写锁 + 进程级可靠性均可复现；首轮 4 项 P2 全部关闭（§9）；无新增 P0/P1/P2。**但**：容器验收仍 NOT_RUN（daemon 缺失），修复后的 `docker_acceptance.sh` 必须在有 daemon 的隔离环境真正跑过才能谈 `CONTAINER_RC_READY`。 |
 
-**未发现任何声明被实质夸大**：R5.1 对 "测试 ingress 非生产"、"Docker 全部 NOT_RUN"、"无镜像/digest"、
-"容器级故障注入 NOT_RUN（进程级仅支持性证据）"均有明确限定，与实测一致。
+**未发现任何声明被实质夸大**：R5.1 对"测试 ingress 非生产"、"Docker 全部 NOT_RUN"、"无镜像/digest"、
+"容器级故障注入 NOT_RUN（进程级仅支持性证据）"均有明确限定，与实测一致；P2 修复后的新证据（26/26、备份 0/0）也可复现。
 
 **残余/供应链风险（供下一阶段）**：基础镜像仅 tag 未 pin digest、无签名/SBOM/漏洞扫描；生产 ingress（ACME/HSTS/mTLS/WAF/DNS）未落地；
 容器内非 root 写 bind-mount 的 UID 映射与跨容器 flock 语义未实测；单写锁为协作式 advisory 锁（旧版本不参与、锁文件可被有权限者删除）；
