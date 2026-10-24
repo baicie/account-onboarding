@@ -28,13 +28,14 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R3** real existing identities | **PASS (contract/fake)** | GitHub official `/user/emails` adapter; permission-gated WorkBuddy adapter default-disabled with 410 → `REAUTHORIZE_REQUIRED`; live **NOT_RUN** |
 | **R4** reliability/security closure | **PARTIAL** | backup/restore (incl. encrypted snapshots), key rotation, rate limiting, viewer RBAC, CSRF/CSP/SSRF audit, redaction scan, load evidence **PASS**; TLS ingress, Docker build/run, GHCR and real live tests **NOT_RUN**; no P0 |
 | **R5** release readiness | **LOCAL_RC_READY** (2026-10-24) | R5-A durable SQLite session revocation (restart/并发/过期/迁移) **PASS**; R5-B Docker **NOT_RUN** (no daemon); R5-C Cloudflare live **NOT_RUN** (no authorization/credentials, read-only audit PASS); R5-D identity/platform boundaries **PASS**, live **NOT_RUN**; see [`R5.md`](R5.md) |
+| **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **Independent review** | **PASS (scoped)** after fixes | first pass PARTIAL (P0=0, P1=3, P2=11); two code-level P1s fixed and independently re-verified, TLS ingress reclassified as deployment `NOT_RUN`; see [`REVIEW.md`](REVIEW.md) §8 |
 
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 315 top-level tests (310 PASS + 5 opt-in SKIP) / 624 passes including subtests, 0 FAIL** (after R5.1)
+- `go test ./... -count=1` → **29 packages (14 with test files), 319 top-level tests (314 PASS + 5 opt-in SKIP) / 628 passes including subtests, 0 FAIL** (after R5.1-B readiness fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -250,12 +251,12 @@ commands are in [`R5.md`](R5.md).
 Release environment is local sandbox only; Docker build/run, TLS ingress,
 GHCR/publish, Cloudflare/GitHub/WorkBuddy live remain **NOT_RUN**.
 
-## 12. R5.1 container & TLS reliability (2026-10-24)
+## 12. R5.1 / R5.1-B container & TLS reliability (2026-10-24..25)
 
 | Gate | Result | Evidence |
 |---|---|---|
 | R5.1-C local HTTPS ingress | **PASS** | `tests/r51/tls_acceptance.sh` exit 0, **26/26**: test CA + hostname verification, TLS 1.3 negotiated / TLS 1.1 refused, HTTP 308→HTTPS, Secure+HttpOnly+SameSite=Strict, CSRF/Origin 403, logout+replay rejection, revocation survives SIGKILL+restart, forged Forwarded/X-Forwarded-* cannot downgrade or spoof, forged Host on the HTTP redirect rejected 400, loopback-only listeners, non-loopback listen refused; [`R5.1.md`](R5.1.md) §2 |
-| R5.1-B Docker runtime | **NOT_RUN** | `docker info`/`docker build` exit 1 (daemon unavailable); `docker compose config` exit 0 (static only); isolated `docker_acceptance.sh` prepared (exit 3 = NOT_RUN); **no image, no digest**; post-review P2s closed (backup args, open-redirect Host allowlist, lock ops semantics, reproducible override command) |
+| R5.1-B Docker runtime | **NOT_RUN** | daemon unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1); no image/digest/container; `docker compose config` exit 0 (static); hardened isolated script exit 3 = NOT_RUN; JSON-keyring + `/readyz`-based HEALTHCHECK readiness fixes locally tested (6/6); post-review P2s (backup args, redirect Host allowlist, lock ops semantics, reproducible override) closed; **CONTAINER_RC_READY not claimed** — [`R5.1-B.md`](R5.1-B.md) |
 | R5.1-D reliability | container **NOT_RUN**; process-level **PASS** | unconditional single-writer `flock` lock (second instance refused, released on SIGKILL; rolling-upgrade/migrate stop requirements documented), missing revocation table `/readyz` 503 + cookie fail-closed, missing master key fail-closed, sandbox E2E 4/4 PASS (crash/idempotency/cancel) |
 | Verdict | **DEPLOYMENT_BLOCKED** | TLS passed, but Docker/container acceptance is the remaining deployment blocker; **not CONTAINER_RC_READY / not LIVE_READY** |
 

@@ -1,0 +1,73 @@
+name: account-onboarding
+services:
+  onboarding:
+    build:
+      context: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding
+      dockerfile: Dockerfile
+    cap_drop:
+      - ALL
+    cpus: 0.5
+    environment:
+      ONBOARD_ADMIN_TOKEN_FILE: /run/secrets/onboard_admin_token
+      ONBOARD_ALLOW_PUBLIC_LISTEN: "1"
+      ONBOARD_CLOUDFLARE_BASE_URL: https://api.moonbyte.top
+      ONBOARD_CLOUDFLARE_ENABLED: "false"
+      ONBOARD_DB_PATH: /app/data/state.sqlite
+      ONBOARD_FAKE_PROVIDERS: "false"
+      ONBOARD_GITHUB_ENABLED: "false"
+      ONBOARD_KEYCLOAK_ENABLED: "false"
+      ONBOARD_LISTEN: 0.0.0.0:8788
+      ONBOARD_LOG_LEVEL: info
+      ONBOARD_MAILPIT_ENABLED: "false"
+      ONBOARD_MASTER_KEY_FILE: /run/secrets/onboarding_master_key
+      ONBOARD_MAX_CONCURRENCY: "2"
+      ONBOARD_MODE: sandbox
+      ONBOARD_OIDC_ENABLED: "false"
+      ONBOARD_WORKBUDDY_ENABLED: "false"
+    healthcheck:
+      test:
+        - CMD
+        - /app/onboardd
+        - healthcheck
+      timeout: 5s
+      interval: 30s
+      retries: 3
+      start_period: 10s
+    image: account-onboarding:local
+    mem_limit: "268435456"
+    networks:
+      default: null
+    pids_limit: 128
+    ports:
+      - mode: ingress
+        host_ip: 127.0.0.1
+        target: 8788
+        published: "8788"
+        protocol: tcp
+    read_only: true
+    restart: unless-stopped
+    secrets:
+      - source: onboarding_master_key
+        target: /run/secrets/onboarding_master_key
+      - source: onboard_admin_token
+        target: /run/secrets/onboard_admin_token
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid
+    user: 10001:10001
+    volumes:
+      - type: bind
+        source: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/deploy/data
+        target: /app/data
+        bind: {}
+networks:
+  default:
+    name: account-onboarding_default
+secrets:
+  onboard_admin_token:
+    name: account-onboarding_onboard_admin_token
+    file: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/deploy/secrets/onboard_admin_token
+  onboarding_master_key:
+    name: account-onboarding_onboarding_master_key
+    file: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding/deploy/secrets/onboarding_master_key

@@ -12,6 +12,7 @@ package config
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -484,6 +485,9 @@ func DecodeMasterKey(s string) ([]byte, error) {
 	if s == "" {
 		return nil, errors.New("empty master key")
 	}
+	if key, ok, err := decodeKeyringEnvelope(s); ok {
+		return key, err
+	}
 	if len(s) == 32 && !isPrintableHex(s) && !isBase64Only(s) {
 		return []byte(s), nil
 	}
@@ -497,6 +501,38 @@ func DecodeMasterKey(s string) ([]byte, error) {
 		return b, nil
 	}
 	return nil, errors.New("master key must be 32 bytes encoded as raw/hex/base64")
+}
+
+// decodeKeyringEnvelope resolves the current key from a rotation keyring:
+//
+//	{"current":1,"keys":{"1":"<base64 of 32 bytes>", ...}}
+//
+// The second return value reports whether the input looked like a JSON envelope
+// (so malformed envelopes fail closed instead of being tried as raw keys).
+func decodeKeyringEnvelope(s string) ([]byte, bool, error) {
+	if !strings.HasPrefix(s, "{") {
+		return nil, false, nil
+	}
+	var envelope struct {
+		Current int               `json:"current"`
+		Keys    map[string]string `json:"keys"`
+	}
+	if err := json.Unmarshal([]byte(s), &envelope); err != nil {
+		return nil, true, errors.New("master key JSON keyring is not valid JSON")
+	}
+	if envelope.Current <= 0 || len(envelope.Keys) == 0 {
+		return nil, true, errors.New("master key JSON keyring needs current>=1 and at least one key")
+	}
+	encoded, ok := envelope.Keys[strconv.Itoa(envelope.Current)]
+	if !ok {
+		return nil, true, fmt.Errorf("master key JSON keyring has no key version %d", envelope.Current)
+	}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if b, err := enc.DecodeString(encoded); err == nil && len(b) == 32 {
+			return b, true, nil
+		}
+	}
+	return nil, true, fmt.Errorf("master key JSON keyring version %d must be base64 of 32 bytes", envelope.Current)
 }
 
 func isPrintableHex(s string) bool {

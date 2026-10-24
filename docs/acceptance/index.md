@@ -17,6 +17,7 @@ live-platform success.
 | [R5.md](R5.md) | R5 | Release readiness: durable session revocation, Docker/Compose audit, Cloudflare live prep, identity/platform boundaries | **LOCAL_RC_READY / DEPLOYMENT_BLOCKED**; R5-B/R5-C/live **NOT_RUN** |
 | [REVIEW-R5.md](REVIEW-R5.md) | R5 | Independent adversarial review of R5 (PASS, P0=0/P1=0; 8 P2 closed in `a488740`) | see report |
 | [R5.1.md](R5.1.md) | R5.1 | Container & TLS reliability: local HTTPS ingress PASS, Docker runtime NOT_RUN, single-writer lock | **DEPLOYMENT_BLOCKED**; TLS **PASS**, Docker/容器级 **NOT_RUN** |
+| [R5.1-B.md](R5.1-B.md) | R5.1-B | Docker runtime closure attempt: daemon unavailable, container/image **NOT_RUN**, readiness fixes (JSON keyring, readyz healthcheck) | **DEPLOYMENT_BLOCKED**; `CONTAINER_RC_READY` not claimed |
 | [FINAL-REPORT.md](FINAL-REPORT.md) | — | Consolidated delivery report: phase verdicts, acceptance matrix, deviations, residual risks | see report |
 
 Supporting artifacts:

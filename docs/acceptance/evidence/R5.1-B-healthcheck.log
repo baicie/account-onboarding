@@ -1,0 +1,7 @@
+PASS service starts with documented JSON keyring envelope (schema 3)
+PASS /readyz 200 with JSON keyring
+PASS onboardd healthcheck exit 0 when ready
+PASS /readyz 503 when revocation table is missing
+PASS onboardd healthcheck exit 1 when database is degraded
+PASS raw 32-byte master key still accepted
+SUMMARY pass=6 fail=0

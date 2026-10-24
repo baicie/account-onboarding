@@ -1,0 +1,90 @@
+# R5.1-B isolation audit — 2026-10-24T17:04:21Z
+# script: tests/r51/docker_acceptance.sh
+
+## 1. destructive/global commands (comments excluded; must be none)
+(none)
+
+## 2. all docker invocations (isolated by $PROJECT/$IMAGE)
+24:WORK="$ROOT/.sandbox/r51/docker-$ID"
+32:    docker rm -f "$name" >/dev/null 2>&1 || true
+36:    docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" \
+38:  docker image rm "$IMAGE" >/dev/null 2>&1 || true
+59:  docker run -d --name "$name" \
+85:docker build -t "$IMAGE" "$ROOT"
+86:IMG_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+87:ARCH="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$IMAGE")"
+88:IMG_USER="$(docker image inspect --format '{{.Config.User}}' "$IMAGE")"
+97:docker exec "$PROJECT-app" /app/onboardd healthcheck >/dev/null 2>&1 \
+103:docker exec "$PROJECT-app" sh -c 'touch /app/forbidden 2>/dev/null' >/dev/null 2>&1 \
+105:docker inspect --format '{{json .HostConfig.CapDrop}}' "$PROJECT-app" | grep -q 'ALL' && ok "cap_drop ALL" || bad "cap_drop ALL"
+106:docker inspect --format '{{json .HostConfig.SecurityOpt}}' "$PROJECT-app" | grep -q 'no-new-privileges' \
+108:MODES="$(docker exec "$PROJECT-app" stat -c '%a' /run/secrets/onboarding_master_key /run/secrets/onboard_admin_token 2>/dev/null || true)"
+118:docker exec "$PROJECT-app" sh -c 'ls /app/data' | grep -q 'state.sqlite-wal' \
+120:docker inspect --format '{{json .HostConfig.PortBindings}}' "$PROJECT-app" | grep -q '127.0.0.1' \
+140:docker rm -f "$PROJECT-upgrade" >/dev/null 2>&1 || true
+170:docker stop --time 10 "$PROJECT-app" >/dev/null
+171:EXIT_CODE="$(docker inspect --format '{{.State.ExitCode}}' "$PROJECT-app")"
+173:docker start "$PROJECT-app" >/dev/null
+177:docker kill -s KILL "$PROJECT-app" >/dev/null
+178:docker start "$PROJECT-app" >/dev/null
+185:STATE="$(docker inspect --format '{{.State.Status}}' "$PROJECT-app2" 2>/dev/null || echo missing)"
+186:LOGS="$(docker logs "$PROJECT-app2" 2>&1 || true)"
+192:docker rm -f "$PROJECT-app2" >/dev/null 2>&1 || true
+222:docker stop --time 10 "$PROJECT-app" >/dev/null
+232:docker exec "$PROJECT-degraded" /app/onboardd healthcheck >/dev/null 2>&1 \
+234:docker rm -f "$PROJECT-degraded" >/dev/null 2>&1 || true
+238:docker run -d --name "$PROJECT-badkey" --read-only --cap-drop ALL --user 10001:10001 \
+241:docker inspect --format '{{.State.Status}}' "$PROJECT-badkey" | grep -q 'exited' \
+243:docker rm -f "$PROJECT-badkey" >/dev/null 2>&1 || true
+245:docker run -d --name "$PROJECT-badkeydata" --read-only --cap-drop ALL --user 10001:10001 \
+251:docker inspect --format '{{.State.Status}}' "$PROJECT-badkeydata" | grep -q 'exited' \
+253:docker rm -f "$PROJECT-badkeydata" >/dev/null 2>&1 || true
+256:docker run -d --name "$PROJECT-ro" --read-only --cap-drop ALL --user 10001:10001 \
+259:RO_STATE="$(docker inspect --format '{{.State.Status}}' "$PROJECT-ro" 2>/dev/null || echo missing)"
+266:docker rm -f "$PROJECT-ro" >/dev/null 2>&1 || true
+269:docker rm -f "$PROJECT-app" >/dev/null 2>&1 || true
+272:  docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" config >/dev/null \
+276:  docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" up -d >/dev/null \
+279:  C="$(docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" ps --format '{{.Status}}' 2>/dev/null | head -1)"
+283:COUNT="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format '{{.ID}}' | wc -l | tr -d ' ')"
+285:COMPOSE_PORT="$(docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" port onboarding 8788 2>/dev/null || true)"
+289:  docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" down -v >/dev/null 2>&1 || true
+
+## 3. isolation identifiers
+6:#   - temporary data and secret directories under .sandbox/r51/;
+7:#   - loopback-only published ports 127.0.0.1:28788-28791;
+21:ID="r51-$(date +%s)-$$"
+22:PROJECT="onboarding-r51-$ID"
+23:IMAGE="account-onboarding:$ID"
+24:WORK="$ROOT/.sandbox/r51/docker-$ID"
+25:PORT=28788
+47:BASE="http://127.0.0.1:$PORT"
+59:  docker run -d --name "$name" \
+62:    -p "127.0.0.1:$port:8788" -v "$data:/app/data" "${MOUNTS[@]}" "${ENVS[@]}" "$@" "$IMAGE" >/dev/null
+67:    code="$(curl -sS -m 1 -o /dev/null -w '%{http_code}' "${AUTH[@]}" "http://127.0.0.1:$port$path" 2>/dev/null || true)"
+82:meta_schema() { curl -sS "${AUTH[@]}" "http://127.0.0.1:$1/v1/meta" | python3 -c 'import json,sys;print(json.load(sys.stdin)["schema_version"])'; }
+120:docker inspect --format '{{json .HostConfig.PortBindings}}' "$PROJECT-app" | grep -q '127.0.0.1' \
+121:  && ok "published port bound to 127.0.0.1" || bad "port binding"
+238:docker run -d --name "$PROJECT-badkey" --read-only --cap-drop ALL --user 10001:10001 \
+245:docker run -d --name "$PROJECT-badkeydata" --read-only --cap-drop ALL --user 10001:10001 \
+256:docker run -d --name "$PROJECT-ro" --read-only --cap-drop ALL --user 10001:10001 \
+263:  RO_CODE="$(curl -sS -m 2 -o /dev/null -w '%{http_code}' "${AUTH[@]}" "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)"
+286:case "$COMPOSE_PORT" in 127.0.0.1:*) ok "compose published port loopback-only ($COMPOSE_PORT)";; *) bad "compose port: $COMPOSE_PORT";; esac
+
+## 4. cleanup trap (only owns names from this run / its compose project)
+cleanup() {
+  for name in "$PROJECT-app" "$PROJECT-app2" "$PROJECT-upgrade" "$PROJECT-degraded" \
+              "$PROJECT-badkey" "$PROJECT-badkeydata" "$PROJECT-ro"; do
+    docker rm -f "$name" >/dev/null 2>&1 || true
+  done
+  R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$WORK/secrets/master.key" \
+    R51_ADMIN_TOKEN="$WORK/secrets/admin.token" \
+    docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" \
+    down -v >/dev/null 2>&1 || true
+  docker image rm "$IMAGE" >/dev/null 2>&1 || true
+}
+
+## 5. compose override (static config, isolated project)
+compose override config: exit 0
+## 6. daemon presence (informational; absence is NOT_RUN, not failure)
+daemon: not available (docker info exit 1)

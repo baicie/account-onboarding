@@ -3,6 +3,7 @@ package config_test
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -212,5 +213,31 @@ func TestRaw32ByteMasterKeyWithWhitespaceBytes(t *testing.T) {
 	}
 	if !bytes.Equal(cfg.MasterKey, key) {
 		t.Fatalf("raw key was altered: %x", cfg.MasterKey)
+	}
+}
+
+func TestDecodeMasterKeyJSONKeyring(t *testing.T) {
+	key := bytes.Repeat([]byte{9}, 32)
+	envelope := fmt.Sprintf(`{"current":2,"keys":{"1":"%s","2":"%s"}}`,
+		base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)),
+		base64.StdEncoding.EncodeToString(key))
+	got, err := config.DecodeMasterKey(envelope)
+	if err != nil {
+		t.Fatalf("keyring envelope rejected: %v", err)
+	}
+	if !bytes.Equal(got, key) {
+		t.Fatalf("current key mismatch: %x", got)
+	}
+	// Malformed / unknown-version envelopes must fail closed, not fall through
+	// to a raw-key interpretation.
+	for _, bad := range []string{
+		`{"current":3,"keys":{"1":"AAAA"}}`,
+		`{"current":1,"keys":{}}`,
+		`{"current":1,"keys":{"1":"not-base64"}}`,
+		`{"current":`,
+	} {
+		if _, err := config.DecodeMasterKey(bad); err == nil {
+			t.Fatalf("malformed keyring accepted: %s", bad)
+		}
 	}
 }

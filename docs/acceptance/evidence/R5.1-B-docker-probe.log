@@ -1,0 +1,89 @@
+# R5.1-B Docker environment probe
+# host: Darwin arm64, 2026-10-24T17:04:10Z
+# docker client: 29.7.2
+# docker compose: 5.5.0
+
+$ docker info
+Client:
+ Version:    29.7.2
+ Context:    desktop-linux
+ Debug Mode: false
+ Plugins:
+  agent: Docker AI Agent Runner (Docker Inc.)
+    Version:  v1.127.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-agent
+  ai: Docker AI Agent - Ask Gordon (Docker Inc.)
+    Version:  v1.30.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-ai
+  buildx: Docker Buildx (Docker Inc.)
+    Version:  v0.36.1-desktop.1
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-buildx
+  compose: Docker Compose (Docker Inc.)
+    Version:  v5.5.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-compose
+  debug: Get a shell into any image or container (Docker Inc.)
+    Version:  0.0.47
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-debug
+  desktop: Docker Desktop commands (Docker Inc.)
+    Version:  v0.4.3
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-desktop
+  dhi: CLI for managing Docker Hardened Images (Docker Inc.)
+    Version:  v0.0.7
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-dhi
+  extension: Manages Docker extensions (Docker Inc.)
+    Version:  v0.2.31
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-extension
+  init: Creates Docker-related starter files for your project (Docker Inc.)
+    Version:  v1.4.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-init
+  mcp: Docker MCP Plugin (Docker Inc.)
+    Version:  v0.43.3
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-mcp
+  model: Docker Model Runner (Docker Inc.)
+    Version:  v1.2.6
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-model
+  offload: Docker Offload (Docker Inc.)
+    Version:  v0.6.13
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-offload
+  pass: Docker Pass Secrets Manager Plugin (beta) (Docker Inc.)
+    Version:  v0.2.2
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-pass
+  sandbox: "docker sandbox" is deprecated, use Docker Sandboxes instead (Docker Inc.)
+    Version:  v0.13.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-sandbox
+  scout: Docker Scout (Docker Inc.)
+    Version:  v1.24.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-scout
+
+Server:
+Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
+DOCKER_INFO_EXIT=1
+
+$ docker version
+Client:
+ Version:           29.7.2
+ API version:       1.55
+ Go version:        go1.26.5
+ Git commit:        a7dcaa6
+ Built:             Wed Aug  5 18:27:50 2026
+ OS/Arch:           darwin/arm64
+ Context:           desktop-linux
+Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
+DOCKER_VERSION_EXIT=1
+
+$ docker images
+Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
+DOCKER_IMAGES_EXIT=1
+
+$ docker ps
+Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
+DOCKER_PS_EXIT=1
+
+$ docker build -t account-onboarding:r51b-probe .
+ERROR: Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
+DOCKER_BUILD_EXIT=1
+
+# Docker Desktop backend processes present, but daemon socket not answering:
+226 /Library/PrivilegedHelperTools/com.docker.vmnetd
+5515 /Applications/Docker.app/Contents/MacOS/com.docker.backend
+# No Docker Desktop start/install was attempted (host service unchanged).

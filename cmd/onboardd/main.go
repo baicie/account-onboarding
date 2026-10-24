@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -220,28 +219,55 @@ func runMigrate() error {
 }
 
 func healthcheck() int {
-	listen := strings.TrimSpace(os.Getenv("ONBOARD_LISTEN"))
-	if listen == "" {
-		listen = "127.0.0.1:8788"
-	}
-	host, port, err := net.SplitHostPort(listen)
+	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "invalid ONBOARD_LISTEN:", err)
+		fmt.Fprintln(os.Stderr, "healthcheck config:", err)
+		return 1
+	}
+	token := cfg.AdminToken
+	if token == "" {
+		token = cfg.ReadOnlyToken
+	}
+	if token == "" {
+		fmt.Fprintln(os.Stderr, "healthcheck: no admin/readonly token configured; /readyz requires authentication")
+		return 1
+	}
+	host, port, err := net.SplitHostPort(cfg.Listen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck: invalid ONBOARD_LISTEN:", err)
 		return 1
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "healthcheck failed:", err)
-		return 1
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintln(os.Stderr, "healthcheck status:", resp.StatusCode)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := probeReadiness(ctx, "http://"+net.JoinHostPort(host, port)+"/readyz", token); err != nil {
+		// Never include the token or response body in the diagnostic.
+		fmt.Fprintln(os.Stderr, "healthcheck not ready:", err)
 		return 1
 	}
 	return 0
+}
+
+// probeReadiness checks the authenticated /readyz endpoint. Docker HEALTHCHECK
+// uses this so the container is only healthy when the database, schema,
+// revocation table, WAL mode and master key are all usable, not merely when the
+// HTTP listener accepts connections.
+func probeReadiness(ctx context.Context, rawURL, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return errors.New("invalid readiness URL")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return errors.New("readiness request failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("readiness status %d", resp.StatusCode)
+	}
+	return nil
 }
