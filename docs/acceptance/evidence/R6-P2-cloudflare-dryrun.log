@@ -1,0 +1,26 @@
+MODE dry-run (no network, no writes)
+== offline Cloudflare contract tests ==
+ok  	github.com/baicie/account-onboarding/internal/provider/mailbox/cloudflare	2.490s
+ok  	github.com/baicie/account-onboarding/internal/mailx	0.234s
+PASS Cloudflare/mailx contract tests pass (offline)
+== documented preconditions (read-only) ==
+PRECONDITION ONBOARD_CLOUDFLARE_ENABLED=<unset>
+PRECONDITION ONBOARD_CLOUDFLARE_BASE_URL=<unset>
+PRECONDITION ONBOARD_CLOUDFLARE_DOMAIN=<unset>
+PRECONDITION ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE=<unset>
+PRECONDITION ONBOARD_CLOUDFLARE_SITE_PASSWORD_FILE=<unset>
+LIVE_PLAN:
+  1. Operator supplies written authorization + 0600 admin/site secret files.
+  2. Run: ONBOARD_CLOUDFLARE_LIVE_AUTHORIZED=YES_I_HAVE_WRITTEN_AUTHORIZATION \
+          ONBOARD_CLOUDFLARE_TEST_NAME=r6-live-<unique> \
+          ONBOARD_CLOUDFLARE_DOMAIN=moonbyte.top \
+          ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE=/path/admin-pass \
+          bash tests/cloudflare/live_preflight.sh --live
+  3. The script creates ONE explicit test address via POST /admin/new_address,
+     records address_id/address (JWT stays in a 0600 temp file), and never deletes.
+  4. Operator sends a nonce mail from an authorized SMTP relay, then polls
+     /api/parsed_mails up to 180s (documented; not automated here).
+  5. Record the test address for reconciliation; do NOT auto-delete long-lived addresses.
+== config validation with fake in-memory files (no network) ==
+PASS config accepts documented Cloudflare file-based settings (offline)
+SUMMARY pass=2 fail=0 mode=dry-run

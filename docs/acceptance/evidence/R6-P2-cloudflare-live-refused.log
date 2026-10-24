@@ -1,0 +1,2 @@
+MODE live (requires written authorization)
+REFUSED: live mode requires ONBOARD_CLOUDFLARE_LIVE_AUTHORIZED=YES_I_HAVE_WRITTEN_AUTHORIZATION
