@@ -243,6 +243,7 @@ commands are in [`R5.md`](R5.md).
 | R5-B container acceptance | **NOT_RUN** | `docker info` / `docker build` exit 1 (no daemon); `docker compose config` exit 0 (static audit only) |
 | R5-C Cloudflare live | **NOT_RUN** (read-only audit PASS) | no network request, no credentials/authorization; contract/retention/redaction audit and reproducible live plan in `R5.md` §4 |
 | R5-D identity/platform boundaries | **PASS (bounds)**; live **NOT_RUN** | provider catalog all live providers disabled; WorkBuddy without permission ack refused; GitHub without token refused; non-loopback listen refused (archived in `evidence/R5-provider-boundaries.log`, 5/5); TLS ingress still `NOT_RUN` |
+| Independent R5 review | **PASS** (P0=0, P1=0; 8 P2 closed) | [`REVIEW-R5.md`](REVIEW-R5.md); reviewed/verified HEAD `a488740` (this report's commit adds only documentation); tree manifest `sha256= f4614dd803cf61157d6c70220f0ef3215c75a9572b7e5d3e4a793c0a371935c5` |
 | Final verdict | **LOCAL_RC_READY / DEPLOYMENT_BLOCKED / not LIVE_READY** | `R5.md` §6 |
 
 Release environment is local sandbox only; Docker build/run, TLS ingress,

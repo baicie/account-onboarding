@@ -200,7 +200,7 @@
 
 ---
 
-## 7. 冻结指纹（最终交付树）
+## 7. 冻结指纹（首轮审查快照，HEAD `0ec7574`）
 
 | 项 | 值 |
 |---|---|
@@ -225,7 +225,7 @@
 
 ---
 
-## 8. 最终判定
+## 8. 首轮最终判定（快照，HEAD `0ec7574`；最终结论见 §9）
 
 ```
 R5: PASS（发布准备轮次）
@@ -259,3 +259,66 @@ R5.md 把这些全部列为 NOT_RUN 并给出可执行清单，**没有夸大**�
 
 **结论：R5 可按 PASS（发布准备）交付；`LOCAL_RC_READY / DEPLOYMENT_BLOCKED / not LIVE_READY` 三判定均成立。
 本 PASS 不放宽任何 NOT_RUN 项，也不构成"可部署/可公网/已联调"的结论。**
+
+---
+
+## 9. Post-review P2 closure（2026-10-24T15:28Z–15:45Z，HEAD `a488740`）
+
+> 本节是最终复核；§1–§8 保留首轮审查快照（HEAD `0ec7574`）。最终交付树 = `a488740`（含本报告本身）。
+> 说明：首轮报告已有 `§8 最终判定`，因此本节按顺序编号为 §9（内容即委托要求的“Post-review P2 closure”）。
+
+### 9.1 冻结与变更范围
+
+| 项 | 值 |
+|---|---|
+| HEAD | `a488740d8f09530205b0ea1cdd8da0527256c136` |
+| 与首轮快照 `0ec7574` 的差异 | **14 文件**：4 代码（`server.go`/`ui.go`/`crypto.go`/`store.go`）、3 测试（`revocation_test.go`/`crypto_test.go`/`sessions_test.go`）、2 脚本、3 文档、2 证据日志（`R5-e2e.log`/`R5-provider-boundaries.log`；`R5-session-revocation.log` 内容未变）；其中 `REVIEW-R5.md` 是把首轮报告收录进仓库 |
+| `git ls-tree -r HEAD \| sha256sum` | `f4614dd803cf61157d6c70220f0ef3215c75a9572b7e5d3e4a793c0a371935c5` |
+| 审查开始/结束时工作树 | 干净（本节追加前）；本节追加后唯一变更即本文件 |
+| 关键 blob hash | `crypto.go db1cadb2` / `crypto_test.go c00ed574` / `server.go c800917e` / `ui.go 26118594` / `revocation_test.go 347f205e` / `sessions_test.go 04f7873d` / `store.go efe71e17` / `session_revocation.sh 1e29b727` / `provider_boundaries.sh 5785731a` / `R5.md 408ebd2e` / `FINAL-REPORT.md 39f4567b` / evidence `5dfd5503`、`d519e2be`、`a7c5a474` |
+
+未修改任何代码/配置；本节的验证全部针对 `a488740` 实际工作树。
+
+### 9.2 P2 逐项关闭核验
+
+| 编号 | 修复（我读到的实现） | 我的独立验证 | 状态 |
+|---|---|---|---|
+| **P2-1** 撤销寿命绑定 Cookie exp | `security.SessionSigner.VerifySession` 返回签名载荷 `exp`（`VerifyFull` 保持旧契约）；`authInfo.SessionExpires` 传递；`ui.go` 登出到 `max(now+cfg TTL, cookie exp)` | 新增测试 `TestLogoutRevocationOutlivesShortenedSessionTTL`、`TestVerifySessionReturnsCookieExpiryAndSessionID` 均 PASS。**重跑我首轮的利用脚本**（TTL 10s 登录 → 重启改 1s → 登出 → 1.6s 后 prune → 重放）：撤销行 TTL 现在是 **9113ms**（绑定 cookie exp）、prune 后行仍在、**重放 303 `/ui/login`（首轮为 200）** | **CLOSED** |
+| **P2-2** readyz 表探测 | `storage.Health` 新增 `SessionRevocationsReady`（`sqlite_master` 探测）；`/readyz` 要求 `schema>=3 && SessionRevocationsReady`；R5.md 明确不自动重建 | `TestHealthProbesSessionRevocationTable` PASS。**重跑我的删表场景**：`/readyz` 现在返回 `{"ready":false,"schema_version":3,"wal":"wal"}`（首轮 `ready=true`）；Cookie 仍被 fail-closed 拒绝；migrate 仍不自愈（与文档一致） | **CLOSED** |
+| **P2-3** 脚本自构建/端口可覆盖 | 两个脚本开头 `go build -trimpath -o "$BIN" ./cmd/onboardd`（`R5_SKIP_BUILD=1` 可跳过）；`R5_BIN`/`R5_PORT`/`R5_PROVIDER_PORT` 可覆盖 | 我**不再预先构建**，直接 `bash tests/r5/session_revocation.sh` → **11/11，exit 0**；`provider_boundaries.sh` → **5/5，exit 0**（首轮先跑时因并发构建失败的现象不再出现） | **CLOSED** |
+| **P2-4** FINAL-REPORT 计数 | 改为 311 顶层 / 620 含子测试 | 我实测 HEAD：顶层 **311**（**306 PASS + 5 SKIP**）/ **620 PASS 含子测试**（625 `=== RUN`）/ 0 FAIL —— **与声明完全一致** | **CLOSED** |
+| **P2-5** 非回环拒绝证据 | `provider_boundaries.sh` 增加 D 项；`R5-provider-boundaries.log` 归档 5/5；R5.md §5.1 更新 | 我实跑 5/5（含 `PASS D: non-loopback listen refused (exit 1)`），证据日志与提交内容一致 | **CLOSED** |
+| **P2-6** admin token 轮换 | R5.md §6 残余风险新增行（轮换 admin token 不影响既有会话；需轮换 MasterKey 强制下线） | 文档核对：条目存在且与代码行为一致（签名密钥来自 MasterKey） | **CLOSED（文档）** |
+| **P2-7** 回滚到 R4 | R5.md §6 新增"回滚到 R4 丢失持久撤销语义 → 先轮换 MasterKey 或书面接受" | 文档核对；`git show e557387:internal/api/server.go` 仍是内存 map，前提属实 | **CLOSED（文档）** |
+| **P2-8** "零网络"表述 | R5.md §4 改为"构造性事实，不是抓包证明；授权阶段再抓包" | 文档核对，措辞准确，不再有不可自证的强断言 | **CLOSED（文档）** |
+
+### 9.3 本轮命令与退出码（HEAD `a488740`，全部实跑）
+
+| # | 命令 | 退出码 | 结果 |
+|---|---|---:|---|
+| 1 | `make verify` | **0** | fmt + vet + 全量 `-race` + build |
+| 2 | `go test ./... -race -count=1` | **0** | 29 包，14 个 `ok`、15 个 `[no test files]` |
+| 3 | `go test ./internal/api/ -run 'TestLogout\|TestConcurrentAndRepeated\|TestSessionRejected' -count=1` | **0** | **6/6 PASS**（含新 `TestLogoutRevocationOutlivesShortenedSessionTTL` 1.22s） |
+| 4 | `go test ./internal/storage/ -run 'TestSessionRevocation\|TestMigration0003\|TestHealthProbes' -count=1` | **0** | **5/5 PASS**（含 `TestHealthProbesSessionRevocationTable`） |
+| 5 | `go test ./internal/security/ -run TestVerifySession -count=1` | **0** | 1/1 PASS |
+| 6 | `bash tests/r5/session_revocation.sh`（脚本内自建二进制） | **0** | **11/11 PASS** |
+| 7 | `bash tests/r5/provider_boundaries.sh`（脚本内自建二进制） | **0** | **5/5 PASS**（A×2 + B + C + D） |
+| 8 | `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -race -count=1 -timeout 900s` | **0** | **4/4 PASS**（我跑 15.14s；提交的 `R5-e2e.log` 12.227s） |
+| 9 | 我首轮的利用/探针脚本重跑：`probe-ttl.sh` / `probe.sh` | 0 / 0 | TTL 利用 → **SAFE**（9113ms 撤销、replay 303）；总探针 **26/26 PASS**，readyz 在缺表时 `ready:false` |
+| 10 | `scripts/redact_scan.sh` × 3 份再生成的 R5 evidence | **0/0/0** | 0 findings |
+| 11 | `docker info` / `docker build -t account-onboarding:r5 .` / `docker compose … config` | **1 / 1 / 0** | 与 R5-B 的 NOT_RUN 口径一致（无 daemon） |
+| 12 | 非回环监听（由脚本 D 覆盖；我此前也手工复现） | **1** | `listen host "0.0.0.0" is not loopback…` |
+
+### 9.4 残余小项（P3，不阻塞）
+
+1. `/readyz` 的 503 响应体只回 `schema_version`/`wal`，没有回显具体失败的子项（如 `session_revocations_ready:false`）；`Health` 里已有该字段，建议顺手加进响应/日志便于排障。
+2. 两个 R5 脚本默认都构建到 `bin/onboardd`；若与 `make verify` 或彼此**并发**运行，仍可能竞争同一输出文件（P2-3 的核心问题——陈旧/缺失二进制——已修复）。并发场景请用 `R5_BIN` 指向独立路径。
+3. P2-8 仍是"构造性事实"；若需要强证据，按 R5.md 所述在授权阶段抓包。
+4. FINAL-REPORT 的计数未写出具体命令（只说 HEAD measured），但数字可精确复现；建议补一行取数命令以便机器核对。
+
+### 9.5 结论
+
+**R5 = PASS（发布准备轮次）维持。P0 = 0，P1 = 0；首轮 8 项 P2 全部 CLOSED**
+（P2-1/P2-2 代码修复、P2-3 工具修复、P2-4/P2-5 文档与证据、P2-6/P2-7/P2-8 残余风险文档化）；
+另有 4 条 P3 级小建议/说明，**无新增 P2、无新增 P1**。 未发现任何新引入的发布阻断问题；`LOCAL_RC_READY`、`DEPLOYMENT_BLOCKED`、
+`not LIVE_READY` 三个判定与首轮相同且仍成立。本节只修改 `REVIEW-R5.md`，未触碰代码/配置。
