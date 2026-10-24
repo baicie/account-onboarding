@@ -11,6 +11,7 @@ PASS default: master key via file
 PASS default: published only on 127.0.0.1:8788 (['127.0.0.1:8788:8788'])
 PASS default: no wildcard port publish
 PASS default: compose secrets mounted by name
+PASS default: build args carry VERSION/COMMIT provenance
 PASS isolated override config exit 0
 PASS override: read_only=true
 PASS override: user=10001:10001
@@ -24,6 +25,7 @@ PASS override: master key via file
 PASS override: published only on 127.0.0.1:28788 (['127.0.0.1:28788:8788'])
 PASS override: no wildcard port publish
 PASS override: compose secrets mounted by name
+PASS override: build args carry VERSION/COMMIT provenance
 PASS override without R51_* env fails (1)
 PASS preflight passes with valid test secrets
 PASS preflight warns about owner UID != 10001

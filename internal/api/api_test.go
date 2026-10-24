@@ -848,6 +848,38 @@ func TestTemplateFilterAppliedBeforePagination(t *testing.T) {
 	}
 }
 
+// rawRequest performs one request without calling testing.T from a goroutine.
+func (e *env) rawRequest(method, path string, body any, token string, headers map[string]string) (int, error) {
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return 0, err
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequest(method, e.ts.URL+path, reader)
+	if err != nil {
+		return 0, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode, nil
+}
+
 // TestConcurrentHTTPReadsAndWrites exercises the API under concurrency: parallel
 // authenticated reads must stay 200, and parallel run creations with distinct
 // idempotency keys must all be accepted and persisted (SQLite single-writer
@@ -856,23 +888,27 @@ func TestConcurrentHTTPReadsAndWrites(t *testing.T) {
 	e := newEnv(t, nil)
 	const readers = 24
 	var wg sync.WaitGroup
-	statuses := make([]int, readers)
+	type result struct {
+		status int
+		err    error
+	}
+	readResults := make([]result, readers)
 	for i := 0; i < readers; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			status, _ := e.request(t, http.MethodGet, "/v1/runs?limit=5", nil, adminToken, nil)
-			statuses[i] = status
+			status, err := e.rawRequest(http.MethodGet, "/v1/runs?limit=5", nil, adminToken, nil)
+			readResults[i] = result{status, err}
 		}(i)
 	}
 	wg.Wait()
-	for i, status := range statuses {
-		if status != http.StatusOK {
-			t.Fatalf("concurrent read %d = %d", i, status)
+	for i, r := range readResults {
+		if r.err != nil || r.status != http.StatusOK {
+			t.Fatalf("concurrent read %d = %d err=%v", i, r.status, r.err)
 		}
 	}
 	const writers = 10
-	createStatus := make([]int, writers)
+	createResults := make([]result, writers)
 	for i := 0; i < writers; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -882,16 +918,16 @@ func TestConcurrentHTTPReadsAndWrites(t *testing.T) {
 				"mailbox_provider": "fake-mailbox", "identity_provider": "fake-identity",
 				"oauth_provider": "fake-oauth", "sandbox_provider": "fake-sandbox",
 			}
-			status, _ := e.request(t, http.MethodPost, "/v1/runs", req, adminToken, map[string]string{
+			status, err := e.rawRequest(http.MethodPost, "/v1/runs", req, adminToken, map[string]string{
 				"Idempotency-Key": fmt.Sprintf("concurrent-%d", i),
 			})
-			createStatus[i] = status
+			createResults[i] = result{status, err}
 		}(i)
 	}
 	wg.Wait()
-	for i, status := range createStatus {
-		if status != http.StatusAccepted {
-			t.Fatalf("concurrent create %d = %d", i, status)
+	for i, r := range createResults {
+		if r.err != nil || r.status != http.StatusAccepted {
+			t.Fatalf("concurrent create %d = %d err=%v", i, r.status, r.err)
 		}
 	}
 	page, err := e.store.ListRuns(context.Background(), storage.RunListFilter{Limit: 100})

@@ -1,7 +1,7 @@
 MODE dry-run (no network, no writes)
 == offline Cloudflare contract tests ==
-ok  	github.com/baicie/account-onboarding/internal/provider/mailbox/cloudflare	2.490s
-ok  	github.com/baicie/account-onboarding/internal/mailx	0.234s
+ok  	github.com/baicie/account-onboarding/internal/provider/mailbox/cloudflare	2.289s
+ok  	github.com/baicie/account-onboarding/internal/mailx	0.410s
 PASS Cloudflare/mailx contract tests pass (offline)
 == documented preconditions (read-only) ==
 PRECONDITION ONBOARD_CLOUDFLARE_ENABLED=<unset>
@@ -21,6 +21,7 @@ LIVE_PLAN:
   4. Operator sends a nonce mail from an authorized SMTP relay, then polls
      /api/parsed_mails up to 180s (documented; not automated here).
   5. Record the test address for reconciliation; do NOT auto-delete long-lived addresses.
-== config validation with fake in-memory files (no network) ==
+== config validation with fake local files (config.Load; no network) ==
 PASS config accepts documented Cloudflare file-based settings (offline)
-SUMMARY pass=2 fail=0 mode=dry-run
+PASS configcheck rejects invalid mode (negative case)
+SUMMARY pass=3 fail=0 mode=dry-run

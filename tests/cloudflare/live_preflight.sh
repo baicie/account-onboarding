@@ -18,7 +18,11 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MODE="dry-run"
-[ "${1:-}" = "--live" ] && MODE="live"
+case "${1:-}" in
+  "") ;;
+  --live) MODE="live" ;;
+  *) echo "usage: $0 [--live]" >&2; exit 2 ;;
+esac
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf 'FAIL %s\n' "$1"; }
@@ -45,17 +49,22 @@ if [ "$MODE" = "dry-run" ]; then
   echo "  4. Operator sends a nonce mail from an authorized SMTP relay, then polls"
   echo "     /api/parsed_mails up to 180s (documented; not automated here)."
   echo "  5. Record the test address for reconciliation; do NOT auto-delete long-lived addresses."
-  echo "== config validation with fake in-memory files (no network) =="
+  echo "== config validation with fake local files (config.Load; no network) =="
   TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
   printf 'fake-admin-password-not-used\n' > "$TMP/admin"; chmod 600 "$TMP/admin"
-  ( cd "$ROOT" && env ONBOARD_CLOUDFLARE_ENABLED=true \
-      ONBOARD_CLOUDFLARE_BASE_URL=https://api.moonbyte.top \
-      ONBOARD_CLOUDFLARE_DOMAIN=moonbyte.top \
-      ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE="$TMP/admin" \
-      ONBOARD_FAKE_PROVIDERS=false ONBOARD_MODE=production \
-      ./bin/onboardd version >/dev/null 2>&1 ) \
+  head -c 32 /dev/urandom > "$TMP/master"; chmod 600 "$TMP/master"
+  CFG_ENV=(env ONBOARD_MODE=production ONBOARD_DB_PATH="$TMP/state.sqlite"
+    ONBOARD_MASTER_KEY_FILE="$TMP/master" ONBOARD_ADMIN_TOKEN=abcdefghijklmnopqrstuvwxyz012345
+    ONBOARD_CLOUDFLARE_ENABLED=true ONBOARD_CLOUDFLARE_BASE_URL=https://api.moonbyte.top
+    ONBOARD_CLOUDFLARE_DOMAIN=moonbyte.top
+    ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE="$TMP/admin"
+    ONBOARD_FAKE_PROVIDERS=false)
+  ( cd "$ROOT" && go build -trimpath -o bin/onboardd ./cmd/onboardd )
+  ( cd "$ROOT" && "${CFG_ENV[@]}" ./bin/onboardd configcheck >/dev/null 2>&1 ) \
     && ok "config accepts documented Cloudflare file-based settings (offline)" \
     || bad "config rejected documented Cloudflare settings"
+  ( cd "$ROOT" && "${CFG_ENV[@]}" ONBOARD_MODE=bogus-mode ./bin/onboardd configcheck >/dev/null 2>&1 ) \
+    && bad "configcheck accepted an invalid mode" || ok "configcheck rejects invalid mode (negative case)"
   echo "SUMMARY pass=$PASS fail=$FAIL mode=dry-run"
   [ "$FAIL" = "0" ]
   exit 0
@@ -78,8 +87,14 @@ ADMIN_FILE="${ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE:-}"
 SITE_FILE="${ONBOARD_CLOUDFLARE_SITE_PASSWORD_FILE:-}"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 umask 077
-HDRS=(-H "Content-Type: application/json" -H "x-admin-auth: $(tr -d '\r\n' < "$ADMIN_FILE")")
-[ -n "$SITE_FILE" ] && HDRS+=(-H "x-custom-auth: $(tr -d '\r\n' < "$SITE_FILE")")
+# Keep credentials out of the process argv: curl -H @file reads headers from a
+# 0600 file instead of exposing them in `ps`.
+printf 'x-admin-auth: %s\n' "$(tr -d '\r\n' < "$ADMIN_FILE")" > "$TMP/headers"
+chmod 600 "$TMP/headers"
+if [ -n "$SITE_FILE" ]; then
+  printf 'x-custom-auth: %s\n' "$(tr -d '\r\n' < "$SITE_FILE")" >> "$TMP/headers"
+fi
+HDRS=(-H "Content-Type: application/json" -H "@$TMP/headers")
 BODY="$(python3 -c 'import json,sys;print(json.dumps({"enablePrefix":False,"name":sys.argv[1],"domain":sys.argv[2]}))' "$NAME" "$DOMAIN")"
 echo "creating explicit test address: $NAME@$DOMAIN (one address; no delete)"
 RESP="$(curl -sS -m 30 -X POST "$BASE/admin/new_address" "${HDRS[@]}" -d "$BODY" -w '\n%{http_code}')"

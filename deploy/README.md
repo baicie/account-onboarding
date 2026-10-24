@@ -55,3 +55,7 @@ scripts/verify_backup.sh ./backups/state-<UTC>.sqlite.enc --keyring deploy/secre
 
 Keep the keyring on separate media from the snapshots; see
 `docs/acceptance/R4.md` and `docs/security/R4-audit.md`.
+
+## Production deployment runbooks
+
+See [`../docs/deployment/`](../docs/deployment/): TLS ingress (Caddy/nginx), backup/restore, upgrade/rollback, first-deploy checklist, release security gate and supply-chain policy. Those are design/runbook documents; no production deployment has been executed from this repository.

@@ -39,6 +39,13 @@ func main() {
 		case "version":
 			fmt.Println("onboardd " + api.Version + " commit " + api.Commit)
 			return
+		case "configcheck":
+			if _, err := config.Load(); err != nil {
+				fmt.Fprintln(os.Stderr, "configcheck failed:", err)
+				os.Exit(1)
+			}
+			fmt.Println("config ok")
+			return
 		case "migrate":
 			if err := runMigrate(); err != nil {
 				fmt.Fprintln(os.Stderr, "migrate failed:", err)

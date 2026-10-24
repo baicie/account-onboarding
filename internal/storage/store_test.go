@@ -528,14 +528,11 @@ func TestDatabaseFilesAreOwnerOnly(t *testing.T) {
 	}
 	for _, p := range []string{path, path + "-wal", path + "-shm"} {
 		info, err := os.Stat(p)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
 		if err != nil {
 			t.Fatalf("stat %s: %v", p, err)
 		}
-		if perm := info.Mode().Perm(); perm&0o077 != 0 {
-			t.Fatalf("%s permissions = %04o, want owner-only (0600)", filepath.Base(p), perm)
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("%s permissions = %04o, want exactly 0600", filepath.Base(p), perm)
 		}
 	}
 	dirInfo, err := os.Stat(dir)

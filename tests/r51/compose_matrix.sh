@@ -45,6 +45,8 @@ check(not any("0.0.0.0" in p or p.startswith("::") for p in rendered), "no wildc
 secrets = svc.get("secrets") or []
 names = [s.get("source") if isinstance(s, dict) else s for s in secrets]
 check("onboarding_master_key" in names and "onboard_admin_token" in names, "compose secrets mounted by name")
+build_args = ((svc.get("build") or {}).get("args") or {})
+check(isinstance(build_args, dict) and "VERSION" in build_args and "COMMIT" in build_args, "build args carry VERSION/COMMIT provenance")
 if len(fail):
     print("FAIL " + label + " assertions: " + "; ".join(fail)); sys.exit(1)
 PY

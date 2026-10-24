@@ -20,7 +20,6 @@
 .github
 .editorconfig
 *.md
-!docs/**
 
 # Local env files
 .env

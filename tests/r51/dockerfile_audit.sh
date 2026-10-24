@@ -38,6 +38,7 @@ check_ignore "deploy/data" '/deploy/data/?'
 check_ignore "deploy/secrets" '/deploy/secrets/?'
 check_ignore "bin" '/bin/?'
 check_ignore ".git" '^\.git$'
+check_ignore ".env" '^\.env'
 
 # Supply-chain notes (not failures: pinned digests are a documented P2).
 grep -qE '^FROM [^ ]+@sha256:' "$DF" && ok "base images pinned by digest" \

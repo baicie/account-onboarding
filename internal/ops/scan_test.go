@@ -187,3 +187,36 @@ func mustJSON(t *testing.T, v any) string {
 	}
 	return string(raw)
 }
+
+// TestScanCleanBuildMetadataShapes covers R6 false positives: Go import paths,
+// SCREAMING_SNAKE env names and file-based secret configuration are metadata,
+// not credentials; real secrets in the same lines must still be found.
+func TestScanCleanBuildMetadataShapes(t *testing.T) {
+	clean := strings.Join([]string{
+		"ok  github.com/baicie/account-onboarding/internal/provider/mailbox/cloudflare  2.490s",
+		"# isolated override requires R51_IMAGE/R51_DATA/R51_MASTER_KEY/R51_ADMIN_TOKEN",
+		"ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE=/run/secrets/admin-pass",
+		"ONBOARD_CLOUDFLARE_SITE_PASSWORD_FILE=/run/secrets/site-pass",
+		"docker inspect --format '{{json .HostConfig.CapDrop}}' app",
+	}, "\n")
+	rep, err := ScanReader("metadata.log", strings.NewReader(clean), ScanOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Clean() {
+		t.Fatalf("metadata produced findings: %+v", rep.Findings)
+	}
+	// High-confidence detections must still work on the same shapes.
+	dirty := strings.Join([]string{
+		"Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345",
+		"password=supersecretvalue",
+		"github.com/evil/ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+	}, "\n")
+	rep, err = ScanReader("dirty.log", strings.NewReader(dirty), ScanOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Clean() {
+		t.Fatal("dirty samples were not detected")
+	}
+}

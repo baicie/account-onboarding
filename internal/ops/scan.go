@@ -76,6 +76,13 @@ var (
 	// still see the original line.
 	scanPathLike  = regexp.MustCompile(`(?:^|[\s"'=(:,])((?:~|\.{1,2})?/[A-Za-z0-9._@%+~/\-]{4,}|[A-Za-z]:[\\/][^\s"',}]+)`)
 	scanPathField = regexp.MustCompile(`(?i)"(?:path|file|filepath|filename|dir|directory|log|log_path|db_path|work_dir|out_dir|data_dir|source|url|uri|endpoint)"\s*:\s*"([^"]{4,})"`)
+	// Go import paths / URL paths without a leading slash (e.g.
+	// github.com/baicie/account-onboarding/internal/provider/mailbox/cloudflare)
+	// are path metadata, not credentials.
+	scanImportPath = regexp.MustCompile(`[A-Za-z0-9._~+@-]+(?:/[A-Za-z0-9._~+@-]+){2,}`)
+	// SCREAMING_SNAKE_CASE identifiers are environment variable names or docs
+	// labels (e.g. ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE, R51_IMAGE/R51_DATA).
+	scanEnvIdent = regexp.MustCompile(`\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}\b`)
 )
 
 // pathLikeSpans returns the byte ranges of path-like substrings. Long-token
@@ -97,6 +104,12 @@ func pathLikeSpans(line string) []span {
 		if strings.ContainsAny(value, `/\\`) {
 			out = append(out, span{m[2], m[3]})
 		}
+	}
+	for _, m := range scanImportPath.FindAllStringIndex(line, -1) {
+		out = append(out, span{m[0], m[1]})
+	}
+	for _, m := range scanEnvIdent.FindAllStringIndex(line, -1) {
+		out = append(out, span{m[0], m[1]})
 	}
 	return out
 }

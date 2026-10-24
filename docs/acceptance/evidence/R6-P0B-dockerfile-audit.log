@@ -20,6 +20,7 @@ PASS .dockerignore excludes deploy/data
 PASS .dockerignore excludes deploy/secrets
 PASS .dockerignore excludes bin
 PASS .dockerignore excludes .git
+PASS .dockerignore excludes .env
 WARN base image tags are not pinned by digest (documented P2-6)
 WARN no OCI labels (documented P2-6)
-SUMMARY pass=22 fail=0 warn=2
+SUMMARY pass=23 fail=0 warn=2

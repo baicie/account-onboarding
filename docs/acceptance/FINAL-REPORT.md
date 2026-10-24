@@ -6,7 +6,9 @@
   durable session revocation) and the docs commit containing this report;
   **nothing was pushed, merged, released or deployed**
 - **Design pack**: `account-onboarding-design-v0.1.0/` (v0.1.0, read-only input)
-- **Verdict**: **`LOCAL_RC_READY`** for the local release candidate;
+- **Verdict**: **`LOCAL_RC_READY`** for the local release candidate; after the R6 sprint the
+  deployment block is narrowed to the missing container runtime evidence (Docker
+  daemon unavailable) and live-platform/TLS-production gaps; see §14.
   **`DEPLOYMENT_BLOCKED`** until Docker/TLS/live-platform gates are executed;
   **not `LIVE_READY`**. No P0 findings. Remaining gaps are infrastructure or
   live-platform items explicitly marked **NOT_RUN**, not hidden PARTIALs.
@@ -30,12 +32,13 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5** release readiness | **LOCAL_RC_READY** (2026-10-24) | R5-A durable SQLite session revocation (restart/并发/过期/迁移) **PASS**; R5-B Docker **NOT_RUN** (no daemon); R5-C Cloudflare live **NOT_RUN** (no authorization/credentials, read-only audit PASS); R5-D identity/platform boundaries **PASS**, live **NOT_RUN**; see [`R5.md`](R5.md) |
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
+| **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
 | **Independent review** | **PASS (scoped)** after fixes | first pass PARTIAL (P0=0, P1=3, P2=11); two code-level P1s fixed and independently re-verified, TLS ingress reclassified as deployment `NOT_RUN`; see [`REVIEW.md`](REVIEW.md) §8 |
 
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 320 top-level tests (315 PASS + 5 opt-in SKIP) / 629 passes including subtests, 0 FAIL** (after R5.1-B readiness fixes)
+- `go test ./... -count=1` → **29 packages (14 with test files), 325 top-level tests (320 PASS + 5 opt-in SKIP) / 634 passes including subtests, 0 FAIL** (after R6 sprint fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -282,3 +285,26 @@ evidence [`evidence/R2-lead-rerun-final.log`](evidence/R2-lead-rerun-final.log))
 Docker build/run, GHCR, TLS ingress and real-platform live tests remain
 `NOT_RUN`; this PASS must not be read as "internet-ready" or "live platforms
 verified".
+
+## 14. R6 autonomous sprint (2026-10-25)
+
+Full progress log and commands: [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md).
+
+| Workstream | Result | Evidence |
+|---|---|---|
+| P0 Docker runtime | **NOT_RUN** (daemon unavailable; no image/container/digest) | `docker info/build/images/ps` exit 1; `docker_acceptance.sh` exit 3; no host changes |
+| P0-B offline container prep | **PASS** | Dockerfile audit 22 PASS (found+fixed `.dockerignore` leaking `deploy/secrets`/`deploy/data`), compose matrix 6/6, 24 scripts `bash -n` 0, manual CI workflow (not executed) |
+| P1 reliability/security | **PASS** (process-level; container-level NOT_RUN) | SQLite/WAL/SHM hardened to 0600 + test; SQLite busy-wait test; goroutine-leak test; HTTP concurrency test; encrypted backup→restore keeps run + revoked session (11/11); sandbox E2E 4/4 on the sprint tree |
+| P2 Cloudflare live prep | **PARTIAL / NOT_RUN live** | dry-run gate + contract tests PASS; `--live` refuses without explicit written authorization (exit 2); no request to `api.moonbyte.top`; no delete/DNS/Worker/D1 changes |
+| P3 deploy/supply chain | **PASS (offline)** | version/commit injection; reproducible build (same sha256 twice); module metadata/SBOM input; TLS ingress Caddy/nginx reference configs; backup/restore/rollback/first-deploy/security-gate/supply-chain runbooks; scanners (`govulncheck/syft/trivy/shellcheck`) NOT_INSTALLED → NOT_RUN |
+| P4 independent review | **PASS (scoped)**, P0=0/P1=0, 4 P2 fixed + 11 P3 addressed | [`REVIEW-R6.md`](REVIEW-R6.md): CI pipefail fixed, Cloudflare dry-run now loads real config with negative case, provenance regenerated at final HEAD, DB-perm test strict, goroutine tolerance tightened, scanner false positives fixed, compose build args added |
+
+New issues fixed in this sprint: `.dockerignore` secret/data context leak; SQLite
+database/WAL/SHM files were created 0644 (now 0600); missing build provenance
+(version/commit now injected and printable); CI container workflow could
+mask a failing gate through a pipe (now `shell: bash` + pipefail + SUMMARY
+assertion); Cloudflare dry-run's config assertion now uses a real
+`onboardd configcheck` with a negative case; redact_scan no longer false-positives
+on Go import paths/env-var names. Remaining deployment blockers:
+Docker runtime evidence, production TLS ingress, and live-platform
+authorizations. `CONTAINER_RC_READY` is **not** claimed.

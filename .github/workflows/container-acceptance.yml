@@ -18,11 +18,14 @@ jobs:
       - name: Offline gates
         run: make verify
       - name: Docker runtime acceptance (isolated project/ports/data)
+        shell: bash
         run: |
+          set -euo pipefail
           docker info
           docker compose version
           docker compose -f deploy/compose.yaml config
           bash tests/r51/docker_acceptance.sh | tee container-acceptance.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' container-acceptance.log
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4

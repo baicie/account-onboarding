@@ -1,2 +1,8 @@
+== --live without written authorization ==
 MODE live (requires written authorization)
 REFUSED: live mode requires ONBOARD_CLOUDFLARE_LIVE_AUTHORIZED=YES_I_HAVE_WRITTEN_AUTHORIZATION
+EXIT=2
+
+== unknown argument ==
+usage: tests/cloudflare/live_preflight.sh [--live]
+EXIT=2

@@ -523,7 +523,7 @@ func TestEngineStartStopDoesNotLeakGoroutines(t *testing.T) {
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if runtime.NumGoroutine() <= baseline+4 {
+		if runtime.NumGoroutine() <= baseline+2 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

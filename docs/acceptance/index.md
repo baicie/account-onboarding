@@ -18,6 +18,8 @@ live-platform success.
 | [REVIEW-R5.md](REVIEW-R5.md) | R5 | Independent adversarial review of R5 (PASS, P0=0/P1=0; 8 P2 closed in `a488740`) | see report |
 | [R5.1.md](R5.1.md) | R5.1 | Container & TLS reliability: local HTTPS ingress PASS, Docker runtime NOT_RUN, single-writer lock | **DEPLOYMENT_BLOCKED**; TLS **PASS**, Docker/容器级 **NOT_RUN** |
 | [R5.1-B.md](R5.1-B.md) | R5.1-B | Docker runtime closure attempt: daemon unavailable, container/image **NOT_RUN**, readiness fixes (JSON keyring, readyz healthcheck) | **DEPLOYMENT_BLOCKED**; `CONTAINER_RC_READY` not claimed |
+| [AUTONOMOUS-SPRINT-20261025.md](AUTONOMOUS-SPRINT-20261025.md) | R6 | Autonomous sprint progress: P0-B offline container audit, P1 hardening/tests, P2 Cloudflare dry-run, P3 deploy/supply-chain docs | 进行中/最终证据见文件 |
+| [REVIEW-R6.md](REVIEW-R6.md) | R6 | 独立审查：PASS（范围限定），P0=0/P1=0，P2 已修复 | see report |
 | [FINAL-REPORT.md](FINAL-REPORT.md) | — | Consolidated delivery report: phase verdicts, acceptance matrix, deviations, residual risks | see report |
 
 Supporting artifacts:

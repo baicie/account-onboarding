@@ -22,6 +22,9 @@ go list -m -json all > "$TMP/modules.json" 2>/dev/null || true
 MOD_SHA="$(shasum -a 256 "$TMP/modules.json" | awk '{print $1}')"
 MOD_COUNT="$(go list -m all 2>/dev/null | wc -l | tr -d ' ')"
 
+DIRTY="false"
+if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then DIRTY="true"; fi
+CGO_ENV="$(go env CGO_ENABLED)"
 TOOLS="{}"
 for t in govulncheck syft trivy shellcheck; do
   if command -v "$t" >/dev/null 2>&1; then v="$("$t" --version 2>&1 | head -1)"; else v="NOT_INSTALLED"; fi
@@ -29,7 +32,7 @@ for t in govulncheck syft trivy shellcheck; do
 done
 python3 - "$OUT" "$VERSION" "$COMMIT" "$SHA1" "$SHA2" "$REPRO" "$MOD_COUNT" "$MOD_SHA" "$TOOLS" "$TMP/onboardd-1" <<'PY'
 import json, os, subprocess, sys
-out, version, commit, sha1, sha2, repro, mod_count, mod_sha, tools, binary = sys.argv[1:11]
+out, version, commit, sha1, sha2, repro, mod_count, mod_sha, tools, binary, dirty, cgo_env, ldflags = sys.argv[1:14]
 go_version = subprocess.run(["go","version"],capture_output=True,text=True).stdout.strip()
 build_meta = subprocess.run(["go","version","-m",binary],capture_output=True,text=True).stdout.strip()
 data = {
@@ -37,8 +40,11 @@ data = {
   "commit": commit,
   "go_version": go_version,
   "build_platform": os.uname().machine + "/" + os.uname().sysname,
-  "cgo": True,
+  "cgo": os.environ.get("CGO_ENABLED", "1") != "0",
+  "cgo_env": cgo_env,
   "trimpath": True,
+  "vcs_dirty": dirty == "true",
+  "build_ldflags": ldflags,
   "reproducible": repro == "true",
   "binary_sha256_build1": sha1,
   "binary_sha256_build2": sha2,
