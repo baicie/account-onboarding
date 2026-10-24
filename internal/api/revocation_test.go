@@ -203,3 +203,18 @@ func TestSessionRevocationExpiryAndPrune(t *testing.T) {
 		t.Fatalf("rows after prune = %d", n)
 	}
 }
+
+// TestSessionRejectedWhenRevocationStoreUnavailable is the fail-closed contract:
+// if the durable revocation state cannot be read, no cookie session may be
+// accepted (even if the signature is still valid).
+func TestSessionRejectedWhenRevocationStoreUnavailable(t *testing.T) {
+	e := newEnv(t, nil)
+	cookieValue, _ := login(t, e)
+	if err := e.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	status, location := getDashboardWithCookie(t, e.client, e.ts.URL, cookieValue)
+	if status != http.StatusSeeOther || !strings.Contains(location, "/ui/login") {
+		t.Fatalf("cookie accepted while revocation store is unavailable: %d %q", status, location)
+	}
+}
