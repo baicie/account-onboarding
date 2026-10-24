@@ -485,11 +485,13 @@ func DecodeMasterKey(s string) ([]byte, error) {
 	if s == "" {
 		return nil, errors.New("empty master key")
 	}
-	if key, ok, err := decodeKeyringEnvelope(s); ok {
-		return key, err
-	}
+	// A raw 32-byte key wins over JSON detection: binary keys may legitimately
+	// start with '{' and must never be parsed as a keyring envelope.
 	if len(s) == 32 && !isPrintableHex(s) && !isBase64Only(s) {
 		return []byte(s), nil
+	}
+	if key, ok, err := decodeKeyringEnvelope(s); ok {
+		return key, err
 	}
 	if b, err := hex.DecodeString(s); err == nil && len(b) == 32 {
 		return b, nil

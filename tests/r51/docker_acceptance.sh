@@ -42,6 +42,11 @@ rm -rf "$WORK"; mkdir -p "$WORK"/{data,v2data,degraded,secrets}; umask 077
 head -c 32 /dev/urandom > "$WORK/secrets/master.key"
 head -c 32 /dev/urandom | base64 > "$WORK/secrets/admin.token"
 head -c 10 /dev/urandom > "$WORK/secrets/badkey"
+# Test-only: the container runs as UID 10001 and bind-mounted host files keep
+# host ownership; make them readable for the container. Production must make
+# secrets readable by UID 10001 (Linux: chown 10001:10001 + 0400) or use a
+# compose/runtime secret mapping; preflight.sh warns when the owner differs.
+chmod 644 "$WORK/secrets/master.key" "$WORK/secrets/admin.token" "$WORK/secrets/badkey"
 chmod 777 "$WORK/data" "$WORK/v2data" "$WORK/degraded" # test-only bind-mount write for UID 10001
 TOKEN="$(cat "$WORK/secrets/admin.token")"
 BASE="http://127.0.0.1:$PORT"
@@ -109,9 +114,14 @@ MODES="$(docker exec "$PROJECT-app" stat -c '%a' /run/secrets/onboarding_master_
 SECRET_OK=1
 while IFS= read -r m; do
   [ -n "$m" ] || continue
-  if [ $((8#$m & 077)) -ne 0 ]; then SECRET_OK=0; fi
+  if [ $((8#$m & 022)) -ne 0 ]; then SECRET_OK=0; fi
 done <<< "$MODES"
-[ "$SECRET_OK" = "1" ] && ok "secret files not group/world readable (modes: $(echo "$MODES" | tr '\n' ' '))" || bad "secret modes: $MODES"
+docker exec "$PROJECT-app" test -r /run/secrets/onboarding_master_key \
+  && docker exec "$PROJECT-app" test -r /run/secrets/onboard_admin_token \
+  && SECRET_READ=1 || SECRET_READ=0
+[ "$SECRET_OK" = "1" ] && [ "$SECRET_READ" = "1" ] \
+  && ok "secret files readable by UID 10001 and not group/world writable (modes: $(echo "$MODES" | tr '\n' ' '))" \
+  || bad "secret permissions/readability (modes: $MODES readable=$SECRET_READ)"
 test -f "$WORK/data/state.sqlite" && ok "SQLite persisted on host bind mount" || bad "no SQLite file"
 [ "$(docker exec "$PROJECT-app" stat -c '%u' /app/data/state.sqlite)" = "10001" ] \
   && ok "SQLite owned by UID 10001 inside the container" || bad "SQLite ownership"
@@ -280,6 +290,13 @@ for _ in $(seq 1 90); do
   echo "$C" | grep -qi healthy && break; sleep 1
 done
 echo "$C" | grep -qi healthy && ok "compose service healthy: $C" || bad "compose health: $C"
+COMPOSE_CID="$(docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" ps -q onboarding 2>/dev/null | head -1)"
+if [ -n "$COMPOSE_CID" ] && docker exec "$COMPOSE_CID" test -r /run/secrets/onboarding_master_key \
+     && docker exec "$COMPOSE_CID" test -r /run/secrets/onboard_admin_token; then
+  ok "compose secrets readable by UID 10001"
+else
+  bad "compose secrets not readable by UID 10001 (check host ownership / compose secret mapping)"
+fi
 COUNT="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format '{{.ID}}' | wc -l | tr -d ' ')"
 [ "$COUNT" = "1" ] && ok "exactly one writer container in the compose project" || bad "writer count=$COUNT"
 COMPOSE_PORT="$(docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" port onboarding 8788 2>/dev/null || true)"

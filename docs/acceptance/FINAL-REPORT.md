@@ -35,7 +35,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 319 top-level tests (314 PASS + 5 opt-in SKIP) / 628 passes including subtests, 0 FAIL** (after R5.1-B readiness fixes)
+- `go test ./... -count=1` → **29 packages (14 with test files), 320 top-level tests (315 PASS + 5 opt-in SKIP) / 629 passes including subtests, 0 FAIL** (after R5.1-B readiness fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and

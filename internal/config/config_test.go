@@ -241,3 +241,15 @@ func TestDecodeMasterKeyJSONKeyring(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeMasterKeyRawKeyStartingWithBrace(t *testing.T) {
+	// 32 raw bytes whose first byte happens to be '{' must still be treated as
+	// a raw key (JSON detection must not steal it).
+	key := bytes.Repeat([]byte{'k'}, 32)
+	key[0] = '{'
+	key[31] = 0x00
+	got, err := config.DecodeMasterKey(string(key))
+	if err != nil || !bytes.Equal(got, key) {
+		t.Fatalf("raw key starting with '{' rejected: %v", err)
+	}
+}

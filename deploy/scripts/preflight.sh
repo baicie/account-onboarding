@@ -116,6 +116,14 @@ validate_secret_file() {
 			fail "$label permissions are 0$mode, want 0400/0600 (group/other access is not allowed): chmod 600 '$path'"
 			;;
 		esac
+		# The container runs as UID 10001. A host secret owned by another user
+		# with mode 0400/0600 is unreadable inside the container unless the
+		# runtime/compose maps ownership, so surface it as an actionable warning.
+		local owner
+		owner="$(owner_uid "$path")"
+		if [ "$owner" != "10001" ] && [ "$owner" != "0" ] && [ "$owner" != "unknown" ]; then
+			warn "$label owner UID is $owner; the container runs as 10001 and may be unable to read it: sudo chown 10001:10001 '$path' (Linux), or verify secret ownership mapping in Docker Compose"
+		fi
 	fi
 	return 0
 }
