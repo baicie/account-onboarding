@@ -62,7 +62,9 @@
 | 01:53 | `make verify` + 全量 race | 0 | 325 顶层（320 PASS+5 SKIP）/ 634 含子测试，0 FAIL |
 | 01:53 | `bash tests/r51/{dockerfile_audit,compose_matrix,isolation_audit}.sh` | 0/0/0 | 23 PASS/2 WARN；compose 含 VERSION/COMMIT；隔离审计 0 |
 | 01:55 | `make verify`/race/scan | 0 | 325 顶层（320 PASS+5 SKIP）/ 634 含子测试；28 份 evidence scan 0 |
-| 01:56 | `scripts/release_info.sh`（干净 HEAD 再生） | 0 | reproducible=true，commit=最终 HEAD，vcs_dirty=false |
+| 01:56 | `scripts/release_info.sh`（干净 HEAD 再生） | 0 | reproducible=true，commit=38b17df，vcs_dirty=false |
+| 01:53 | `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v`（最终树） | 0 | 4/4 PASS（21.7s/1.0s/0.5s/0.4s）；沙箱已停止 |
+| 02:00 | 最终 `make verify` + 全量 race | 0 | 325 顶层（320 PASS+5 SKIP）/ 634；工作树干净 |
 
 ## Blocker
 
