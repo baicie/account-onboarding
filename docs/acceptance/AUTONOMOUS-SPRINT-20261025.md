@@ -3,10 +3,11 @@
 - 开始时间：2026-10-25T01:22+08:00（Asia/Shanghai）
 - 目标截止：2026-10-25T12:00+08:00
 - 基线 HEAD：`cf13d50`（R5.1-B 收口版；提示词中的 `0d78e8d` 已被 R5.1-B 超越，以仓库实际为准）
-- 当前代码 HEAD：`38b17df`（provenance/evidence 基于该干净树生成；最终提交仅追加证据与文档）
+- 代码 HEAD：`38b17df`（provenance 基于该干净树生成）；最终 HEAD：`a35c978`（仅追加证据与文档）
 - 工作树：干净
 - Docker daemon：**不可用**（`docker info` exit 1，client 29.7.2 / compose v5.5.0，无 server）
 - 已确认基线：`make verify` **exit 0**；`docker compose -f deploy/compose.yaml config` **exit 0**
+- 完成时：HEAD `a35c978`，工作树干净；`make verify` 0；全量 race 0；325 顶层（320 PASS + 5 SKIP）/634 含子测试；Docker 仍不可用（NOT_RUN）
 - Sandbox TLS（R5.1）：PASS 26/26（历史证据）
 - Sandbox E2E（R5）：4/4 PASS，5/5 身份（历史证据，本轮将复跑）
 

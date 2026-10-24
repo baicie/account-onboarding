@@ -4,8 +4,8 @@
 - **Repository**: `/Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding`
 - **Git state**: local commits through R6: `e557387` (v0.1.0), `3719026` (R5-A
   durable session revocation), R5.1/R5.1-B commits, R6 commits `43f7f1a`,
-  `55e6555`, `7bd33a6`, `ca834ee`, `38b17df` and the final evidence/docs commit
-  containing this report; **nothing was pushed, merged, released or deployed**
+  `55e6555`, `7bd33a6`, `ca834ee`, `38b17df`, `661e960` and the final evidence/docs commit
+  `a35c978` containing this report; **nothing was pushed, merged, released or deployed**
 - **Design pack**: `account-onboarding-design-v0.1.0/` (v0.1.0, read-only input)
 - **Verdict**: **`LOCAL_RC_READY`** for the local release candidate; after the R6 sprint the
   deployment block is narrowed to the missing container runtime evidence (Docker
@@ -252,8 +252,10 @@ commands are in [`R5.md`](R5.md).
 | Independent R5 review | **PASS** (P0=0, P1=0; 8 P2 closed) | [`REVIEW-R5.md`](REVIEW-R5.md); reviewed/verified HEAD `a488740` (this report's commit adds only documentation); tree manifest `sha256= f4614dd803cf61157d6c70220f0ef3215c75a9572b7e5d3e4a793c0a371935c5` |
 | Final verdict | **LOCAL_RC_READY / DEPLOYMENT_BLOCKED / not LIVE_READY** | `R5.md` §6 |
 
-Release environment is local sandbox only; Docker build/run, TLS ingress,
-GHCR/publish, Cloudflare/GitHub/WorkBuddy live remain **NOT_RUN**.
+Final sprint HEAD: `a35c978` (provenance evidence was generated at code HEAD
+`38b17df`; later commits add evidence/docs only, no runtime code). Release
+environment is local sandbox only; Docker build/run, TLS ingress, GHCR/publish,
+Cloudflare/GitHub/WorkBuddy live remain **NOT_RUN**.
 
 ## 12. R5.1 / R5.1-B container & TLS reliability (2026-10-24..25)
 
