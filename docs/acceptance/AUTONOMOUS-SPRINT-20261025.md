@@ -3,7 +3,7 @@
 - 开始时间：2026-10-25T01:22+08:00（Asia/Shanghai）
 - 目标截止：2026-10-25T12:00+08:00
 - 基线 HEAD：`cf13d50`（R5.1-B 收口版；提示词中的 `0d78e8d` 已被 R5.1-B 超越，以仓库实际为准）
-- 当前 HEAD：以 `git log --oneline -1` 为准（最终提交在证据再生之后）
+- 当前代码 HEAD：`38b17df`（provenance/evidence 基于该干净树生成；最终提交仅追加证据与文档）
 - 工作树：干净
 - Docker daemon：**不可用**（`docker info` exit 1，client 29.7.2 / compose v5.5.0，无 server）
 - 已确认基线：`make verify` **exit 0**；`docker compose -f deploy/compose.yaml config` **exit 0**

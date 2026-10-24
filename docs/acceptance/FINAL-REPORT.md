@@ -2,9 +2,10 @@
 
 - **Date**: 2026-10-24 (Asia/Shanghai)
 - **Repository**: `/Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding`
-- **Git state**: local commits `e557387` (v0.1.0 delivery), `3719026` (R5-A
-  durable session revocation) and the docs commit containing this report;
-  **nothing was pushed, merged, released or deployed**
+- **Git state**: local commits through R6: `e557387` (v0.1.0), `3719026` (R5-A
+  durable session revocation), R5.1/R5.1-B commits, R6 commits `43f7f1a`,
+  `55e6555`, `7bd33a6`, `ca834ee`, `38b17df` and the final evidence/docs commit
+  containing this report; **nothing was pushed, merged, released or deployed**
 - **Design pack**: `account-onboarding-design-v0.1.0/` (v0.1.0, read-only input)
 - **Verdict**: **`LOCAL_RC_READY`** for the local release candidate; after the R6 sprint the
   deployment block is narrowed to the missing container runtime evidence (Docker

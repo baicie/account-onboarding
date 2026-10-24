@@ -1,30 +1,47 @@
-# R6 P3 deployment/supply-chain audit — 2026-10-24T17:34:35Z
+# R6 P3 deployment/supply-chain audit — 2026-10-24T17:52:04Z
 
 ## release provenance
 {
   "version": "0.1.0",
-  "commit": "cf13d50",
+  "commit": "38b17df",
+  "go_version": "go version go1.25.3 darwin/arm64",
+  "build_platform": "arm64/Darwin",
+  "cgo": true,
+  "cgo_env": "1",
+  "trimpath": true,
+  "vcs_dirty": false,
+  "build_ldflags": "-X github.com/baicie/account-onboarding/internal/api.Version=0.1.0 -X github.com/baicie/account-onboarding/internal/api.Commit=38b17df",
   "reproducible": true,
-  "binary_sha256_build1": "129be34496a6817a73d2566eca384a85bf9ce2a4204a9472be6000003f5bede7",
+  "binary_sha256_build1": "fc3590461c6113707c8c2600ffa8a9332133beed36f4fd22437ce6d35758cfa3",
+  "binary_sha256_build2": "fc3590461c6113707c8c2600ffa8a9332133beed36f4fd22437ce6d35758cfa3",
   "module_count": 2,
+  "module_metadata_sha256": "8d5d4f8d5a233d34d938f6549d2edff74f80fe74ac4b1012a55929ca7258a016",
   "supply_chain_tools": {
     "govulncheck": "NOT_INSTALLED",
     "syft": "NOT_INSTALLED",
     "trivy": "NOT_INSTALLED",
     "shellcheck": "NOT_INSTALLED"
-  }
+  },
+  "build_info": [
+    "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/tmp.04T1croidH/onboardd-1: go1.25.3",
+    "\tpath\tgithub.com/baicie/account-onboarding/cmd/onboardd",
+    "\tmod\tgithub.com/baicie/account-onboarding\tv0.0.0-20261024175130-38b17df78c8d\t",
+    "\tdep\tgithub.com/mattn/go-sqlite3\tv1.14.32\th1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=",
+    "\tbuild\t-buildmode=exe",
+    "\tbuild\t-compiler=gc",
+    "\tbuild\t-trimpath=true",
+    "\tbuild\tCGO_ENABLED=1",
+    "\tbuild\tGOARCH=arm64",
+    "\tbuild\tGOOS=darwin",
+    "\tbuild\tGOARM64=v8.0",
+    "\tbuild\tvcs=git",
+    "\tbuild\tvcs.revision=38b17df78c8d648976071c1bef87ca6b7dcd8775",
+    "\tbuild\tvcs.time=2026-10-24T17:51:30Z",
+    "\tbuild\tvcs.modified=false"
+  ]
 }
-
 ## binary version
-onboardd 0.1.0 commit cf13d50
-
-## go build metadata (head)
-./bin/onboardd: go1.25.3
-	path	github.com/baicie/account-onboarding/cmd/onboardd
-	mod	github.com/baicie/account-onboarding	v0.0.0-20261024171912-cf13d50e7f3e+dirty	
-	dep	github.com/mattn/go-sqlite3	v1.14.32	h1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=
-	build	-buildmode=exe
-	build	-compiler=gc
+onboardd 0.1.0 commit 38b17df
 
 ## tools availability (no installs performed)
 caddy: NOT_INSTALLED
@@ -48,6 +65,7 @@ docs/deployment/tls-ingress.md
 
 ## workflow YAML
 valid: container-acceptance ['docker']
+shell bash: True
 
 ## example config syntax
 caddy/nginx not installed -> config syntax validation NOT_RUN
