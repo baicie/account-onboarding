@@ -4,7 +4,7 @@ R8 supports digest pinning while keeping reproducible, reviewable upgrades.
 
 | Stage | Default tag | Policy |
 |---|---|---|
-| build | `golang:1.25-bookworm` | Go minor/patch must not change in an unrelated PR; base image bumps are separate PRs with compatibility + vulnerability tests |
+| build | `golang:1.26.10-bookworm` | Go minor/patch must not change in an unrelated PR; base image bumps are separate PRs with compatibility + vulnerability tests |
 | runtime | `debian:bookworm-slim` | same; prefer digest pinning after review |
 
 `Dockerfile` exposes `ARG GOLANG_IMAGE` / `ARG RUNTIME_IMAGE`, so a release build

@@ -671,9 +671,19 @@ func TestAuthorizeOIDCRejectsWrongVerifier(t *testing.T) {
 	f.forceWrongVerifier = true
 	f.mu.Unlock()
 
-	_, err := a.Sandbox().AuthorizeOIDC(context.Background(), provider.SandboxAuthorizeRequest{
-		Identity: handle, RedirectURI: testCallback,
-	})
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = a.Sandbox().AuthorizeOIDC(context.Background(), provider.SandboxAuthorizeRequest{
+			Identity: handle, RedirectURI: testCallback,
+		})
+		// The fake IdP can see a transient connection reset under the full
+		// parallel race suite; retry only that infrastructure class so the
+		// semantic assertion below stays strict.
+		if errs.ClassOf(err) != errs.ClassUpstreamTransient {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if errs.ClassOf(err) != errs.ClassAuthExpired {
 		t.Fatalf("class = %s, want AUTH_EXPIRED for a rejected PKCE exchange (%v)", errs.ClassOf(err), err)
 	}
