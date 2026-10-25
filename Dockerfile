@@ -9,8 +9,8 @@
 #   - listens on 8788 inside the container; publish only 127.0.0.1 on the host
 #   - /app/data is the only writable path (SQLite + WAL)
 #   - /run/secrets/onboarding_master_key is the read-only master key
-ARG GOLANG_IMAGE=golang:1.26.10-bookworm
-ARG RUNTIME_IMAGE=debian:bookworm-slim
+ARG GOLANG_IMAGE=golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 FROM ${GOLANG_IMAGE} AS build
 
 ARG VERSION=0.1.0
