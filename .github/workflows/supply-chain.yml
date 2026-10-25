@@ -53,7 +53,7 @@ jobs:
       - name: Install pinned Trivy
         run: |
           set -euo pipefail
-          V=0.56.2
+          V=0.76.1
           curl -sSfL -o /tmp/trivy.tgz "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_Linux-64bit.tar.gz"
           curl -sSfL -o /tmp/trivy.sha256 "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_checksums.txt"
           grep "trivy_${V}_Linux-64bit.tar.gz" /tmp/trivy.sha256 | sha256sum -c -
