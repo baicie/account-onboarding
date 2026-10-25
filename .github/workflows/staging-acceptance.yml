@@ -40,3 +40,30 @@ jobs:
           name: staging-acceptance-evidence-${{ github.run_id }}
           path: staging-evidence/
           if-no-files-found: warn
+
+  container-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      EVIDENCE_DIR: ${{ github.workspace }}/container-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.10"
+      - name: Docker acceptance regression (build/runtime/upgrade/backup/lock)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          bash tests/r51/docker_acceptance.sh 2>&1 | tee "$EVIDENCE_DIR/container-acceptance.log"
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' "$EVIDENCE_DIR/container-acceptance.log"
+      - name: Upload container regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-container-regression-${{ github.run_id }}
+          path: container-evidence/
+          if-no-files-found: warn
