@@ -82,6 +82,9 @@ jobs:
           (c/'candidate-provenance.json').write_text(json.dumps(prov,indent=2))
           print(json.dumps(prov,indent=2))
           PY
+      - name: Verify candidate artifact identity
+        run: bash tests/r13/candidate_identity.sh candidate
+
       - name: Candidate vulnerability / lint gates
         env:
           EVIDENCE: ${{ github.workspace }}/candidate/supply
