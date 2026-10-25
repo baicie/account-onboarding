@@ -30,7 +30,9 @@ if p.get('image_tar_sha256') != sha(tar): raise SystemExit('FAIL image tar hash 
 if p.get('sbom_sha256') != sha(sbom): raise SystemExit('FAIL SBOM hash mismatch')
 for key in ('base_image_refs','base_image_digests'):
     if not p.get(key): raise SystemExit(f'FAIL missing {key}')
-if not all('@sha256:' in str(x) for x in p['base_image_digests']): raise SystemExit('FAIL base image digest not pinned')
+digests=p['base_image_digests']
+if isinstance(digests,str): digests=[x.strip() for x in digests.split(';') if x.strip()]
+if not digests or not all('@sha256:' in str(x) for x in digests): raise SystemExit('FAIL base image digest not pinned')
 print('PASS candidate identity: commit, image tar sha256, image id, SBOM sha256, base digests')
 PY
 # The same verifier must reject a tampered copy, so a green is not tautological.

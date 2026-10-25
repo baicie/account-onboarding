@@ -28,6 +28,14 @@ BASE_DIGESTS=""
 if command -v docker >/dev/null 2>&1; then
   for ref in "${GOLANG_REF:-}" "${RUNTIME_REF:-}"; do
     [ -n "$ref" ] || continue
+    case "$ref" in
+      *@sha256:*)
+        # The Dockerfile already pins the immutable base digest. Do not turn a
+        # missing buildx/imagetools helper into NOT_RUN evidence.
+        BASE_DIGESTS="${BASE_DIGESTS:+$BASE_DIGESTS; }$ref"
+        continue
+        ;;
+    esac
     d="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("digest",""))' 2>/dev/null || true)"
     if [ -n "$d" ]; then
       case "$ref" in
