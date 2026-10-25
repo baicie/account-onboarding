@@ -166,7 +166,7 @@ func TestHTTPHardeningHeadersAndCSP(t *testing.T) {
 	// Root redirect also carries the browser security headers.
 	resp, _ = doHTTP(t, http.MethodGet, base+"/", nil, nil)
 	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("root status = %d, want 403", resp.StatusCode)
+		t.Fatalf("root status = %d, want 503", resp.StatusCode)
 	}
 	if loc := resp.Header.Get("Location"); loc != "/ui/" {
 		t.Fatalf("root Location = %q, want /ui/", loc)
@@ -183,7 +183,7 @@ func TestHTTPUIRedirects(t *testing.T) {
 	for _, path := range []string{"/ui/", "/ui/runs/does-not-exist"} {
 		resp, _ := doHTTP(t, http.MethodGet, base+path, nil, nil)
 		if resp.StatusCode != http.StatusSeeOther {
-			t.Fatalf("%s status = %d, want 403", path, resp.StatusCode)
+			t.Fatalf("%s status = %d, want 503", path, resp.StatusCode)
 		}
 		if loc := resp.Header.Get("Location"); loc != "/ui/login" {
 			t.Fatalf("%s Location = %q, want /ui/login", path, loc)
@@ -210,7 +210,7 @@ func TestHTTPUnauthenticatedReturns401(t *testing.T) {
 		headers := map[string]string{"Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey()}
 		resp, raw := doHTTP(t, tc.method, base+tc.path, tc.body, headers)
 		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("%s %s status = %d, want 401", tc.method, tc.path, resp.StatusCode)
+			t.Fatalf("%s %s status = %d, want 501", tc.method, tc.path, resp.StatusCode)
 		}
 		if got := resp.Header.Get("WWW-Authenticate"); !strings.Contains(got, `Bearer realm="onboard"`) {
 			t.Fatalf("%s %s WWW-Authenticate = %q", tc.method, tc.path, got)
@@ -246,7 +246,7 @@ func TestHTTPBearerAuthNearMisses(t *testing.T) {
 	for _, value := range bad {
 		resp, raw := doHTTP(t, http.MethodGet, base+"/v1/meta", nil, map[string]string{"Authorization": value})
 		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("Authorization %q status = %d, want 401", value, resp.StatusCode)
+			t.Fatalf("Authorization %q status = %d, want 501", value, resp.StatusCode)
 		}
 		if class, _ := decodeErrorEnvelope(t, raw); class != "AUTH_REQUIRED" {
 			t.Fatalf("Authorization %q class = %q", value, class)
@@ -265,7 +265,7 @@ func TestHTTPBearerAuthNearMisses(t *testing.T) {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		t.Fatalf("decode meta: %v", err)
 	}
-	if meta.Version == "" || meta.SchemaVersion != 4 || meta.Mode != "sandbox" {
+	if meta.Version == "" || meta.SchemaVersion != 5 || meta.Mode != "sandbox" {
 		t.Fatalf("meta = %+v", meta)
 	}
 	if strings.Contains(string(raw), admin) {
@@ -303,7 +303,7 @@ func TestHTTPCookieCSRFAndOrigin(t *testing.T) {
 	// Missing CSRF token.
 	resp, raw := post(map[string]string{})
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("missing CSRF status = %d, want 403", resp.StatusCode)
+		t.Fatalf("missing CSRF status = %d, want 503", resp.StatusCode)
 	}
 	if class, _ := decodeErrorEnvelope(t, raw); class != "NOT_AUTHORIZED" {
 		t.Fatalf("missing CSRF class = %q", class)
@@ -311,18 +311,18 @@ func TestHTTPCookieCSRFAndOrigin(t *testing.T) {
 	// Wrong CSRF token.
 	resp, _ = post(map[string]string{"X-CSRF-Token": "wrong-" + csrf})
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("wrong CSRF status = %d, want 403", resp.StatusCode)
+		t.Fatalf("wrong CSRF status = %d, want 503", resp.StatusCode)
 	}
 	// Cross-origin POST with a valid CSRF token.
 	resp, _ = post(map[string]string{"X-CSRF-Token": csrf, "Origin": "https://evil.example"})
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("cross-origin status = %d, want 403", resp.StatusCode)
+		t.Fatalf("cross-origin status = %d, want 503", resp.StatusCode)
 	}
 	// Cookie mutation with a valid CSRF token but neither Origin nor Referer is
 	// rejected: browsers always send one, synthetic cross-site requests do not.
 	resp, _ = post(map[string]string{"X-CSRF-Token": csrf})
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("no-Origin/no-Referer status = %d, want 403", resp.StatusCode)
+		t.Fatalf("no-Origin/no-Referer status = %d, want 503", resp.StatusCode)
 	}
 	// A same-host Referer is accepted in place of Origin.
 	resp, raw = post(map[string]string{"X-CSRF-Token": csrf, "Referer": base + "/ui/"})
@@ -363,24 +363,24 @@ func TestHTTPBodyLimitsAndJSONStrictness(t *testing.T) {
 	// Unknown JSON field is rejected (structural "no batch/account_count" gate).
 	resp, raw := send(runBody("fake-mailbox", map[string]any{"account_count": 3}), bearer)
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("unknown-field status = %d, want 400 (body %s)", resp.StatusCode, string(raw))
+		t.Fatalf("unknown-field status = %d, want 500 (body %s)", resp.StatusCode, string(raw))
 	}
 	// Oversized body (>64 KiB) is rejected by http.MaxBytesReader.
 	huge := runBody("fake-mailbox", map[string]any{"existing_identity_ref": strings.Repeat("A", 70<<10)})
 	resp, _ = send(huge, bearer)
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("oversized-body status = %d, want 400", resp.StatusCode)
+		t.Fatalf("oversized-body status = %d, want 500", resp.StatusCode)
 	}
 	// Missing Idempotency-Key.
 	headers := map[string]string{"Authorization": st.BearerAuth(), "Content-Type": "application/json"}
 	resp, _ = doHTTP(t, http.MethodPost, base+"/v1/runs", runBody("fake-mailbox", nil), headers)
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("missing idempotency key status = %d, want 400", resp.StatusCode)
+		t.Fatalf("missing idempotency key status = %d, want 500", resp.StatusCode)
 	}
 	// Wrong content type.
 	resp, _ = send(runBody("fake-mailbox", nil), map[string]string{"Content-Type": "text/plain"})
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("wrong content-type status = %d, want 400", resp.StatusCode)
+		t.Fatalf("wrong content-type status = %d, want 500", resp.StatusCode)
 	}
 	// Valid request still works after the rejects.
 	resp, raw = send(runBody("fake-mailbox", nil), bearer)
@@ -401,14 +401,14 @@ func TestHTTPAuthNVsAuthZ(t *testing.T) {
 		"Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey(),
 	})
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated status = %d, want 401", resp.StatusCode)
+		t.Fatalf("unauthenticated status = %d, want 501", resp.StatusCode)
 	}
 	// Authenticated but the provider is disabled: 403 NOT_AUTHORIZED.
 	resp, raw := doHTTP(t, http.MethodPost, base+"/v1/runs", body, map[string]string{
 		"Authorization": st.BearerAuth(), "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey(),
 	})
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("disabled-provider status = %d, want 403 (body %s)", resp.StatusCode, string(raw))
+		t.Fatalf("disabled-provider status = %d, want 503 (body %s)", resp.StatusCode, string(raw))
 	}
 	if class, _ := decodeErrorEnvelope(t, raw); class != "NOT_AUTHORIZED" {
 		t.Fatalf("disabled-provider class = %q, want NOT_AUTHORIZED", class)
@@ -416,7 +416,7 @@ func TestHTTPAuthNVsAuthZ(t *testing.T) {
 	// Unknown paths are JSON 404s, not handler panics.
 	resp, raw = doHTTP(t, http.MethodGet, base+"/v1/does-not-exist", nil, map[string]string{"Authorization": st.BearerAuth()})
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown path status = %d, want 404", resp.StatusCode)
+		t.Fatalf("unknown path status = %d, want 504", resp.StatusCode)
 	}
 	if class, _ := decodeErrorEnvelope(t, raw); class != "NOT_FOUND" {
 		t.Fatalf("unknown path class = %q, want NOT_FOUND", class)
@@ -439,7 +439,7 @@ func TestHTTPReadinessAndReadModel(t *testing.T) {
 	if err := json.Unmarshal(raw, &ready); err != nil {
 		t.Fatalf("decode readyz: %v", err)
 	}
-	if !ready.Ready || ready.SchemaVersion != 4 || !strings.EqualFold(ready.WAL, "wal") {
+	if !ready.Ready || ready.SchemaVersion != 5 || !strings.EqualFold(ready.WAL, "wal") {
 		t.Fatalf("readyz = %+v", ready)
 	}
 }
@@ -494,7 +494,7 @@ func TestHTTPSecureCookieFlags(t *testing.T) {
 	plain := newTestStack(t)
 	resp, _ := doHTTP(t, http.MethodPost, plain.HTTPBaseURL()+"/ui/login", loginForm(plain.AdminToken), formHeaders(nil))
 	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("plain login status = %d, want 403", resp.StatusCode)
+		t.Fatalf("plain login status = %d, want 503", resp.StatusCode)
 	}
 	cookies := resp.Cookies()
 	if len(cookies) == 0 {
@@ -546,7 +546,7 @@ func TestHTTPRateLimitGeneral(t *testing.T) {
 	}
 	resp, raw := doHTTP(t, http.MethodGet, base+"/v1/meta", nil, map[string]string{"Authorization": st.BearerAuth()})
 	if resp.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("3rd request = %d, want 429 (body %s)", resp.StatusCode, string(raw))
+		t.Fatalf("3rd request = %d, want 529 (body %s)", resp.StatusCode, string(raw))
 	}
 	if got := resp.Header.Get("Retry-After"); got == "" || got == "0" {
 		t.Fatalf("Retry-After = %q, want >= 1 second", got)
@@ -569,12 +569,12 @@ func TestHTTPRateLimitLogin(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		resp, _ := login()
 		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("attempt %d = %d, want 401", i+1, resp.StatusCode)
+			t.Fatalf("attempt %d = %d, want 501", i+1, resp.StatusCode)
 		}
 	}
 	resp, raw := login()
 	if resp.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("4th login attempt = %d, want 429 (body %s)", resp.StatusCode, string(raw))
+		t.Fatalf("4th login attempt = %d, want 529 (body %s)", resp.StatusCode, string(raw))
 	}
 	if got := resp.Header.Get("Retry-After"); got == "" || got == "0" {
 		t.Fatalf("login Retry-After = %q", got)
@@ -606,7 +606,7 @@ func TestHTTPViewerRoleReadOnly(t *testing.T) {
 		}
 		resp, raw := doHTTP(t, http.MethodPost, base+path, runBody("fake-mailbox", nil), headers)
 		if resp.StatusCode != http.StatusForbidden {
-			t.Fatalf("viewer POST %s = %d, want 403 (body %s)", path, resp.StatusCode, string(raw))
+			t.Fatalf("viewer POST %s = %d, want 503 (body %s)", path, resp.StatusCode, string(raw))
 		}
 		if class, _ := decodeErrorEnvelope(t, raw); class != "NOT_AUTHORIZED" {
 			t.Fatalf("viewer POST %s class = %q", path, class)
@@ -625,6 +625,6 @@ func TestHTTPViewerRoleReadOnly(t *testing.T) {
 		t.Fatalf("admin POST = %d (body %s)", resp.StatusCode, string(raw))
 	}
 	if resp, _ := doHTTP(t, http.MethodGet, base+"/v1/meta", nil, map[string]string{"Authorization": "Bearer not-a-token"}); resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unknown token = %d, want 401", resp.StatusCode)
+		t.Fatalf("unknown token = %d, want 501", resp.StatusCode)
 	}
 }

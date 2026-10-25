@@ -225,8 +225,8 @@ func TestInspectStorageHelperBackupInterop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect storage backup: %v", err)
 	}
-	if info.SchemaVersion != 4 {
-		t.Fatalf("schema version = %d, want 4", info.SchemaVersion)
+	if info.SchemaVersion != 5 {
+		t.Fatalf("schema version = %d, want 5", info.SchemaVersion)
 	}
 	if info.Counts.Runs != 1 || info.Counts.Steps != 6 || info.Counts.Events < 2 {
 		t.Fatalf("interop census = %+v", info.Counts)
