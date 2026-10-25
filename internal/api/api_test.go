@@ -946,14 +946,15 @@ func TestExternalOperationDiagnosticsAdminOnly(t *testing.T) {
 		t.Fatalf("admin GET /v1/ops/external = %d %s", status, body)
 	}
 	var resp struct {
-		Items  []any          `json:"items"`
-		Counts map[string]int `json:"counts"`
+		Items                    []any            `json:"items"`
+		StatusCounts             map[string]int64 `json:"status_counts"`
+		TotalNeedsReconciliation int64            `json:"total_needs_reconciliation"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("decode: %v (%s)", err, body)
 	}
-	if resp.Counts["total"] != 0 || resp.Counts["needs_reconciliation"] != 0 {
-		t.Fatalf("unexpected counts: %+v", resp.Counts)
+	if len(resp.Items) != 0 || resp.TotalNeedsReconciliation != 0 || len(resp.StatusCounts) != 0 {
+		t.Fatalf("unexpected empty page: %+v", resp)
 	}
 	viewer := "viewer-token-0123456789"
 	e.cfg.ReadOnlyToken = viewer
@@ -963,5 +964,75 @@ func TestExternalOperationDiagnosticsAdminOnly(t *testing.T) {
 	})
 	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/external", nil, viewer, nil); status != http.StatusForbidden {
 		t.Fatalf("viewer GET /v1/ops/external = %d, want 403", status)
+	}
+}
+
+func TestExternalOperationResolveAPI(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	run, created, err := e.store.CreateRun(ctx, storage.CreateRunParams{
+		ID: security.NewID(), OwnerID: "operator", Template: "test-template",
+		Mode: "sandbox-e2e", IdempotencyKey: "resolve-api-1",
+		ProviderSnapshotJSN: `{}`, RequestFingerprint: "fp",
+		DeadlineMS: time.Now().Add(time.Hour).UnixMilli(),
+		Steps:      []storage.StepSeed{{Name: "validate"}},
+	})
+	if err != nil || !created {
+		t.Fatalf("create run: %v created=%v", err, created)
+	}
+	claim, err := e.store.ClaimNext(ctx, storage.ClaimRequest{
+		Owner: "worker-1", LeaseTTL: time.Minute,
+		RunnableStatuses: []string{"CREATED", "VALIDATING"},
+		ActiveState: func(template, step string) (string, bool) {
+			return "VALIDATING", true
+		},
+	})
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %v %v", err, claim)
+	}
+	op, err := e.store.BeginExternalOperation(ctx, storage.BeginExternalOperationParams{
+		RunID: run.ID, StepName: claim.StepName, Provider: "fake-mailbox",
+		OperationType: "mailbox.create", Fingerprint: "0123456789abcdef",
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.CompleteExternalOperation(ctx, op.OperationKey, storage.ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
+		t.Fatal(err)
+	}
+	op, err = e.store.GetExternalOperation(ctx, op.OperationKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{
+		"resolution": "RESOURCE_CONFIRMED", "reason": "operator verified the mailbox",
+		"expected_version": op.Version, "evidence_reference": "ticket-1",
+	}
+	status, raw := e.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", body, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("resolve = %d %s", status, raw)
+	}
+	var resolved storage.ExternalOperation
+	if err := json.Unmarshal(raw, &resolved); err != nil || resolved.Status != storage.ExternalResolved {
+		t.Fatalf("resolve response = %+v err=%v", resolved, err)
+	}
+	// Duplicate/stale resolution is a conflict.
+	if status, _ := e.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", body, adminToken, nil); status != http.StatusConflict {
+		t.Fatalf("duplicate resolve = %d, want 409", status)
+	}
+	// Missing reason is validation.
+	bad := map[string]any{"resolution": "UNRESOLVED", "expected_version": op.Version}
+	if status, _ := e.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", bad, adminToken, nil); status != http.StatusBadRequest {
+		t.Fatalf("missing reason = %d, want 400", status)
+	}
+	// Viewer cannot resolve.
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", body, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer resolve = %d, want 403", status)
 	}
 }

@@ -99,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", s.apiAuth(true, true, s.handleCancelRun))
 	mux.HandleFunc("GET /v1/audit", s.apiAuth(false, false, s.handleListAudit))
 	mux.HandleFunc("GET /v1/ops/external", s.apiAuth(false, true, s.handleListExternalOperations))
+	mux.HandleFunc("POST /v1/ops/external/{id}/resolve", s.apiAuth(true, true, s.handleResolveExternalOperation))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)
@@ -501,7 +502,8 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "database unavailable"})
 		return
 	}
-	ready := health.Writable && health.SchemaVersion >= 3 && health.SessionRevocationsReady &&
+	ready := health.Writable && health.SchemaVersion >= 4 && health.SessionRevocationsReady &&
+		health.ExternalOperationsReady &&
 		strings.EqualFold(health.WALMode, "wal")
 	if len(s.Cfg.MasterKey) != 32 {
 		ready = false
