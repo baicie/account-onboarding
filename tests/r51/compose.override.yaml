@@ -4,7 +4,7 @@ services:
   onboarding:
     image: ${R51_IMAGE:?set R51_IMAGE to the test image id/tag}
     ports: !override
-      - "127.0.0.1:28788:8788"
+      - "127.0.0.1:${R51_PORT:-28788}:8788"
     volumes: !override
       - "${R51_DATA:?set R51_DATA to a temporary data directory}:/app/data"
     secrets:
