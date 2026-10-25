@@ -2,6 +2,7 @@ package r11test
 
 import (
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
@@ -282,6 +283,43 @@ func TestCloudflareMockRejectsPermissiveTokenFile(t *testing.T) {
 	}
 	if !strings.Contains(out, "mode 0600") {
 		t.Fatalf("unexpected token permission rejection: %s", out)
+	}
+}
+
+func TestCloudflareSharedContractFixtures(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "cloudflare", "parsed_mails_envelopes.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Cases []struct {
+			Name string          `json:"name"`
+			Body json.RawMessage `json:"body"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range fixture.Cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			body := tc.Body
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(body)
+			}))
+			defer srv.Close()
+			ca, token := writeTLSFixture(t, srv)
+			report := filepath.Join(t.TempDir(), "report.json")
+			out, err := runPreflight(t, srv.URL, ca, token, report)
+			if err != nil {
+				t.Fatalf("fixture %s failed: %v\n%s", tc.Name, err, out)
+			}
+			rawReport, _ := os.ReadFile(report)
+			if !strings.Contains(string(rawReport), `"verification_status": "MOCK_PASS"`) {
+				t.Fatalf("fixture %s not MOCK_PASS: %s", tc.Name, rawReport)
+			}
+		})
 	}
 }
 

@@ -11,6 +11,7 @@ on:
       - feat/r10-live-preflight
       - feat/r11-integration-readiness
       - feat/r12-acceptance-integrity
+      - feat/r13-integration-reliability
 concurrency:
   group: supply-chain
   cancel-in-progress: false

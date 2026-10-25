@@ -101,6 +101,14 @@ func (s *Server) handleResolveExternalOperation(w http.ResponseWriter, r *http.R
 // operation. Admin-only; evidence/reason are already redacted on write.
 func (s *Server) handleExternalOperationAudit(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
+	if _, err := s.Store.GetExternalOperationByID(r.Context(), id); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, r, errs.New(errs.ClassNotFound, "ops.external.audit", "operation not found"))
+			return
+		}
+		writeError(w, r, err)
+		return
+	}
 	limit := 50
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 200 {

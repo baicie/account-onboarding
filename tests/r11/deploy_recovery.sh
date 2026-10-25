@@ -5,14 +5,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 if ! docker info >/dev/null 2>&1; then echo "NOT_RUN: Docker unavailable"; exit 3; fi
 ID="r12-deploy-$(date +%s)-$$"; WORK="$ROOT/.sandbox/r12/deploy-$ID"
 PASS=0; FAIL=0
-SECVOL=""; EMPTYVOL=""; IMAGE=""
+SECVOL=""; EMPTYVOL=""; BADVOL=""; IMAGE=""
 ok(){ PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
 bad(){ FAIL=$((FAIL+1)); printf 'FAIL %s\n' "$1"; }
 free_port(){ python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
 cleanup(){
-  docker rm -f "$ID-app" "$ID-app2" "$ID-nosecret" "$ID-ro" "$ID-corrupt" "$ID-partial" >/dev/null 2>&1 || true
+  docker rm -f "$ID-app" "$ID-app2" "$ID-nosecret" "$ID-badsecret" "$ID-ro" "$ID-corrupt" "$ID-partial" "$ID-toonew" >/dev/null 2>&1 || true
   [ -z "$SECVOL" ] || docker volume rm "$SECVOL" >/dev/null 2>&1 || true
   [ -z "$EMPTYVOL" ] || docker volume rm "$EMPTYVOL" >/dev/null 2>&1 || true
+  [ -z "$BADVOL" ] || docker volume rm "$BADVOL" >/dev/null 2>&1 || true
   [ -z "$IMAGE" ] || docker image rm "$IMAGE" >/dev/null 2>&1 || true
   rm -rf "$WORK"
   return 0
@@ -29,11 +30,14 @@ GIT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 IMAGE="onboarding-r12-deploy:$ID"
 docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$GIT_SHA" -t "$IMAGE" "$ROOT" >/dev/null
 ok "image built"
-SECVOL="$ID-secrets"; EMPTYVOL="$ID-empty-secrets"
+SECVOL="$ID-secrets"; EMPTYVOL="$ID-empty-secrets"; BADVOL="$ID-bad-secrets"
 docker volume create "$SECVOL" >/dev/null
 docker volume create "$EMPTYVOL" >/dev/null
+docker volume create "$BADVOL" >/dev/null
 docker run --rm --user 0:0 --entrypoint sh -v "$WORK/secrets:/src:ro" -v "$SECVOL:/dst" "$IMAGE" -c \
   'cp /src/master.key /dst/onboarding_master_key; cp /src/admin.token /dst/onboard_admin_token; chown 10001:10001 /dst/*; chmod 400 /dst/*'
+docker run --rm --user 0:0 --entrypoint sh -v "$WORK/secrets:/src:ro" -v "$BADVOL:/dst" "$IMAGE" -c \
+  'cp /src/master.key /dst/onboarding_master_key; cp /src/admin.token /dst/onboard_admin_token; chown 10001:10001 /dst/*; chmod 644 /dst/*'
 PORT="$(free_port)"
 start(){ docker run -d --name "$1" --user 10001:10001 --group-add "$(id -g)" --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,size=16m -p "127.0.0.1:$2:8788" \
@@ -73,12 +77,20 @@ docker kill -s KILL "$ID-app" >/dev/null; docker rm -f "$ID-app" >/dev/null
 start "$ID-app2" "$PORT" "$WORK/data"
 if wait_ready "$PORT"; then ok "SIGKILL + container recreate recovers"; else bad "recreate not ready"; fi
 curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT/v1/runs/$RUN" | grep -q "$RUN" && ok "data survives recreate" || bad "data lost"
+docker restart "$ID-app2" >/dev/null
+if wait_ready "$PORT"; then ok "docker restart recovers"; else bad "docker restart not ready"; fi
+curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT/v1/runs/$RUN" | grep -q "$RUN" && ok "data survives restart" || bad "data lost after restart"
 docker rm -f "$ID-app2" >/dev/null
 echo "=== failure modes ==="
 start "$ID-nosecret" "$PORT" "$WORK/nosecret" "$EMPTYVOL"
 sleep 4
 assert_expected_failure "$ID-nosecret" "$PORT" 'secret|master key|admin token|credential' "missing secret"
 docker rm -f "$ID-nosecret" >/dev/null 2>&1 || true
+PORT_BAD="$(free_port)"
+start "$ID-badsecret" "$PORT_BAD" "$WORK/nosecret" "$BADVOL"
+sleep 4
+assert_expected_failure "$ID-badsecret" "$PORT_BAD" 'permission|mode|secret|master key|credential' "bad secret permissions"
+docker rm -f "$ID-badsecret" >/dev/null 2>&1 || true
 
 chmod 550 "$WORK/data"
 # Existing SQLite files remain writable by their owner even when the directory
@@ -134,6 +146,29 @@ start "$ID-partial" "$PORT_PARTIAL" "$WORK/partial"
 if wait_ready "$PORT_PARTIAL"; then ok "partial schema 3 upgrades to 5"; else bad "partial schema upgrade"; docker logs "$ID-partial" 2>&1 | tail -20; fi
 SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT_PARTIAL/v1/meta" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("schema_version",0))' 2>/dev/null || echo 0)"
 [ "$SCHEMA" = "5" ] && ok "partial schema reports 5" || bad "partial schema $SCHEMA"
+docker rm -f "$ID-partial" >/dev/null 2>&1 || true
+echo "=== schema too-new rejection ==="
+mkdir -p "$WORK/toonew"; cp -a "$WORK/partial/." "$WORK/toonew/" 2>/dev/null || { sudo -n cp -a "$WORK/partial/." "$WORK/toonew/"; sudo -n chown -R "$(id -u):$(id -g)" "$WORK/toonew"; }
+python3 - "$WORK/toonew/state.sqlite" <<'DBPY'
+import sqlite3,sys
+db=sqlite3.connect(sys.argv[1]); db.execute("INSERT OR REPLACE INTO schema_migrations(version,applied_at_ms) VALUES(6,strftime('%s','now')*1000)"); db.commit(); db.close()
+DBPY
+chgrp "$(id -g)" "$WORK/toonew"; chmod 770 "$WORK/toonew"
+if ! chown 10001:10001 "$WORK/toonew/state.sqlite" 2>/dev/null; then sudo -n chown 10001:10001 "$WORK/toonew/state.sqlite"; sudo -n chmod 600 "$WORK/toonew/state.sqlite"; else chmod 600 "$WORK/toonew/state.sqlite"; fi
+PORT_NEW="$(free_port)"; start "$ID-toonew" "$PORT_NEW" "$WORK/toonew"
+sleep 4
+assert_expected_failure "$ID-toonew" "$PORT_NEW" 'schema.*new|newer|unsupported|migration' "schema newer than binary"
+docker rm -f "$ID-toonew" >/dev/null 2>&1 || true
+if [ -n "${R12_DEPLOY_REPORT:-}" ]; then
+  mkdir -p "$(dirname "$R12_DEPLOY_REPORT")"
+  python3 - "$R12_DEPLOY_REPORT" "$PASS" "$FAIL" "$GIT_SHA" <<'RPT'
+import json,sys,datetime
+out,passed,failed,sha=sys.argv[1:]
+json.dump({"steps":{"pass":int(passed),"fail":int(failed)},"commit":sha,
+           "cleanup_status":"attempted","recorded_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()},
+          open(out,"w",encoding="utf-8"),indent=2)
+RPT
+fi
 echo "SUMMARY pass=$PASS fail=$FAIL"
 trap - EXIT
 cleanup || true

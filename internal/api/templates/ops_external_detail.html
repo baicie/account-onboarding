@@ -7,12 +7,12 @@
 <tr><th>ID</th><td>{{.Op.ID}}</td></tr>
 <tr><th>Run</th><td><a href="/ui/runs/{{.Op.RunID}}">{{.Op.RunID}}</a></td></tr>
 <tr><th>Provider / type</th><td>{{.Op.Provider}} / {{.Op.OperationType}}</td></tr>
-<tr><th>Current status</th><td><span class="pill {{if or (eq .Op.Status "OUTCOME_UNKNOWN") (eq .Op.Status "RECONCILIATION_REQUIRED")}}warning{{else}}ok{{end}}">{{.Op.Status}}</span></td></tr>
+<tr><th>Current status</th><td><span class="pill {{if or (eq .Op.Status "OUTCOME_UNKNOWN") (eq .Op.Status "RECONCILIATION_REQUIRED") (eq .Op.Status "CONFIRMED")}}warning{{else}}ok{{end}}">{{.Op.Status}}</span></td></tr>
 <tr><th>Version</th><td>{{.Op.Version}}</td></tr>
 <tr><th>Last terminal resolution</th><td>{{if .Op.Resolution}}{{.Op.Resolution}} — {{.Op.ResolutionReason}} ({{.Op.ResolvedBy}}){{else}}—{{end}}</td></tr>
 </tbody>
 </table>
-{{if or (eq .Op.Status "OUTCOME_UNKNOWN") (eq .Op.Status "RECONCILIATION_REQUIRED")}}
+{{if or (eq .Op.Status "OUTCOME_UNKNOWN") (eq .Op.Status "RECONCILIATION_REQUIRED") (eq .Op.Status "CONFIRMED")}}
 <form method="post" action="/ui/ops/external/{{.Op.ID}}/resolve" class="stack">
   <input type="hidden" name="csrf" value="{{.CSRFToken}}">
   <input type="hidden" name="expected_version" value="{{.Op.Version}}">
@@ -23,7 +23,7 @@
   <select name="resolution">
     <option value="UNRESOLVED">UNRESOLVED — review only, stays pending</option>
     <option value="RESOURCE_CONFIRMED">RESOURCE_CONFIRMED — verified remote resource exists; close</option>
-    <option value="NO_RESOURCE_CREATED">NO_RESOURCE_CREATED — verified nothing was created; close</option>
+    {{if ne .Op.Status "CONFIRMED"}}<option value="NO_RESOURCE_CREATED">NO_RESOURCE_CREATED — verified nothing was created; close</option>{{end}}
     <option value="MANUAL_COMPENSATION_COMPLETED">MANUAL_COMPENSATION_COMPLETED — manual compensation done; close</option>
   </select>
   <label>Reason (required)</label>
