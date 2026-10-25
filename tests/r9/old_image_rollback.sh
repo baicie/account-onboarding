@@ -134,7 +134,8 @@ case "$C" in "303 "*"/ui/login") ok "rollback preserves revocation state";; *) b
 docker stop --time 10 "$ID-old2" >/dev/null
 
 echo "=== failed recovery must not overwrite valid data ==="
-cp "$WORK/restored/state.sqlite" "$WORK/futures/valid.sqlite"
+copy_db(){ if ! cp "$1" "$2" 2>/dev/null; then sudo -n cp "$1" "$2"; sudo -n chown "$(id -u):$(id -g)" "$2"; fi; }
+copy_db "$WORK/restored/state.sqlite" "$WORK/futures/valid.sqlite"
 BEFORE="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$WORK/futures/valid.sqlite")"
 if CONFIRM_RESTORE=1 bash "$ROOT/scripts/restore.sh" --snapshot "$ENC" --target "$WORK/futures/valid.sqlite" \
      --keyring "$WORK/secrets/badkey" --force >/dev/null 2>&1; then
@@ -145,7 +146,7 @@ fi
 AFTER="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$WORK/futures/valid.sqlite")"
 [ "$BEFORE" = "$AFTER" ] && ok "failed restore did not overwrite valid data" || bad "failed restore modified valid data"
 # Future-schema DB: old image must refuse it too.
-cp "$WORK/restored/state.sqlite" "$WORK/futures/future.sqlite"
+copy_db "$WORK/restored/state.sqlite" "$WORK/futures/future.sqlite"
 python3 - "$WORK/futures/future.sqlite" <<'PY'
 import sqlite3,sys
 db=sqlite3.connect(sys.argv[1]); db.execute("INSERT INTO schema_migrations(version,applied_at_ms) VALUES(999,1)"); db.commit(); db.close()

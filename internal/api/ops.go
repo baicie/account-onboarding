@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/baicie/account-onboarding/internal/errs"
 	"github.com/baicie/account-onboarding/internal/storage"
@@ -85,4 +86,21 @@ func (s *Server) handleResolveExternalOperation(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, op)
+}
+
+// handleOpsMetrics exposes bounded aggregate diagnostics. It is admin-only and
+// deliberately returns fixed status/error-class labels only — never emails,
+// tokens, JWT/OAuth state, addresses or passwords.
+func (s *Server) handleOpsMetrics(w http.ResponseWriter, r *http.Request) {
+	m, err := s.Store.OperationalMetrics(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"metrics":         m,
+		"version":         Version,
+		"commit":          Commit,
+		"generated_at_ms": time.Now().UTC().UnixMilli(),
+	})
 }

@@ -1,53 +1,172 @@
-# Prepared release pipeline. Default is build/verify/scan ONLY; publishing,
-# tagging, signing and deployment are explicit, separately authorized steps and
-# are guarded off by default. This workflow was NOT executed in R8.
+# Release candidate + guarded publish pipeline.
+#
+# Candidate runs on a development branch and produces verifiable artifacts with
+# no production side effects (no push). Publish is a separate job that requires
+# an explicit environment approval and is refused unless publish=true, a valid
+# tag, an allowed ref, and candidate artifacts matching the same commit.
 name: release-image
 on:
+  push:
+    branches: [feat/r9-release-hardening]
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish to GHCR (requires explicit release authorization)"
+        description: "Publish to GHCR (requires protected Environment approval)"
         type: boolean
         default: false
       tag:
-        description: "Release tag (required when publish=true)"
+        description: "Immutable release tag (required when publish=true)"
         type: string
         required: false
         default: ""
-# Default workflow only builds/scans; it must not hold package-write permission.
-# A future publish job must request packages: write only after explicit release
-# authorization.
+
 permissions:
   contents: read
+
+concurrency:
+  group: release-image-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  release:
+  candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.10"
-      - name: Build (no publish)
+          cache: true
+      - name: Verify source
         run: |
           set -euo pipefail
-          docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$(git rev-parse HEAD)" -t account-onboarding:release .
-          docker image inspect account-onboarding:release > image-inspect.json
-      - name: SCAN / SBOM gates
-        run: bash scripts/supply_chain.sh account-onboarding:release release-evidence
-      - name: Publish guard
-        if: ${{ inputs.publish }}
+          test -z "$(git status --porcelain)"
+          make verify
+      - name: Unit / race / targeted reconciliation tests
+        run: |
+          set -euo pipefail
+          go test ./... -race -count=1
+          go test ./internal/storage/ -run 'TestExternalOperation' -count=1
+          go test ./internal/api/ -run 'TestExternalOperation' -count=1
+      - name: Build candidate (no push)
+        run: |
+          set -euo pipefail
+          COMMIT="$(git rev-parse HEAD)"
+          mkdir -p candidate
+          docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$COMMIT" -t account-onboarding:candidate .
+          docker image inspect account-onboarding:candidate > candidate/image-inspect.json
+          docker image inspect --format '{{.Id}}' account-onboarding:candidate > candidate/image-id.txt
+          docker save account-onboarding:candidate -o candidate/image.tar
+          echo "$COMMIT" > candidate/commit.txt
+          docker run --rm account-onboarding:candidate version | tee candidate/version.txt
+          grep -q "commit $COMMIT" candidate/version.txt
+      - name: Supply-chain gates / SBOM / provenance
+        run: |
+          set -euo pipefail
+          bash scripts/supply_chain.sh account-onboarding:candidate candidate/supply
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          c=pathlib.Path('candidate')
+          commit=(c/'commit.txt').read_text().strip()
+          image_id=(c/'image-id.txt').read_text().strip()
+          sbom=hashlib.sha256((c/'supply'/'sbom.cdx.json').read_bytes()).hexdigest()
+          meta=json.loads((c/'supply'/'metadata.json').read_text())
+          prov={"commit":commit,"image_id":image_id,"image_tar_sha256":hashlib.sha256((c/'image.tar').read_bytes()).hexdigest(),
+                "sbom_sha256":sbom,"base_image_refs":meta.get("base_image_refs"),
+                "base_image_digests":meta.get("base_image_digests"),"platform":meta.get("platform"),
+                "publish_default":False}
+          (c/'candidate-provenance.json').write_text(json.dumps(prov,indent=2))
+          print(json.dumps(prov,indent=2))
+          PY
+      - name: Publish guard (candidate is never publishable)
+        run: |
+          echo "Candidate job has no packages:write token and never logs in/pushes."
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: candidate/
+          retention-days: 14
+
+  publish:
+    needs: candidate
+    if: ${{ inputs.publish == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate explicit release authorization
         env:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           test -n "$TAG" || { echo "refusing publish without tag"; exit 1; }
-          echo "Publishing is not implemented in R8; this is an explicit release-owner action."
-          exit 1
-      - name: Upload release evidence
-        if: always()
-        uses: actions/upload-artifact@v4
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "invalid release tag"; exit 1 ;; esac
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            refs/heads/main) ;;
+            *) echo "publish only from an allowed protected tag or main"; exit 1 ;;
+          esac
+      - name: Download and verify candidate matches HEAD
+        uses: actions/download-artifact@v4
         with:
-          name: release-evidence-${{ github.run_id }}
-          path: release-evidence/
-          if-no-files-found: warn
+          name: release-candidate-${{ github.sha }}
+          path: candidate
+      - name: Verify candidate integrity
+        run: |
+          set -euo pipefail
+          COMMIT="$(git rev-parse HEAD)"
+          test "$(cat candidate/commit.txt)" = "$COMMIT"
+          test "$(sha256sum candidate/image.tar | awk '{print $1}')" = \
+               "$(python3 -c 'import json;print(json.load(open("candidate/candidate-provenance.json"))["image_tar_sha256"])')"
+          test "$(cat candidate/image-id.txt)" = \
+               "$(python3 -c 'import json;print(json.load(open("candidate/candidate-provenance.json"))["image_id"])')"
+          docker load -i candidate/image.tar
+          docker run --rm account-onboarding:candidate version | grep -q "commit $COMMIT"
+      - name: Re-scan loaded image
+        run: |
+          set -euo pipefail
+          bash scripts/supply_chain.sh account-onboarding:candidate publish-scan
+      - name: Log in to GHCR and push by digest
+        id: push
+        env:
+          TAG: ${{ inputs.tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          IMAGE="ghcr.io/${{ github.repository }}:${TAG}"
+          docker tag account-onboarding:candidate "$IMAGE"
+          docker push "$IMAGE"
+          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+      - name: Sign and attest pushed digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 -o /usr/local/bin/cosign
+          chmod +x /usr/local/bin/cosign
+          cosign sign --yes "$DIGEST"
+          cosign attest --yes --predicate candidate/candidate-provenance.json --type custom "$DIGEST"
+      - name: Emit immutable rollback digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p publish-evidence
+          printf 'digest=%s\nimage=%s\ncommit=%s\ntag=%s\n' \
+            "$DIGEST" "${{ steps.push.outputs.image }}" "$(git rev-parse HEAD)" "${{ inputs.tag }}" \
+            > publish-evidence/rollback.txt
+          cat publish-evidence/rollback.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-publish-${{ inputs.tag }}
+          path: publish-evidence/

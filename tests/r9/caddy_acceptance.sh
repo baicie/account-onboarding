@@ -57,7 +57,7 @@ docker run -d --name "$ID-caddy" --network "$NET" --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /data:rw,noexec,nosuid,size=16m \
   --tmpfs /config:rw,noexec,nosuid,size=8m -p "127.0.0.1:$HTTPS_PORT:8443" -p "127.0.0.1:$HTTP_PORT:8080" \
   -v "$WORK/certs:/certs:ro" -v "$ROOT/tests/r9/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2.8.4-alpine run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+  --entrypoint caddy caddy:2.8.4-alpine run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 CA="$WORK/certs/ca.pem"
 BASE="https://localhost:$HTTPS_PORT"
 CURL=(curl -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1")

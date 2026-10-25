@@ -1036,3 +1036,27 @@ func TestExternalOperationResolveAPI(t *testing.T) {
 		t.Fatalf("viewer resolve = %d, want 403", status)
 	}
 }
+
+func TestOpsMetricsAdminOnlyAndSecretFree(t *testing.T) {
+	e := newEnv(t, nil)
+	status, body := e.request(t, http.MethodGet, "/v1/ops/metrics", nil, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("admin metrics = %d %s", status, body)
+	}
+	var resp struct {
+		Metrics map[string]any `json:"metrics"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode metrics: %v (%s)", err, body)
+	}
+	for _, forbidden := range []string{"token", "jwt", "email", "password", "address", "oauth_state"} {
+		if _, ok := resp.Metrics[forbidden]; ok {
+			t.Fatalf("metrics exposed forbidden label %q", forbidden)
+		}
+	}
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/metrics", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer metrics = %d, want 403", status)
+	}
+}
