@@ -174,6 +174,20 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsWorldReadableSecretFile(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "master.key")
+	if err := os.WriteFile(keyPath, []byte(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.LoadFrom([]string{
+		"ONBOARD_MASTER_KEY_FILE=" + keyPath,
+		"ONBOARD_DB_PATH=" + filepath.Join(dir, "state.sqlite"),
+	}); err == nil || !strings.Contains(err.Error(), "permissions") {
+		t.Fatalf("world-readable secret accepted: %v", err)
+	}
+}
+
 func TestLoadRejectsBadValues(t *testing.T) {
 	_, err := config.LoadFrom([]string{"ONBOARD_MAX_CONCURRENCY=99", "ONBOARD_DEV_EPHEMERAL_KEY=1"})
 	if err == nil {

@@ -398,16 +398,25 @@ func LoadFrom(environ []string) (Config, error) {
 func (c *Config) resolveSecrets() error {
 	var err error
 	if c.AdminToken == "" && c.AdminTokenFile != "" {
+		if err = secureSecretFile(c.AdminTokenFile, "ONBOARD_ADMIN_TOKEN_FILE"); err != nil {
+			return err
+		}
 		if c.AdminToken, err = readSecretFile(c.AdminTokenFile, "ONBOARD_ADMIN_TOKEN_FILE"); err != nil {
 			return err
 		}
 	}
 	if c.ReadOnlyToken == "" && c.ReadOnlyTokenFile != "" {
+		if err = secureSecretFile(c.ReadOnlyTokenFile, "ONBOARD_READONLY_TOKEN_FILE"); err != nil {
+			return err
+		}
 		if c.ReadOnlyToken, err = readSecretFile(c.ReadOnlyTokenFile, "ONBOARD_READONLY_TOKEN_FILE"); err != nil {
 			return err
 		}
 	}
 	if c.MasterKey == nil && c.MasterKeyFile != "" {
+		if err := secureSecretFile(c.MasterKeyFile, "ONBOARD_MASTER_KEY_FILE"); err != nil {
+			return err
+		}
 		raw, err := os.ReadFile(c.MasterKeyFile)
 		if err != nil {
 			return fmt.Errorf("read master key file: %w", err)
@@ -425,6 +434,9 @@ func (c *Config) resolveSecrets() error {
 		}
 	}
 	if c.Cloudflare.AdminPassword == "" && c.Cloudflare.AdminPasswordFile != "" {
+		if err = secureSecretFile(c.Cloudflare.AdminPasswordFile, "cloudflare admin password"); err != nil {
+			return err
+		}
 		if c.Cloudflare.AdminPassword, err = readSecretFile(c.Cloudflare.AdminPasswordFile, "cloudflare admin password"); err != nil {
 			return err
 		}
@@ -460,9 +472,23 @@ func (c *Config) resolveSecrets() error {
 		}
 	}
 	if c.OIDC.ClientSecret == "" && c.OIDC.ClientSecretFile != "" {
+		if err = secureSecretFile(c.OIDC.ClientSecretFile, "oidc client secret"); err != nil {
+			return err
+		}
 		if c.OIDC.ClientSecret, err = readSecretFile(c.OIDC.ClientSecretFile, "oidc client secret"); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func secureSecretFile(path, label string) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %s file: %w", label, err)
+	}
+	if st.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("%s file %q permissions %04o are too broad; require 0600/0400", label, path, st.Mode().Perm())
 	}
 	return nil
 }

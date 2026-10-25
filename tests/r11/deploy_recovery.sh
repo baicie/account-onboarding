@@ -54,11 +54,12 @@ assert_expected_failure(){
   logs="$(docker logs "$name" 2>&1 || true)"
   if [ "$running" = "false" ]; then
     exitcode="$(docker inspect -f '{{.State.ExitCode}}' "$name" 2>/dev/null || echo -1)"
-    if [ "$exitcode" -ne 0 ] && printf '%s' "$logs" | grep -Eiq "$pattern"; then ok "$label fail-closed"; else bad "$label exited without matching expected failure evidence"; fi
+    if [ "$exitcode" -ne 0 ] && printf '%s' "$logs" | grep -Eiq "$pattern"; then ok "$label fail-closed"; else bad "$label exited without matching expected failure evidence"; printf '%s\n' "$logs" | tail -20; fi
   elif [ "$code" != "200" ] && printf '%s' "$logs" | grep -Eiq "$pattern"; then
     ok "$label not ready with expected failure evidence"
   else
     bad "$label did not prove the expected fail-closed behavior"
+    printf '%s\n' "$logs" | tail -20
   fi
 }
 wait_ready(){ for _ in $(seq 1 60); do
@@ -154,10 +155,11 @@ import sqlite3,sys
 db=sqlite3.connect(sys.argv[1]); db.execute("INSERT OR REPLACE INTO schema_migrations(version,applied_at_ms) VALUES(6,strftime('%s','now')*1000)"); db.commit(); db.close()
 DBPY
 chgrp "$(id -g)" "$WORK/toonew"; chmod 770 "$WORK/toonew"
-if ! chown 10001:10001 "$WORK/toonew/state.sqlite" 2>/dev/null; then sudo -n chown 10001:10001 "$WORK/toonew/state.sqlite"; sudo -n chmod 600 "$WORK/toonew/state.sqlite"; else chmod 600 "$WORK/toonew/state.sqlite"; fi
+if ! chown -R 10001:10001 "$WORK/toonew" 2>/dev/null; then sudo -n chown -R 10001:10001 "$WORK/toonew"; fi
+chmod 600 "$WORK/toonew/state.sqlite" 2>/dev/null || sudo -n chmod 600 "$WORK/toonew/state.sqlite"
 PORT_NEW="$(free_port)"; start "$ID-toonew" "$PORT_NEW" "$WORK/toonew"
 sleep 4
-assert_expected_failure "$ID-toonew" "$PORT_NEW" 'schema.*new|newer|unsupported|migration' "schema newer than binary"
+assert_expected_failure "$ID-toonew" "$PORT_NEW" 'schema.*new|newer than|unsupported.*schema|database version' "schema newer than binary"
 docker rm -f "$ID-toonew" >/dev/null 2>&1 || true
 if [ -n "${R12_DEPLOY_REPORT:-}" ]; then
   mkdir -p "$(dirname "$R12_DEPLOY_REPORT")"
