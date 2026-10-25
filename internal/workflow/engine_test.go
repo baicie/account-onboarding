@@ -660,3 +660,83 @@ func TestEngineStartRejectsSecondStart(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+
+func TestEngineConcurrentStartSerializesLifecycle(t *testing.T) {
+	h := newHarness(t, func(cfg *workflow.Config, _ *provider.Registry) {
+		cfg.TickInterval = time.Hour
+	})
+	const callers = 8
+	results := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() { results <- h.engine.Start(context.Background()) }()
+	}
+	started, rejected := 0, 0
+	for i := 0; i < callers; i++ {
+		err := <-results
+		switch {
+		case err == nil:
+			started++
+		case errors.Is(err, workflow.ErrEngineAlreadyStarted):
+			rejected++
+		default:
+			t.Fatalf("unexpected concurrent Start error: %v", err)
+		}
+	}
+	if started != 1 || rejected != callers-1 {
+		t.Fatalf("concurrent Start results: started=%d rejected=%d", started, rejected)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineStopIsIdempotentAndRestartRejected(t *testing.T) {
+	h := newHarness(t, func(cfg *workflow.Config, _ *provider.Registry) {
+		cfg.TickInterval = time.Hour
+	})
+	if err := h.engine.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatalf("first Stop: %v", err)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatalf("second Stop: %v", err)
+	}
+	if err := h.engine.Start(context.Background()); !errors.Is(err, workflow.ErrEngineStopped) {
+		t.Fatalf("Start after Stop = %v, want ErrEngineStopped", err)
+	}
+}
+
+func TestEngineConcurrentStopPreservesRecoveryError(t *testing.T) {
+	h := newHarness(t, func(cfg *workflow.Config, _ *provider.Registry) {
+		cfg.TickInterval = time.Hour
+	})
+	if err := h.engine.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	const callers = 8
+	results := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() { results <- h.engine.Stop() }()
+	}
+	var first string
+	for i := 0; i < callers; i++ {
+		err := <-results
+		if err == nil {
+			t.Fatal("Stop lost the lifecycle recovery error")
+		}
+		if first == "" {
+			first = err.Error()
+		} else if err.Error() != first {
+			t.Fatalf("Stop callers observed different errors: %q vs %q", first, err.Error())
+		}
+	}
+	if !strings.Contains(first, "stop recovery") {
+		t.Fatalf("unexpected Stop error: %s", first)
+	}
+}
