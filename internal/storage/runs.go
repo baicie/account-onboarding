@@ -387,6 +387,12 @@ func resumableStatus(status string) bool {
 	}
 }
 
+// sweepAfterSelectHook is a test-only synchronization point invoked after the
+// expired-run SELECT and before the per-run write transaction. It lets tests
+// deterministically interleave RequestCancel / worker commits between the read
+// and the write, which is the race this code must tolerate.
+var sweepAfterSelectHook func()
+
 // SweepDeadlines fails runs whose absolute deadline has passed. It returns the
 // IDs it transitioned.
 func (s *Store) SweepDeadlines(ctx context.Context, limit int) ([]string, error) {
@@ -413,8 +419,17 @@ func (s *Store) SweepDeadlines(ctx context.Context, limit int) ([]string, error)
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if sweepAfterSelectHook != nil {
+		sweepAfterSelectHook()
+	}
 	var done []string
 	for _, id := range ids {
+		// Re-evaluate the deadline and status inside the write transaction: the
+		// SELECT above may be stale because an operator cancelled the run, a
+		// worker committed a terminal result, or the deadline moved meanwhile.
+		// CANCEL_REQUESTED must never be overwritten by the timeout terminal
+		// state, otherwise an explicit operator action would be lost.
+		txNow := s.nowMS()
 		tx, err := s.writeDB.BeginTx(ctx, nil)
 		if err != nil {
 			return done, err
@@ -424,16 +439,31 @@ func (s *Store) SweepDeadlines(ctx context.Context, limit int) ([]string, error)
 			tx.Rollback()
 			continue
 		}
-		if run.Status == "COMPLETED" || run.Status == "FAILED_TERMINAL" || run.Status == "CANCELLED" {
+		if run.Status == "COMPLETED" || run.Status == "FAILED_TERMINAL" ||
+			run.Status == "CANCELLED" || run.Status == "CANCEL_REQUESTED" ||
+			run.DeadlineMS > txNow {
 			tx.Rollback()
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE runs SET status='FAILED_TERMINAL', finished_at_ms=?,
+		res, err := tx.ExecContext(ctx, `UPDATE runs SET status='FAILED_TERMINAL', finished_at_ms=?,
 			updated_at_ms=?, next_run_at_ms=NULL, lease_owner=NULL, lease_until_ms=NULL,
-			version=version+1, action_required=0, last_error_class='TIMEOUT_UNCERTAIN' WHERE id=?`,
-			now, now, id); err != nil {
+			version=version+1, action_required=0, last_error_class='TIMEOUT_UNCERTAIN'
+			WHERE id=? AND status NOT IN ('COMPLETED','FAILED_TERMINAL','CANCELLED','CANCEL_REQUESTED')
+			AND deadline_ms <= ?`, txNow, txNow, id, txNow)
+		if err != nil {
 			tx.Rollback()
 			return done, err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			tx.Rollback()
+			return done, err
+		}
+		if affected != 1 {
+			// A concurrent writer won; do not emit a terminal event for a
+			// transition this sweep did not perform.
+			tx.Rollback()
+			continue
 		}
 		if _, err := s.appendEventTx(ctx, tx, id, "RUN_FAILED", "", map[string]any{
 			"failure_class": "TIMEOUT_UNCERTAIN",
