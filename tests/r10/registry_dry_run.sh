@@ -42,8 +42,23 @@ DIGEST="${DIGEST_REF##*@}"
 # Registry API must agree with the Docker-reported digest.
 API_DIGEST="$(curl -fsSI "http://$REG/v2/onboarding-dry/manifests/$DIGEST" -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')"
 [ "$API_DIGEST" = "$DIGEST" ] && ok "registry Digest header agrees" || bad "digest mismatch API=$API_DIGEST"
-IMMUTABLE="$(curl --http1.1 -sS -o /dev/null -w '%{http_code}' -X PUT "http://$REG/v2/onboarding-dry/manifests/$DIGEST" -H 'Content-Type: application/vnd.docker.distribution.manifest.v2+json' -d '{}' 2>/dev/null || true)"
-case "$IMMUTABLE" in 400|405) ok "digest immutable (write refused $IMMUTABLE)" ;; *) bad "registry accepted digest overwrite ($IMMUTABLE)" ;; esac
+ACCEPT="application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json"
+curl -fsS -H "Accept: $ACCEPT" "http://$REG/v2/onboarding-dry/manifests/$DIGEST" > "$WORK/manifest.json"
+python3 - "$WORK/manifest.json" "$WORK/manifest-mutated.json" <<'PYM'
+import json,sys
+d=json.load(open(sys.argv[1]))
+if 'config' in d and isinstance(d['config'],dict):
+    d['config']['size']=int(d['config'].get('size',0))+1
+else:
+    d['annotations']={'r10':'mutated'}
+json.dump(d,open(sys.argv[2],'w'),sort_keys=True)
+PYM
+MUT_CODE="$(curl --http1.1 -sS -o "$WORK/immutable-body.txt" -w '%{http_code}' -X PUT   "http://$REG/v2/onboarding-dry/manifests/$DIGEST" -H "Content-Type: application/vnd.docker.distribution.manifest.v2+json"   --data-binary @"$WORK/manifest-mutated.json" 2>/dev/null || true)"
+if [ "$MUT_CODE" = "400" ] || [ "$MUT_CODE" = "409" ]; then
+  ok "digest immutable: registry rejected a valid-but-different manifest with HTTP $MUT_CODE"
+else
+  bad "registry accepted/rejected ambiguously a different manifest for the same digest (HTTP $MUT_CODE)"
+fi
 # Pull by digest into a clean local image name; verify binary/commit again.
 docker image rm "$IMAGE_LOCAL" >/dev/null 2>&1 || true
 docker pull "$DIGEST_REF" >/dev/null 2>&1 && ok "pulled by immutable digest" || bad "digest pull failed"

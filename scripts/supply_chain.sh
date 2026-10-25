@@ -29,7 +29,13 @@ if command -v docker >/dev/null 2>&1; then
   for ref in "${GOLANG_REF:-}" "${RUNTIME_REF:-}"; do
     [ -n "$ref" ] || continue
     d="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("digest",""))' 2>/dev/null || true)"
-    [ -n "$d" ] && BASE_DIGESTS="${BASE_DIGESTS:+$BASE_DIGESTS; }${ref}@${d}"
+    if [ -n "$d" ]; then
+      case "$ref" in
+        *@sha256:*) entry="$ref" ;;
+        *) entry="$ref@$d" ;;
+      esac
+      BASE_DIGESTS="${BASE_DIGESTS:+$BASE_DIGESTS; }$entry"
+    fi
   done
 fi
 [ -z "$BASE_DIGESTS" ] && BASE_DIGESTS="NOT_RUN (tag-pinned; registry digest not resolved)"

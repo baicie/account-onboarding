@@ -262,13 +262,13 @@ func (s *Store) CompleteExternalOperation(ctx context.Context, p CompleteExterna
 		return ExternalOperation{}, err
 	}
 	defer tx.Rollback()
-	var runID, status, owner string
+	var runID, status, owner, opID string
 	var opVersion, gen int64
 	var leaseUntil sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT e.run_id, e.status, e.version,
+	if err := tx.QueryRowContext(ctx, `SELECT e.id, e.run_id, e.status, e.version,
 		COALESCE(r.lease_owner,''), r.fencing_generation, r.lease_until_ms
 		FROM external_operations e JOIN runs r ON r.id=e.run_id WHERE e.operation_key=?`, p.OperationKey).
-		Scan(&runID, &status, &opVersion, &owner, &gen, &leaseUntil); err != nil {
+		Scan(&opID, &runID, &status, &opVersion, &owner, &gen, &leaseUntil); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ExternalOperation{}, ErrNotFound
 		}
@@ -297,6 +297,17 @@ func (s *Store) CompleteExternalOperation(ctx context.Context, p CompleteExterna
 		}
 		n, _ := res.RowsAffected()
 		if n == 1 {
+			detail := s.redactor.SanitizeEventPayload(map[string]any{
+				"operation_id": opID, "run_id": runID, "from_status": ExternalInFlight,
+				"to_status": ExternalReconciliationReq, "version_before": opVersion,
+				"version_after": opVersion + 1, "reason": "LEASE_LOST_AFTER_REMOTE_CALL_MAYBE_SENT",
+			})
+			raw, _ := json.Marshal(detail)
+			if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (actor, action, run_id, detail_json, created_at_ms)
+				VALUES (?,?,?,?,?)`, "system:external-operation", "external_operation.completion_fenced",
+				runID, string(raw), now); err != nil {
+				return ExternalOperation{}, err
+			}
 			if err := tx.Commit(); err != nil {
 				return ExternalOperation{}, err
 			}

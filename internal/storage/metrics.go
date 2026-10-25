@@ -108,7 +108,7 @@ func (s *Store) OperationalMetrics(ctx context.Context) (OperationalMetrics, err
 	providerClasses := map[string]bool{
 		"UPSTREAM_TRANSIENT": true, "RATE_LIMITED": true, "TIMEOUT_UNCERTAIN": true,
 		"CONFLICT": true, "AUTH_REQUIRED": true, "AUTH_EXPIRED": true,
-		"NOT_FOUND": true, "PROVIDER_BUG": true, "NOT_AUTHORIZED": false,
+		"NOT_FOUND": true, "PROVIDER_BUG": true, "NOT_AUTHORIZED": true,
 	}
 	for rows.Next() {
 		var class string
