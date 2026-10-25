@@ -67,7 +67,7 @@ SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")"
 [ "$SCHEMA" = "5" ] && ok "first install schema 5" || bad "schema $SCHEMA"
 # Create durable data (event/run via API) and SIGKILL.
 BODY='{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox"}'
-RUN="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" -H 'Content-Type: application/json' -H "Idempotency-Key: r11-deploy-1" -X POST "http://127.0.0.1:$PORT/v1/runs" -d "$BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')"
+RUN="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" -H 'Content-Type: application/json' -H "Idempotency-Key: r12-deploy-1" -X POST "http://127.0.0.1:$PORT/v1/runs" -d "$BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')"
 [ -n "$RUN" ] && ok "run created" || bad "run create"
 docker kill -s KILL "$ID-app" >/dev/null; docker rm -f "$ID-app" >/dev/null
 start "$ID-app2" "$PORT" "$WORK/data"
@@ -118,9 +118,10 @@ if ! chown 10001:10001 "$WORK/partial/state.sqlite" 2>/dev/null; then
 else
   chmod 600 "$WORK/partial/state.sqlite"
 fi
-start "$ID-partial" "$(free_port)" "$WORK/partial"
-if wait_ready "$PORT"; then ok "partial schema 3 upgrades to 5"; else bad "partial schema upgrade"; docker logs "$ID-partial" 2>&1 | tail -20; fi
-SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT/v1/meta" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("schema_version",0))' 2>/dev/null || echo 0)"
+PORT_PARTIAL="$(free_port)"
+start "$ID-partial" "$PORT_PARTIAL" "$WORK/partial"
+if wait_ready "$PORT_PARTIAL"; then ok "partial schema 3 upgrades to 5"; else bad "partial schema upgrade"; docker logs "$ID-partial" 2>&1 | tail -20; fi
+SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT_PARTIAL/v1/meta" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("schema_version",0))' 2>/dev/null || echo 0)"
 [ "$SCHEMA" = "5" ] && ok "partial schema reports 5" || bad "partial schema $SCHEMA"
 echo "SUMMARY pass=$PASS fail=$FAIL"
 trap - EXIT
