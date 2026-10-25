@@ -180,6 +180,8 @@ try:
         sys.exit(2)
     if int(requested_requests) > int(fields["max_requests"]) or int(requested_seconds) > int(fields["max_seconds"]):
         sys.exit(2)
+    if now + dt.timedelta(seconds=int(requested_seconds)) > end:
+        sys.exit(2)
 except (OSError, ValueError, OverflowError):
     sys.exit(2)
 sys.exit(0)
@@ -231,6 +233,7 @@ else
       429) STOP=RATE_LIMITED ;;
       3*) STOP=REDIRECT_REFUSED ;;
       2[0-9][0-9])
+        AUTH_RESULT=ACCEPTED
         if SCHEMA_RESULT="$(python3 - "$BODY_FILE" "$CONTENT_TYPE" <<'PY'
 import json, os, sys
 path, content_type = sys.argv[1:]
