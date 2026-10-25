@@ -1,14 +1,14 @@
-name: r11-integration
-# R11 integration gates: first-install/recovery, Cloudflare HTTPS mock-live,
-# and ARM64 build/smoke compatibility. Isolated GitHub runner only.
+name: r12-integration
+# R12 acceptance-integrity gates: failure injection, Cloudflare HTTPS contract,
+# and ARM64 runtime smoke. Isolated GitHub runner only.
 on:
   push:
-    branches: [feat/r11-integration-readiness]
+    branches: [feat/r12-acceptance-integrity]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: r11-integration-${{ github.ref }}
+  group: r12-integration-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   deploy-recovery:
@@ -21,19 +21,19 @@ jobs:
       - name: First-install / failure / recovery drill
         run: |
           set -uo pipefail
-          mkdir -p r11-evidence/deploy
+          mkdir -p r12-evidence/deploy
           set +e
-          bash tests/r11/deploy_recovery.sh 2>&1 | tee r11-evidence/deploy/deploy.log
+          bash tests/r11/deploy_recovery.sh 2>&1 | tee r12-evidence/deploy/deploy.log
           rc=${PIPESTATUS[0]}
           set -e
-          grep -qE '^SUMMARY pass=[0-9]+ fail=0' r11-evidence/deploy/deploy.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' r12-evidence/deploy/deploy.log
           exit "$rc"
       - name: Collect diagnostics
         if: always()
-        run: docker ps -a > r11-evidence/deploy/docker-ps.txt 2>&1 || true
+        run: docker ps -a > r12-evidence/deploy/docker-ps.txt 2>&1 || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
-        with: {name: r11-deploy-recovery-evidence, path: r11-evidence/deploy/}
+        with: {name: r12-deploy-recovery-evidence, path: r12-evidence/deploy/}
   cloudflare-mock-live:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -44,21 +44,21 @@ jobs:
       - name: Cloudflare HTTPS mock-live and stop conditions
         run: |
           set -uo pipefail
-          mkdir -p r11-evidence/cloudflare
+          mkdir -p r12-evidence/cloudflare
           set +e
-          go test ./tests/r11 -run 'TestCloudflare' -v 2>&1 | tee r11-evidence/cloudflare/mock.log
+          go test ./tests/r11 -run 'TestCloudflare' -v 2>&1 | tee r12-evidence/cloudflare/mock.log
           rc=${PIPESTATUS[0]}
           set -e
           exit "$rc"
       - name: Cloudflare preflight dry-run/self-test
         run: |
-          bash scripts/cloudflare_preflight.sh --self-test | tee r11-evidence/cloudflare/selftest.log
+          bash scripts/cloudflare_preflight.sh --self-test | tee r12-evidence/cloudflare/selftest.log
           ONBOARD_CF_TEST_ADDRESSES="r11-test@example.test" \
             bash scripts/cloudflare_preflight.sh --dry-run --test-address r11-test@example.test \
-            | tee r11-evidence/cloudflare/dryrun.log
+            | tee r12-evidence/cloudflare/dryrun.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
-        with: {name: r11-cloudflare-mock-evidence, path: r11-evidence/cloudflare/}
+        with: {name: r12-cloudflare-mock-evidence, path: r12-evidence/cloudflare/}
   arm64-build:
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -68,23 +68,31 @@ jobs:
       - name: Build linux/arm64 candidate
         run: |
           set -uo pipefail
-          mkdir -p r11-evidence/arm64
+          mkdir -p r12-evidence/arm64
           COMMIT="$(git rev-parse HEAD)"
-          docker buildx create --use --name r11 >/dev/null 2>&1 || true
+          docker buildx create --use --name r12 >/dev/null 2>&1 || true
           set +e
           docker buildx build --platform linux/arm64 --build-arg VERSION=0.1.0 --build-arg COMMIT="$COMMIT" \
-            -t onboarding-r11-arm64:test --load . > r11-evidence/arm64/build.log 2>&1
+            -t onboarding-r12-arm64:test --load . > r12-evidence/arm64/build.log 2>&1
           rc=$?
           set -e
-          if [ "$rc" != "0" ]; then echo "BUILD_FAIL"; cat r11-evidence/arm64/build.log; exit 1; fi
+          if [ "$rc" != "0" ]; then echo "BUILD_FAIL"; cat r12-evidence/arm64/build.log; exit 1; fi
           echo "BUILD_PASS linux/arm64"
-          docker image inspect --format '{{.Os}}/{{.Architecture}} {{.Id}}' onboarding-r11-arm64:test | tee r11-evidence/arm64/image.txt
-          if docker run --rm --platform linux/arm64 onboarding-r11-arm64:test version > r11-evidence/arm64/version.txt 2> r11-evidence/arm64/runtime.err; then
-            echo "RUNTIME_PASS linux/arm64" | tee -a r11-evidence/arm64/version.txt
-            grep -q "commit $COMMIT" r11-evidence/arm64/version.txt
+          ARCH="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' onboarding-r12-arm64:test)"
+          echo "$ARCH" | tee r12-evidence/arm64/image.txt
+          if [ "$ARCH" != "linux/arm64" ]; then echo "ARCH_FAIL expected linux/arm64 got $ARCH"; exit 1; fi
+          if docker run --rm --platform linux/arm64 onboarding-r12-arm64:test version > r12-evidence/arm64/version.txt 2> r12-evidence/arm64/runtime.err; then
+            echo "RUNTIME_PASS linux/arm64" | tee -a r12-evidence/arm64/version.txt
+            grep -q "commit $COMMIT" r12-evidence/arm64/version.txt
           else
-            echo "RUNTIME_NOT_RUN: QEMU execution unavailable (BUILD_PASS only)" | tee r11-evidence/arm64/runtime.err
+            if grep -Eqi 'exec format error|qemu.*not found|no matching.*platform|operation not permitted' r12-evidence/arm64/runtime.err; then
+              echo "RUNTIME_NOT_RUN: emulator unavailable; gate fails closed" | tee -a r12-evidence/arm64/runtime.err
+            else
+              echo "RUNTIME_FAIL linux/arm64" | tee -a r12-evidence/arm64/runtime.err
+            fi
+            cat r12-evidence/arm64/runtime.err
+            exit 1
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
-        with: {name: r11-arm64-evidence, path: r11-evidence/arm64/}
+        with: {name: r12-arm64-evidence, path: r12-evidence/arm64/}
