@@ -21,7 +21,7 @@
 			max_size 1MB
 		}
 		reverse_proxy app:8788 {
-			header_up Host {host}
+			header_up Host {http.request.host}
 			header_up X-Forwarded-Host {http.request.host}
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-Port 443

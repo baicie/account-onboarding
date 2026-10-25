@@ -84,9 +84,15 @@ if command -v openssl >/dev/null 2>&1; then
 else
   echo "WARN openssl unavailable; TLS version checks NOT_RUN"
 fi
-curl -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1" -c "$WORK/jar" -D "$WORK/login.hdr" \
-  -o /dev/null -X POST "$BASE/ui/login" -H "Origin: $BASE" -H 'X-Forwarded-Proto: http' \
-  --data-urlencode "token=$TOKEN"
+LOGIN_STATUS="$(curl -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1" -c "$WORK/jar" -D "$WORK/login.hdr" \
+  -o "$WORK/login.body" -w '%{http_code}' -X POST "$BASE/ui/login" -H "Origin: $BASE" -H 'X-Forwarded-Proto: http' \
+  --data-urlencode "token=$TOKEN" 2>/dev/null || echo 000)"
+if [ "$LOGIN_STATUS" != "303" ]; then
+  echo "DEBUG login status=$LOGIN_STATUS"
+  cat "$WORK/login.hdr" 2>/dev/null | head -20
+  head -c 500 "$WORK/login.body" 2>/dev/null; echo
+  echo "DEBUG app logs:"; docker logs "$ID-app" 2>&1 | tail -20
+fi
 COOKIE="$(awk '$6=="onboard_session"{print $7}' "$WORK/jar")"
 [ -n "$COOKIE" ] && ok "session cookie issued through Caddy" || bad "no session cookie"
 if grep -i '^set-cookie: onboard_session=' "$WORK/login.hdr" | grep -q Secure \
