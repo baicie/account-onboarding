@@ -1,0 +1,12 @@
+{
+  "commit": "33321670270d829b4de081657b8147a70decb1ca",
+  "go_version": "go1.26.10",
+  "image_id": "bf527d0b315aa57ac970f6d143293b63804d149b7d3deb0b2460280611bb28e9",
+  "image_size_bytes": 97782443,
+  "platform": "linux/amd64",
+  "user": "10001:10001",
+  "binary_sha256": "c161166ae3b93eb71749f234494b5814bb5133d4cfbc0d6a08db99fb1c1017a9",
+  "base_images": "",
+  "sbom_sha256": "9d11dffc662222dfc662b688e72bded5aec0f5717dd04b78e9858a2120d80c72",
+  "note": "Image ID is local; no registry manifest digest unless the image was actually pushed."
+}

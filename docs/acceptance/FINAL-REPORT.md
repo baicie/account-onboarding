@@ -39,6 +39,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
+| **R8** staging release readiness | **STAGING_RC_READY (pending review)** (2026-10-25) | Real CI: isolated test-CA HTTPS staging **26/26**, R8 container regression **63/63**, supply chain **PASS** (govulncheck 0, Trivy CRITICAL/HIGH 0, ShellCheck errors 0, CycloneDX+SPDX SBOM); external-operation reconciliation audit/API/ADR; future-schema rollback guard. No GHCR push/digest, no production TLS/live platforms — [`R8.md`](R8.md) |
 | **R7** source-review closure + container CI | **CONTAINER_RC_READY** (2026-10-25) | All container gates executed on GitHub Actions run 40161727232 (Docker Engine 28.0.4, linux/amd64): image build + injected commit, Image ID `sha256:352b85ec…9763`, non-root/read-only/cap_drop, health/readiness, schema 3, v2 upgrade, WAL/SHM 0600, secret 0400 + UID 10002 denial, idempotency contract, revocation, SIGTERM/SIGKILL, single-writer, encrypted backup/restore + restored instance, fail-closed configs, compose parity: **63 PASS / 0 FAIL**. P0 fixes: idempotency test contract, deadline/cancel sweep race. `REVIEW-R7.md` PASS (P0=0/P1=0; P2 image-inspect evidence fixed and verified) — see [`R7.md`](R7.md) |
 | **R6.1** container runtime closure | **NOT_RUN / DEPLOYMENT_BLOCKED** (2026-10-25) | Docker client 29.7.2 present but daemon/VM not running (`docker info`/`version` exit 1, socket `_ping` 000, `docker desktop status` exit 1); no authorized alternate Docker env. Build/run/health/persistence/migration/SIGTERM/SIGKILL/single-writer/backup/security gates **NOT_RUN**; **no image, no Image ID/digest**; no code changes — [`R6.1.md`](R6.1.md), evidence `R6.1-docker-probe.log` |
 | **Independent review** | **PASS (scoped)** after fixes | first pass PARTIAL (P0=0, P1=3, P2=11); two code-level P1s fixed and independently re-verified, TLS ingress reclassified as deployment `NOT_RUN`; see [`REVIEW.md`](REVIEW.md) §8 |
@@ -46,7 +47,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 330 top-level tests (325 PASS + 5 opt-in SKIP) / 639 passes including subtests, 0 FAIL** (after R6 sprint fixes)
+- `go test ./... -count=1` → **29 packages (14 with test files), 338 top-level tests (333 PASS + 5 opt-in SKIP) / 647 passes including subtests, 0 FAIL** (after R6 sprint fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -362,3 +363,23 @@ single terminal-event emission (5 deterministic race tests).
 P0=0/P1=0 and the review P2 (image-inspect artifact after cleanup) was fixed and
 verified by the final CI run. `LIVE_READY` remains out of scope (no production
 TLS, no GHCR/push, no live Cloudflare/GitHub/WorkBuddy acceptance).
+
+## 17. R8 staging release readiness (2026-10-25)
+
+Branch `feat/r8-staging-readiness` (code/evidence HEAD `3332167`), base
+`9726fc1`. Real GitHub Actions evidence:
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Isolated staging + test-CA TLS | **26/26 PASS** (staging app/ingress, internal network, loopback ingress only) | actions run 40167382718; `evidence/r8-staging/` |
+| R8 container regression | **63/63 PASS** (build/runtime/health/schema v2→v3/SIGTERM/SIGKILL/single-writer/encrypted backup/restore/restored instance) | same run, container-regression job |
+| Supply chain | **PASS**: govulncheck no vulnerabilities; Trivy CRITICAL=0/HIGH=0; ShellCheck errors=0; Syft SPDX-2.3 (97 pkgs) + CycloneDX; Go 1.26.10 | actions run 40167382695; `evidence/r8-supply/` |
+| External operation reconciliation | event-log audit PREPARED/CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/FAILED + admin diagnostics; ADR 0001 | `internal/workflow`, `internal/storage`, `REVIEW-R8.md` |
+| Rollback safety | future-schema `ErrSchemaTooNew` refuses old binary; backup restore to new volume; old-image rollback itself **NOT_RUN** | storage test + container regression |
+| Local gates | `make verify` 0; race 0; 338 top-level (333 PASS+5 SKIP)/647; Docker unavailable locally | — |
+
+Images are local IDs only (staging app `sha256:cf9923…`, container regression
+`sha256:39c359…`, supply image `sha256:bf527d…`); **no registry digest**.
+`STAGING_RC_READY` becomes final only after `REVIEW-R8.md` confirms P0/P1=0.
+`LIVE_READY` remains out of scope (no production TLS, GHCR publish or live
+Cloudflare/GitHub/WorkBuddy acceptance).

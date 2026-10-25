@@ -1,0 +1,323 @@
+[
+    {
+        "Id": "eaefc2304500ef6efdd681cbc407dcaa0b47194a4c46442a8e235ded48cfbd30",
+        "Created": "2026-10-25T06:04:02.382307992Z",
+        "Path": "/app/ingress",
+        "Args": [
+            "-listen",
+            "0.0.0.0:8443",
+            "-http-listen",
+            "0.0.0.0:8080",
+            "-upstream",
+            "http://app:8788",
+            "-cert",
+            "/certs/server.pem",
+            "-key",
+            "/certs/server-key.pem",
+            "-allow-non-loopback-listen",
+            "-allow-non-loopback-upstream",
+            "-allowed-host",
+            "localhost,127.0.0.1",
+            "-public-https-port",
+            "45917"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 17375,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-10-25T06:04:08.001336991Z",
+            "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "Image": "sha256:e4bdffa2f7f9fd633ad023f999ff38983ed29e17b34a61c3d6ede51e1b44a80d",
+        "ResolvConfPath": "/var/lib/docker/containers/eaefc2304500ef6efdd681cbc407dcaa0b47194a4c46442a8e235ded48cfbd30/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/eaefc2304500ef6efdd681cbc407dcaa0b47194a4c46442a8e235ded48cfbd30/hostname",
+        "HostsPath": "/var/lib/docker/containers/eaefc2304500ef6efdd681cbc407dcaa0b47194a4c46442a8e235ded48cfbd30/hosts",
+        "LogPath": "/var/lib/docker/containers/eaefc2304500ef6efdd681cbc407dcaa0b47194a4c46442a8e235ded48cfbd30/eaefc2304500ef6efdd681cbc407dcaa0b47194a4c46442a8e235ded48cfbd30-json.log",
+        "Name": "/onboarding-r8-r8-1792908162-9735-ingress-1",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "docker-default",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792908162-9735/certs:/certs:ro"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "onboarding-r8-r8-1792908162-9735_staging-edge",
+            "PortBindings": {
+                "8080/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "47007"
+                    }
+                ],
+                "8443/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "45917"
+                    }
+                ]
+            },
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": [
+                "ALL"
+            ],
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": true,
+            "SecurityOpt": [
+                "no-new-privileges:true"
+            ],
+            "Tmpfs": {
+                "/tmp": "rw,noexec,nosuid,size=8m"
+            },
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": null,
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "eaefc2304500ef6efdd681cbc407dcaa0b47194a4c46442a8e235ded48cfbd30",
+                "LowerDir": "/var/lib/docker/overlay2/28f439d10c07daf801558dbcd5369182cfd0d343e833ca68c8c4c9fc7ff1c060-init/diff:/var/lib/docker/overlay2/turla95mp0qf3h2i8ft9nmmuy/diff:/var/lib/docker/overlay2/4f5hs1jezgm0fdhndp5gxwq4v/diff:/var/lib/docker/overlay2/dtd9j9vne8a40d9sjq4bgur9k/diff:/var/lib/docker/overlay2/79f93eac890bb3ef73526b2b545ee7f370863633f8d33aa15a1af47ed5e220e5/diff",
+                "MergedDir": "/var/lib/docker/overlay2/28f439d10c07daf801558dbcd5369182cfd0d343e833ca68c8c4c9fc7ff1c060/merged",
+                "UpperDir": "/var/lib/docker/overlay2/28f439d10c07daf801558dbcd5369182cfd0d343e833ca68c8c4c9fc7ff1c060/diff",
+                "WorkDir": "/var/lib/docker/overlay2/28f439d10c07daf801558dbcd5369182cfd0d343e833ca68c8c4c9fc7ff1c060/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792908162-9735/certs",
+                "Destination": "/certs",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "eaefc2304500",
+            "Domainname": "",
+            "User": "10001:10001",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "8080/tcp": {},
+                "8443/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "-listen",
+                "0.0.0.0:8443",
+                "-http-listen",
+                "0.0.0.0:8080",
+                "-upstream",
+                "http://app:8788",
+                "-cert",
+                "/certs/server.pem",
+                "-key",
+                "/certs/server-key.pem",
+                "-allow-non-loopback-listen",
+                "-allow-non-loopback-upstream",
+                "-allowed-host",
+                "localhost,127.0.0.1",
+                "-public-https-port",
+                "45917"
+            ],
+            "Image": "account-onboarding-ingress:r8-1792908162-9735",
+            "Volumes": null,
+            "WorkingDir": "/app",
+            "Entrypoint": [
+                "/app/ingress"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "fa317a0be0ca44f892a1b1fb73aff4af61d6973c9ee6cf7eb5f6c35deeb09e02",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "app:service_healthy:false",
+                "com.docker.compose.image": "sha256:e4bdffa2f7f9fd633ad023f999ff38983ed29e17b34a61c3d6ede51e1b44a80d",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "onboarding-r8-r8-1792908162-9735",
+                "com.docker.compose.project.config_files": "/home/runner/work/account-onboarding/account-onboarding/deploy/staging/compose.yaml",
+                "com.docker.compose.project.working_dir": "/home/runner/work/account-onboarding/account-onboarding/deploy/staging",
+                "com.docker.compose.service": "ingress",
+                "com.docker.compose.version": "2.38.2"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "401868136d1f38da8b6882d1aee794e4babdc7a54a19a532ab38ef7af1e7e403",
+            "SandboxKey": "/var/run/docker/netns/401868136d1f",
+            "Ports": {
+                "8080/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "47007"
+                    }
+                ],
+                "8443/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "45917"
+                    }
+                ]
+            },
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "onboarding-r8-r8-1792908162-9735_staging-edge": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": [
+                        "onboarding-r8-r8-1792908162-9735-ingress-1",
+                        "ingress"
+                    ],
+                    "MacAddress": "de:84:bb:ab:1f:d2",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "ef4054eda9a404806d5ff3596ba1777ac07e0fab7abf1cea16cdbe312a80d283",
+                    "EndpointID": "8d5640f8e34e28b54f5de6d59179ae2846be25bbe424aa7f25bbfb72eea482c1",
+                    "Gateway": "172.19.0.1",
+                    "IPAddress": "172.19.0.2",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": [
+                        "onboarding-r8-r8-1792908162-9735-ingress-1",
+                        "ingress",
+                        "eaefc2304500"
+                    ]
+                },
+                "onboarding-r8-r8-1792908162-9735_staging-internal": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": [
+                        "onboarding-r8-r8-1792908162-9735-ingress-1",
+                        "ingress"
+                    ],
+                    "MacAddress": "3e:4e:36:94:74:f8",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "0ad52420fb34d82c39bda509adb62bc18e76058b0f693e84b19c6234a75cf964",
+                    "EndpointID": "48f928171bba1b9325a426fb9904c391eac6669cf50718ce99042b85cd014ea2",
+                    "Gateway": "",
+                    "IPAddress": "172.18.0.3",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": [
+                        "onboarding-r8-r8-1792908162-9735-ingress-1",
+                        "ingress",
+                        "eaefc2304500"
+                    ]
+                }
+            }
+        }
+    }
+]

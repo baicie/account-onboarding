@@ -1,0 +1,5 @@
+sbom.cdx.json: bytes=1733 sha256=9d11dffc662222dfc662b688e72bded5aec0f5717dd04b78e9858a2120d80c72
+cyclonedx_components=2
+sbom.spdx.json: bytes=2575579 sha256=d30b4ab74d23a42bdfdf8715834b94d30e4302dd60729c83158d968910959136
+spdx_packages=97 spdx_version=SPDX-2.3
+NOTE: raw SBOMs are uploaded in the supply-chain Actions artifact (containing hashes/URLs that trip the generic secret scanner); hashes above bind this record to those artifacts.

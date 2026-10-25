@@ -23,6 +23,7 @@ live-platform success.
 | [R6.1.md](R6.1.md) | R6.1 | Container runtime closure attempt: Docker daemon unavailable, all runtime gates **NOT_RUN** | **DEPLOYMENT_BLOCKED**; no image/ID/digest |
 | [R7.md](R7.md) | R7 | Source-review closure + real container CI (Actions 40161727232, 63/63 PASS, image inspect verified) | **CONTAINER_RC_READY**; image ID only, no registry digest |
 | [REVIEW-R7.md](REVIEW-R7.md) | R7 | Independent review: PASS, P0=0/P1=0, P2 fixed | see report |
+| [R8.md](R8.md) | R8 | Staging release readiness: TLS staging 26/26, container regression 63/63, supply chain PASS, external-op reconciliation | **STAGING_RC_READY pending review**; no GHCR/digest, no live platforms |
 | [FINAL-REPORT.md](FINAL-REPORT.md) | — | Consolidated delivery report: phase verdicts, acceptance matrix, deviations, residual risks | see report |
 
 Supporting artifacts:

@@ -1,0 +1,14 @@
+HTTP/2 303 
+cache-control: no-store
+content-security-policy: default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
+cross-origin-opener-policy: same-origin
+date: Sun, 25 Oct 2026 06:04:08 GMT
+location: /ui/
+permissions-policy: camera=(), microphone=(), geolocation=()
+referrer-policy: no-referrer
+set-cookie: onboard_session=<redacted>; Path=/ui; Max-Age=3600; HttpOnly; Secure; SameSite=Strict
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-request-id: req-1792908248298393576-7
+content-length: 0
+
