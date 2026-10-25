@@ -387,12 +387,6 @@ func resumableStatus(status string) bool {
 	}
 }
 
-// sweepAfterSelectHook is a test-only synchronization point invoked after the
-// expired-run SELECT and before the per-run write transaction. It lets tests
-// deterministically interleave RequestCancel / worker commits between the read
-// and the write, which is the race this code must tolerate.
-var sweepAfterSelectHook func()
-
 // SweepDeadlines fails runs whose absolute deadline has passed. It returns the
 // IDs it transitioned.
 func (s *Store) SweepDeadlines(ctx context.Context, limit int) ([]string, error) {
@@ -419,8 +413,8 @@ func (s *Store) SweepDeadlines(ctx context.Context, limit int) ([]string, error)
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if sweepAfterSelectHook != nil {
-		sweepAfterSelectHook()
+	if s.sweepHook != nil {
+		s.sweepHook()
 	}
 	var done []string
 	for _, id := range ids {

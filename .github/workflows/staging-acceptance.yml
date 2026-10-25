@@ -1,0 +1,39 @@
+# Manual-only R8 staging acceptance: loopback TLS ingress + internal network +
+# containerized app + SQLite. No production domain, ACME, registry or real
+# provider credentials. Never deploys anywhere.
+name: staging-acceptance
+on:
+  workflow_dispatch:
+concurrency:
+  group: staging-acceptance
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      EVIDENCE_DIR: ${{ github.workspace }}/staging-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Offline gates
+        run: make verify
+      - name: Isolated staging + test-CA TLS acceptance
+        shell: bash
+        env:
+          R8_EVIDENCE_DIR: ${{ github.workspace }}/staging-evidence
+        run: |
+          set -euo pipefail
+          bash tests/r8/staging_acceptance.sh 2>&1 | tee "$EVIDENCE_DIR/staging-acceptance.log"
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' "$EVIDENCE_DIR/staging-acceptance.log"
+      - name: Upload staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-acceptance-evidence-${{ github.run_id }}
+          path: staging-evidence/
+          if-no-files-found: warn

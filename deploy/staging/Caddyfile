@@ -1,0 +1,26 @@
+# Reference production-shaped Caddy ingress for staging. The CI staging script
+# uses the repository's test Go ingress with a throwaway CA so it needs no
+# external images/ACME. This Caddyfile documents the equivalent TLS boundary.
+{
+	auto_https off
+}
+
+https://localhost:8443 {
+	tls /certs/server.pem /certs/server-key.pem
+	header {
+		Strict-Transport-Security "max-age=300"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+	request_header -Forwarded
+	request_header -X-Real-IP
+	reverse_proxy app:8788 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+http://localhost:8080 {
+	redir https://localhost:8443{uri} 308
+}

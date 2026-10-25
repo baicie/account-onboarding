@@ -68,6 +68,9 @@ type Store struct {
 	redactor *security.Redactor
 	now      func() time.Time
 	validate func(from, to string) error
+	// sweepHook is an optional test-only synchronization point used by
+	// SweepDeadlines race tests; nil in production.
+	sweepHook func()
 }
 
 // Open opens the database, applies pragmas and runs migrations.
