@@ -10,11 +10,13 @@
   No tag, release, image, GHCR push, merge or deployment was made; production/live
   platforms remain untouched.
 - **Design pack**: `account-onboarding-design-v0.1.0/` (v0.1.0, read-only input)
-- **Verdict**: **`LOCAL_RC_READY`** for the local release candidate; after the R6 sprint the
-  deployment block is narrowed to the missing container runtime evidence (Docker
-  daemon unavailable) and live-platform/TLS-production gaps; see §14.
-  **`DEPLOYMENT_BLOCKED`** until Docker/TLS/live-platform gates are executed;
-  **not `LIVE_READY`**. No P0 findings. Remaining gaps are infrastructure or
+- **Verdict**: **`CONTAINER_RC_READY`**. Real Docker build/runtime/health,
+  SQLite persistence+migration, SIGTERM/SIGKILL, single-writer, secret
+  permissions, encrypted backup/restore and compose parity are PASS in GitHub
+  Actions run 40161727232 (63/63 checks); independent R7 review is PASS with
+  P0=0/P1=0. This is **not `LIVE_READY`**: production TLS ingress, GHCR publish
+  and Cloudflare/GitHub/WorkBuddy live acceptance remain NOT_RUN; production
+  deployment still requires those gates. Remaining gaps are infrastructure or
   live-platform items explicitly marked **NOT_RUN**, not hidden PARTIALs.
 
 ## 1. Executive summary
@@ -37,13 +39,14 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
+| **R7** source-review closure + container CI | **CONTAINER_RC_READY** (2026-10-25) | All container gates executed on GitHub Actions run 40161727232 (Docker Engine 28.0.4, linux/amd64): image build + injected commit, Image ID `sha256:352b85ec…9763`, non-root/read-only/cap_drop, health/readiness, schema 3, v2 upgrade, WAL/SHM 0600, secret 0400 + UID 10002 denial, idempotency contract, revocation, SIGTERM/SIGKILL, single-writer, encrypted backup/restore + restored instance, fail-closed configs, compose parity: **63 PASS / 0 FAIL**. P0 fixes: idempotency test contract, deadline/cancel sweep race. `REVIEW-R7.md` PASS (P0=0/P1=0; P2 image-inspect evidence fixed and verified) — see [`R7.md`](R7.md) |
 | **R6.1** container runtime closure | **NOT_RUN / DEPLOYMENT_BLOCKED** (2026-10-25) | Docker client 29.7.2 present but daemon/VM not running (`docker info`/`version` exit 1, socket `_ping` 000, `docker desktop status` exit 1); no authorized alternate Docker env. Build/run/health/persistence/migration/SIGTERM/SIGKILL/single-writer/backup/security gates **NOT_RUN**; **no image, no Image ID/digest**; no code changes — [`R6.1.md`](R6.1.md), evidence `R6.1-docker-probe.log` |
 | **Independent review** | **PASS (scoped)** after fixes | first pass PARTIAL (P0=0, P1=3, P2=11); two code-level P1s fixed and independently re-verified, TLS ingress reclassified as deployment `NOT_RUN`; see [`REVIEW.md`](REVIEW.md) §8 |
 
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 325 top-level tests (320 PASS + 5 opt-in SKIP) / 634 passes including subtests, 0 FAIL** (after R6 sprint fixes)
+- `go test ./... -count=1` → **29 packages (14 with test files), 330 top-level tests (325 PASS + 5 opt-in SKIP) / 639 passes including subtests, 0 FAIL** (after R6 sprint fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -268,7 +271,7 @@ Cloudflare/GitHub/WorkBuddy live remain **NOT_RUN**.
 | R5.1-C local HTTPS ingress | **PASS** | `tests/r51/tls_acceptance.sh` exit 0, **26/26**: test CA + hostname verification, TLS 1.3 negotiated / TLS 1.1 refused, HTTP 308→HTTPS, Secure+HttpOnly+SameSite=Strict, CSRF/Origin 403, logout+replay rejection, revocation survives SIGKILL+restart, forged Forwarded/X-Forwarded-* cannot downgrade or spoof, forged Host on the HTTP redirect rejected 400, loopback-only listeners, non-loopback listen refused; [`R5.1.md`](R5.1.md) §2 |
 | R5.1-B Docker runtime | **NOT_RUN** | daemon unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1); no image/digest/container; `docker compose config` exit 0 (static); hardened isolated script exit 3 = NOT_RUN; JSON-keyring + `/readyz`-based HEALTHCHECK readiness fixes locally tested (6/6); static audit also exposed a secret-readability risk for UID 10001 (preflight warning + acceptance assertions); post-review P2s (backup args, redirect Host allowlist, lock ops semantics, reproducible override) closed; **CONTAINER_RC_READY not claimed** — [`R5.1-B.md`](R5.1-B.md) |
 | R5.1-D reliability | container **NOT_RUN**; process-level **PASS** | unconditional single-writer `flock` lock (second instance refused, released on SIGKILL; rolling-upgrade/migrate stop requirements documented), missing revocation table `/readyz` 503 + cookie fail-closed, missing master key fail-closed, sandbox E2E 4/4 PASS (crash/idempotency/cancel) |
-| Verdict | **DEPLOYMENT_BLOCKED** | TLS passed, but Docker/container acceptance is the remaining deployment blocker; **not CONTAINER_RC_READY / not LIVE_READY** |
+| Verdict at R5.1-B | **DEPLOYMENT_BLOCKED** (historical) | TLS passed, but Docker/container acceptance was then the remaining deployment blocker; superseded by R7 `CONTAINER_RC_READY` |
 
 ## 13. Post-review verification
 
@@ -336,3 +339,26 @@ Exact operator unblock steps are in [`R6.1.md`](R6.1.md) §6: start Docker
 Desktop/daemon, verify `docker info` exit 0, then rerun `make verify`,
 `docker compose config`, `tests/r51/docker_acceptance.sh` and record the image
 ID/platform for review.
+
+## 16. R7 source-review closure and real container CI (2026-10-25)
+
+The container gate was executed for real on a GitHub-hosted Ubuntu runner
+(final Actions run 40161727232, commit 50f47fb, Docker Engine 28.0.4):
+
+| Item | Evidence |
+|---|---|
+| Image | `sha256:352b85ec6360e2ff9c1f3d22b6e7bdb7cd567c4a4daba1a0b4dc369ddfe69763`, linux/amd64, 97,417,603 bytes, user 10001:10001; local Image ID only (no GHCR push/manifest digest) |
+| Container gate | `tests/r51/docker_acceptance.sh` **63 PASS / 0 FAIL** |
+| Covered | build+commit injection, non-root, read-only rootfs, cap_drop ALL, NNP, loopback-only, authenticated health/readiness, schema 3, v2 upgrade, SQLite/WAL/SHM 0600, secret 0400 + UID 10002 denial, idempotency contract, revocation, SIGTERM/SIGKILL, single-writer, encrypted backup/restore (+ restored instance), fail-closed configs, compose parity/strict secrets |
+| Evidence | `docs/acceptance/evidence/r7-container-ci/` |
+| Reports | [`R7.md`](R7.md), [`REVIEW-R7.md`](REVIEW-R7.md) (independent verdict) |
+
+P0 review fixes are closed: the Docker acceptance script now honors the real
+Idempotency-Key contract (with a no-Docker self-test), and the deadline sweeper
+re-checks CANCEL_REQUESTED/deadline in-transaction with conditional updates and
+single terminal-event emission (5 deterministic race tests).
+
+`CONTAINER_RC_READY` is claimed after the independent R7 review confirmed
+P0=0/P1=0 and the review P2 (image-inspect artifact after cleanup) was fixed and
+verified by the final CI run. `LIVE_READY` remains out of scope (no production
+TLS, no GHCR/push, no live Cloudflare/GitHub/WorkBuddy acceptance).

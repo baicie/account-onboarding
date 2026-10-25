@@ -1,2 +1,80 @@
-[]
-Error response from daemon: No such image: sha256:084ae09a92f6a154f95d64867ba73d3622c9711804ebc261707f3bc95c20c44f
+[
+    {
+        "Id": "sha256:352b85ec6360e2ff9c1f3d22b6e7bdb7cd567c4a4daba1a0b4dc369ddfe69763",
+        "RepoTags": [
+            "account-onboarding:r51-1792902270-3635"
+        ],
+        "RepoDigests": [],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-10-25T04:25:41.97108089Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "10001:10001",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "8788/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ONBOARD_LISTEN=0.0.0.0:8788",
+                "ONBOARD_DB_PATH=/app/data/state.sqlite",
+                "ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key"
+            ],
+            "Cmd": null,
+            "Healthcheck": {
+                "Test": [
+                    "CMD",
+                    "/app/onboardd",
+                    "healthcheck"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 5000000000,
+                "StartPeriod": 10000000000,
+                "Retries": 3
+            },
+            "Image": "",
+            "Volumes": {
+                "/app/data": {}
+            },
+            "WorkingDir": "/app",
+            "Entrypoint": [
+                "/app/onboardd"
+            ],
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 97417603,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/j3jcutu6l37xb5mlc8w60gff6/diff:/var/lib/docker/overlay2/emm0zg5alrl0jxlfvhh23d23i/diff:/var/lib/docker/overlay2/6374a5ac259302fdff53f57b0c04817b9c0b310344a783b54b5424c3ee42bcfd/diff",
+                "MergedDir": "/var/lib/docker/overlay2/xzxfbrlmw494lp0qwxu1negax/merged",
+                "UpperDir": "/var/lib/docker/overlay2/xzxfbrlmw494lp0qwxu1negax/diff",
+                "WorkDir": "/var/lib/docker/overlay2/xzxfbrlmw494lp0qwxu1negax/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:9b35de7893378218e365c34c2c735fb0032a859112fb7345ca8ea73f9aa1db70",
+                "sha256:d20c3d3023f46fe5e51c6e2db47f5713f873dcf444c31806a4489f1ba7b87c03",
+                "sha256:6733e6e13847b1af02c9801b48b80fc7929dd968eace108831ea22978fbca2c6",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-10-25T04:25:42.334653218Z"
+        }
+    }
+]
