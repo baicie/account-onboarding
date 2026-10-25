@@ -2,7 +2,7 @@
 #0 building with "default" instance using docker driver
 
 #1 [internal] load build definition from Dockerfile
-#1 transferring dockerfile: 2.03kB 0.0s done
+#1 transferring dockerfile: 2.03kB done
 #1 DONE 0.0s
 
 #2 resolve image config for docker-image://docker.io/docker/dockerfile:1
@@ -18,7 +18,7 @@
 #4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e done
 #4 sha256:7b32114e84ca21aeb2d6f871a0b62b3a0762193f75d9afd048ee4cbe889f3148 1.13kB / 1.13kB done
 #4 sha256:528c92d70d7e39dbb3dd1c6681f6750c565c7e45b70527cda47c1a61495c1b6a 1.41kB / 1.41kB done
-#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.1s
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 12.58MB / 14.28MB 0.1s
 #4 sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e 9.08kB / 9.08kB done
 #4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.1s done
 #4 extracting sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 0.1s
@@ -28,10 +28,10 @@
 #5 [internal] load metadata for docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
 #5 ...
 
-#6 [auth] library/golang:pull token for registry-1.docker.io
+#6 [auth] library/debian:pull token for registry-1.docker.io
 #6 DONE 0.0s
 
-#7 [auth] library/debian:pull token for registry-1.docker.io
+#7 [auth] library/golang:pull token for registry-1.docker.io
 #7 DONE 0.0s
 
 #8 [internal] load metadata for docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
@@ -45,141 +45,141 @@
 #9 DONE 0.0s
 
 #10 [internal] load build context
-#10 transferring context: 2.91MB 0.0s done
+#10 transferring context: 3.10MB 0.1s done
 #10 DONE 0.1s
 
 #11 [runtime 1/4] FROM docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 #11 resolve docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 done
+#11 sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26 0B / 28.25MB 0.1s
 #11 sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 5.65kB / 5.65kB done
 #11 sha256:ec31d744f83f4a73447ba045aaab9409997efe5cc706eca4890c1be36cc1606a 1.02kB / 1.02kB done
 #11 sha256:8da84df25d28176be84164040cd45e128c6b4c6a80b7d7cbe17fe2b9f198efc2 453B / 453B done
-#11 sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26 9.44MB / 28.25MB 0.1s
 #11 sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26 28.25MB / 28.25MB 0.2s
-#11 sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26 28.25MB / 28.25MB 0.2s done
 #11 extracting sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26
-#11 extracting sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26 1.3s done
-#11 DONE 1.6s
+#11 sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26 28.25MB / 28.25MB 0.2s done
+#11 extracting sha256:11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26 1.2s done
+#11 DONE 1.5s
 
 #12 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
 #12 resolve docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af done
 #12 sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af 6.53kB / 6.53kB done
 #12 sha256:88750ccdd0f2a77fcc00a14b1a48d6409bd8ddb5d7c2dd6ec0b4a2e916daf9d9 2.32kB / 2.32kB done
-#12 sha256:0d494ea9b5863337de0dfb4f938062bf0261a919016eb162d2be26381dbadafe 3.06kB / 3.06kB done
 #12 sha256:8a051559ff62acdfa1af9916c3c67673d946bb71f81cb8f30c565fa647cb6a77 48.52MB / 48.52MB 0.2s done
+#12 sha256:0d494ea9b5863337de0dfb4f938062bf0261a919016eb162d2be26381dbadafe 3.06kB / 3.06kB done
 #12 sha256:55f3510f14ae1203443980e2b03e3c4adb950f89becd0189ad5032562ef49ea0 23.87MB / 23.87MB 0.2s done
 #12 extracting sha256:8a051559ff62acdfa1af9916c3c67673d946bb71f81cb8f30c565fa647cb6a77 1.3s
-#12 sha256:e0959ba39613fdd89ed3679cb0483740e954fcc9d3e68d882e6f27130ac124e0 64.43MB / 64.43MB 0.6s done
-#12 sha256:f64d732997a02e45cca29ef334d56f89f7599c8937c2617b6467edd19bc037d6 67.35MB / 67.35MB 0.6s done
-#12 sha256:00a03a159056293c55a9fb9e4c63a7ce78d2723ed0eef7f39c9b9d42f3ec9c3e 92.63MB / 92.63MB 0.8s done
-#12 sha256:88b66c860a3da255c6aed361d7855e8f9d8a82f6bc4222dae1317ad91f993b28 127B / 127B 0.7s done
-#12 sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 32B / 32B 0.7s done
-#12 extracting sha256:8a051559ff62acdfa1af9916c3c67673d946bb71f81cb8f30c565fa647cb6a77 1.8s done
+#12 sha256:00a03a159056293c55a9fb9e4c63a7ce78d2723ed0eef7f39c9b9d42f3ec9c3e 92.63MB / 92.63MB 0.6s done
+#12 sha256:f64d732997a02e45cca29ef334d56f89f7599c8937c2617b6467edd19bc037d6 67.35MB / 67.35MB 0.8s done
+#12 sha256:e0959ba39613fdd89ed3679cb0483740e954fcc9d3e68d882e6f27130ac124e0 64.43MB / 64.43MB 0.5s done
+#12 sha256:88b66c860a3da255c6aed361d7855e8f9d8a82f6bc4222dae1317ad91f993b28 127B / 127B 0.5s done
+#12 sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 32B / 32B 0.6s done
+#12 extracting sha256:8a051559ff62acdfa1af9916c3c67673d946bb71f81cb8f30c565fa647cb6a77 1.7s done
 #12 extracting sha256:55f3510f14ae1203443980e2b03e3c4adb950f89becd0189ad5032562ef49ea0 0.1s
 #12 extracting sha256:55f3510f14ae1203443980e2b03e3c4adb950f89becd0189ad5032562ef49ea0 0.4s done
-#12 extracting sha256:e0959ba39613fdd89ed3679cb0483740e954fcc9d3e68d882e6f27130ac124e0
+#12 extracting sha256:e0959ba39613fdd89ed3679cb0483740e954fcc9d3e68d882e6f27130ac124e0 0.1s
 #12 extracting sha256:e0959ba39613fdd89ed3679cb0483740e954fcc9d3e68d882e6f27130ac124e0 1.9s done
 #12 extracting sha256:00a03a159056293c55a9fb9e4c63a7ce78d2723ed0eef7f39c9b9d42f3ec9c3e
-#12 extracting sha256:00a03a159056293c55a9fb9e4c63a7ce78d2723ed0eef7f39c9b9d42f3ec9c3e 2.0s done
-#12 extracting sha256:f64d732997a02e45cca29ef334d56f89f7599c8937c2617b6467edd19bc037d6
+#12 extracting sha256:00a03a159056293c55a9fb9e4c63a7ce78d2723ed0eef7f39c9b9d42f3ec9c3e 1.9s done
+#12 extracting sha256:f64d732997a02e45cca29ef334d56f89f7599c8937c2617b6467edd19bc037d6 0.1s
 #12 ...
 
 #13 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
-#13 0.176 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
-#13 0.202 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#13 0.174 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#13 0.201 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
 #13 0.211 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
-#13 0.262 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
-#13 0.360 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
-#13 0.369 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [357 kB]
-#13 1.290 Fetched 9395 kB in 1s (8268 kB/s)
-#13 1.290 Reading package lists...
-#13 1.849 Reading package lists...
-#13 2.486 Building dependency tree...
-#13 2.644 Reading state information...
-#13 2.783 The following additional packages will be installed:
-#13 2.784   libssl3 openssl
-#13 2.806 The following NEW packages will be installed:
-#13 2.806   ca-certificates libssl3 openssl
-#13 2.806 The following packages will be upgraded:
-#13 2.806   tzdata
-#13 2.826 1 upgraded, 3 newly installed, 0 to remove and 0 not upgraded.
-#13 2.826 Need to get 3949 kB of archives.
-#13 2.826 After this operation, 8954 kB of additional disk space will be used.
-#13 2.826 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 tzdata all 2026e-0+deb12u1 [306 kB]
-#13 2.834 Get:2 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u1 [2039 kB]
-#13 2.846 Get:3 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.22-1~deb12u1 [1442 kB]
-#13 2.849 Get:4 http://deb.debian.org/debian-security bookworm-security/main amd64 ca-certificates all 20250419~deb12u2 [161 kB]
-#13 2.958 debconf: delaying package configuration, since apt-utils is not installed
-#13 2.979 Fetched 3949 kB in 0s (102 MB/s)
-#13 2.997 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
-#13 3.003 Preparing to unpack .../tzdata_2026e-0+deb12u1_all.deb ...
-#13 3.099 Unpacking tzdata (2026e-0+deb12u1) over (2026c-0+deb12u1) ...
-#13 3.963 Selecting previously unselected package libssl3:amd64.
-#13 3.964 Preparing to unpack .../libssl3_3.0.22-1~deb12u1_amd64.deb ...
-#13 3.965 Unpacking libssl3:amd64 (3.0.22-1~deb12u1) ...
-#13 4.118 Selecting previously unselected package openssl.
-#13 4.119 Preparing to unpack .../openssl_3.0.22-1~deb12u1_amd64.deb ...
-#13 4.120 Unpacking openssl (3.0.22-1~deb12u1) ...
-#13 4.228 Selecting previously unselected package ca-certificates.
-#13 4.229 Preparing to unpack .../ca-certificates_20250419~deb12u2_all.deb ...
-#13 4.230 Unpacking ca-certificates (20250419~deb12u2) ...
-#13 4.265 Setting up libssl3:amd64 (3.0.22-1~deb12u1) ...
-#13 4.267 Setting up tzdata (2026e-0+deb12u1) ...
-#13 4.333 debconf: unable to initialize frontend: Dialog
-#13 4.333 debconf: (TERM is not set, so the dialog frontend is not usable.)
-#13 4.333 debconf: falling back to frontend: Readline
-#13 4.333 debconf: unable to initialize frontend: Readline
-#13 4.333 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
-#13 4.333 debconf: falling back to frontend: Teletype
-#13 4.372 
-#13 4.372 Current default time zone: 'Etc/UTC'
-#13 4.373 Local time is now:      Sun Oct 25 11:45:16 UTC 2026.
-#13 4.373 Universal Time is now:  Sun Oct 25 11:45:16 UTC 2026.
-#13 4.373 Run 'dpkg-reconfigure tzdata' if you wish to change it.
-#13 4.373 
-#13 4.430 Setting up openssl (3.0.22-1~deb12u1) ...
-#13 4.433 Setting up ca-certificates (20250419~deb12u2) ...
-#13 4.507 debconf: unable to initialize frontend: Dialog
-#13 4.507 debconf: (TERM is not set, so the dialog frontend is not usable.)
-#13 4.507 debconf: falling back to frontend: Readline
-#13 4.508 debconf: unable to initialize frontend: Readline
-#13 4.508 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
-#13 4.508 debconf: falling back to frontend: Teletype
-#13 4.926 Updating certificates in /etc/ssl/certs...
-#13 5.495 148 added, 0 removed; done.
-#13 5.508 Processing triggers for libc-bin (2.36-9+deb12u14) ...
-#13 5.516 Processing triggers for ca-certificates (20250419~deb12u2) ...
-#13 5.519 Updating certificates in /etc/ssl/certs...
-#13 5.971 0 added, 0 removed; done.
-#13 5.971 Running hooks in /etc/ca-certificates/update.d...
-#13 5.971 done.
-#13 DONE 6.2s
+#13 0.260 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#13 0.366 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#13 0.367 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [357 kB]
+#13 1.377 Fetched 9395 kB in 1s (7612 kB/s)
+#13 1.377 Reading package lists...
+#13 2.010 Reading package lists...
+#13 2.618 Building dependency tree...
+#13 2.769 Reading state information...
+#13 2.909 The following additional packages will be installed:
+#13 2.910   libssl3 openssl
+#13 2.930 The following NEW packages will be installed:
+#13 2.931   ca-certificates libssl3 openssl
+#13 2.933 The following packages will be upgraded:
+#13 2.933   tzdata
+#13 2.951 1 upgraded, 3 newly installed, 0 to remove and 0 not upgraded.
+#13 2.951 Need to get 3949 kB of archives.
+#13 2.951 After this operation, 8954 kB of additional disk space will be used.
+#13 2.951 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 tzdata all 2026e-0+deb12u1 [306 kB]
+#13 2.958 Get:2 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u1 [2039 kB]
+#13 2.967 Get:3 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.22-1~deb12u1 [1442 kB]
+#13 2.970 Get:4 http://deb.debian.org/debian-security bookworm-security/main amd64 ca-certificates all 20250419~deb12u2 [161 kB]
+#13 3.078 debconf: delaying package configuration, since apt-utils is not installed
+#13 3.098 Fetched 3949 kB in 0s (116 MB/s)
+#13 3.175 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+#13 3.181 Preparing to unpack .../tzdata_2026e-0+deb12u1_all.deb ...
+#13 3.317 Unpacking tzdata (2026e-0+deb12u1) over (2026c-0+deb12u1) ...
+#13 3.961 Selecting previously unselected package libssl3:amd64.
+#13 3.962 Preparing to unpack .../libssl3_3.0.22-1~deb12u1_amd64.deb ...
+#13 3.963 Unpacking libssl3:amd64 (3.0.22-1~deb12u1) ...
+#13 4.101 Selecting previously unselected package openssl.
+#13 4.102 Preparing to unpack .../openssl_3.0.22-1~deb12u1_amd64.deb ...
+#13 4.103 Unpacking openssl (3.0.22-1~deb12u1) ...
+#13 4.211 Selecting previously unselected package ca-certificates.
+#13 4.213 Preparing to unpack .../ca-certificates_20250419~deb12u2_all.deb ...
+#13 4.213 Unpacking ca-certificates (20250419~deb12u2) ...
+#13 4.251 Setting up libssl3:amd64 (3.0.22-1~deb12u1) ...
+#13 4.253 Setting up tzdata (2026e-0+deb12u1) ...
+#13 4.318 debconf: unable to initialize frontend: Dialog
+#13 4.318 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#13 4.318 debconf: falling back to frontend: Readline
+#13 4.318 debconf: unable to initialize frontend: Readline
+#13 4.318 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#13 4.318 debconf: falling back to frontend: Teletype
+#13 4.358 
+#13 4.358 Current default time zone: 'Etc/UTC'
+#13 4.360 Local time is now:      Sun Oct 25 12:19:52 UTC 2026.
+#13 4.360 Universal Time is now:  Sun Oct 25 12:19:52 UTC 2026.
+#13 4.360 Run 'dpkg-reconfigure tzdata' if you wish to change it.
+#13 4.360 
+#13 4.415 Setting up openssl (3.0.22-1~deb12u1) ...
+#13 4.419 Setting up ca-certificates (20250419~deb12u2) ...
+#13 4.493 debconf: unable to initialize frontend: Dialog
+#13 4.493 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#13 4.493 debconf: falling back to frontend: Readline
+#13 4.493 debconf: unable to initialize frontend: Readline
+#13 4.493 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#13 4.493 debconf: falling back to frontend: Teletype
+#13 4.881 Updating certificates in /etc/ssl/certs...
+#13 5.427 148 added, 0 removed; done.
+#13 5.615 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+#13 5.623 Processing triggers for ca-certificates (20250419~deb12u2) ...
+#13 5.627 Updating certificates in /etc/ssl/certs...
+#13 6.045 0 added, 0 removed; done.
+#13 6.045 Running hooks in /etc/ca-certificates/update.d...
+#13 6.046 done.
+#13 DONE 6.1s
 
 #12 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
-#12 extracting sha256:f64d732997a02e45cca29ef334d56f89f7599c8937c2617b6467edd19bc037d6 4.0s done
+#12 extracting sha256:f64d732997a02e45cca29ef334d56f89f7599c8937c2617b6467edd19bc037d6 3.7s done
 #12 extracting sha256:88b66c860a3da255c6aed361d7855e8f9d8a82f6bc4222dae1317ad91f993b28
 #12 extracting sha256:88b66c860a3da255c6aed361d7855e8f9d8a82f6bc4222dae1317ad91f993b28 done
 #12 extracting sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 done
-#12 DONE 12.3s
+#12 DONE 11.3s
 
 #14 [build 2/7] WORKDIR /src
 #14 DONE 0.0s
 
 #15 [build 3/7] RUN apt-get update     && apt-get install -y --no-install-recommends gcc libc6-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
-#15 0.143 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
-#15 0.168 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
-#15 0.178 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
-#15 0.228 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
-#15 0.322 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
-#15 0.331 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [357 kB]
-#15 1.120 Fetched 9395 kB in 1s (9326 kB/s)
-#15 1.120 Reading package lists...
-#15 1.614 Reading package lists...
-#15 2.066 Building dependency tree...
-#15 2.187 Reading state information...
-#15 2.312 gcc is already the newest version (4:12.2.0-3).
-#15 2.312 libc6-dev is already the newest version (2.36-9+deb12u14).
-#15 2.312 ca-certificates is already the newest version (20250419~deb12u2).
-#15 2.312 0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded.
+#15 0.170 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#15 0.195 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#15 0.205 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#15 0.247 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#15 0.338 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#15 0.338 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [357 kB]
+#15 1.128 Fetched 9395 kB in 1s (9258 kB/s)
+#15 1.128 Reading package lists...
+#15 1.580 Reading package lists...
+#15 2.021 Building dependency tree...
+#15 2.125 Reading state information...
+#15 2.242 gcc is already the newest version (4:12.2.0-3).
+#15 2.242 libc6-dev is already the newest version (2.36-9+deb12u14).
+#15 2.242 ca-certificates is already the newest version (20250419~deb12u2).
+#15 2.242 0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded.
 #15 DONE 2.3s
 
 #16 [build 4/7] COPY go.mod go.sum ./
@@ -189,10 +189,10 @@
 #17 DONE 0.4s
 
 #18 [build 6/7] COPY . .
-#18 DONE 0.1s
+#18 DONE 0.0s
 
-#19 [build 7/7] RUN CGO_ENABLED=1 GOOS=linux go build -trimpath     -ldflags="-s -w -X github.com/baicie/account-onboarding/internal/api.Version=0.1.0 -X github.com/baicie/account-onboarding/internal/api.Commit=dad3e33921a1232cee1e412dbbe93cc1085f49a3"     -o /out/onboardd ./cmd/onboardd
-#19 DONE 44.3s
+#19 [build 7/7] RUN CGO_ENABLED=1 GOOS=linux go build -trimpath     -ldflags="-s -w -X github.com/baicie/account-onboarding/internal/api.Version=0.1.0 -X github.com/baicie/account-onboarding/internal/api.Commit=0c4de93bce9876e224ba829c9f6c5fdbc578ef8b"     -o /out/onboardd ./cmd/onboardd
+#19 DONE 43.8s
 
 #20 [runtime 3/4] COPY --from=build /out/onboardd /app/onboardd
 #20 DONE 0.0s
@@ -202,12 +202,12 @@
 
 #22 exporting to image
 #22 exporting layers
-#22 exporting layers 1.0s done
-#22 writing image sha256:7552cfd0123680f800a26bc2975c436ddda9ff8db9b80f2cc29228ff42f28911 done
-#22 naming to docker.io/library/account-onboarding:r51-1792928705-2262 done
-#22 DONE 1.0s
-PASS image built: id=sha256:7552cfd0123680f800a26bc2975c436ddda9ff8db9b80f2cc29228ff42f28911 platform=linux/amd64 user=10001:10001 size=97917675 commit=dad3e33921a1232cee1e412dbbe93cc1085f49a3
-PASS image binary reports injected commit (dad3e33921a1232cee1e412dbbe93cc1085f49a3)
+#22 exporting layers 0.8s done
+#22 writing image sha256:53b2f1d77a39d60f15392b73a9d1c6291e8ea1fb5b104f6af23a07262f2991cb done
+#22 naming to docker.io/library/account-onboarding:r51-1792930783-2255 done
+#22 DONE 0.8s
+PASS image built: id=sha256:53b2f1d77a39d60f15392b73a9d1c6291e8ea1fb5b104f6af23a07262f2991cb platform=linux/amd64 user=10001:10001 size=97917675 commit=0c4de93bce9876e224ba829c9f6c5fdbc578ef8b
+PASS image binary reports injected commit (0c4de93bce9876e224ba829c9f6c5fdbc578ef8b)
 === run + health + hardening ===
 PASS /healthz 200
 PASS /readyz 200 (schema/revocation-table/master-key ready)
@@ -232,11 +232,11 @@ PASS v2 -> schema 5 after container start
 === runs + idempotency contract ===
 PASS POST /v1/runs without Idempotency-Key rejected (HTTP 400)
 PASS missing-key error class VALIDATION
-PASS create run 1 (distinct key): HTTP 202 id=ee20a15a-6b1b-4407-8df2-eb0caf09b68d
-PASS create run 2 (distinct key): HTTP 202 id=59f31eda-d5be-4173-a886-046b677b0ab6
+PASS create run 1 (distinct key): HTTP 202 id=b4862bb0-8494-423c-b986-d195f35f338e
+PASS create run 2 (distinct key): HTTP 202 id=a55cbb31-3dd4-4372-9477-ad80db34b089
 PASS distinct Idempotency-Key -> distinct runs
-PASS create replay run: HTTP 202 id=770b54ba-6912-4e51-9db8-c65d7729757d
-PASS replay same key/body: HTTP 202 id=770b54ba-6912-4e51-9db8-c65d7729757d
+PASS create replay run: HTTP 202 id=9633c2f4-2e31-4590-9b5e-cc4ddb89f998
+PASS replay same key/body: HTTP 202 id=9633c2f4-2e31-4590-9b5e-cc4ddb89f998
 PASS same Idempotency-Key -> same run
 PASS same Idempotency-Key with different body rejected (HTTP 409)
 PASS reused-key error class CONFLICT
@@ -272,16 +272,16 @@ PASS invalid master key container exits
 PASS unwritable data directory fails closed (container exited)
 === compose parity (isolated project) ===
 PASS compose config (isolated override)
- Network onboarding-r51-r51-1792928705-2262_default  Creating
- Network onboarding-r51-r51-1792928705-2262_default  Created
- Container onboarding-r51-r51-1792928705-2262-onboarding-1  Creating
- Container onboarding-r51-r51-1792928705-2262-onboarding-1  Created
- Container onboarding-r51-r51-1792928705-2262-onboarding-1  Starting
- Container onboarding-r51-r51-1792928705-2262-onboarding-1  Started
+ Network onboarding-r51-r51-1792930783-2255_default  Creating
+ Network onboarding-r51-r51-1792930783-2255_default  Created
+ Container onboarding-r51-r51-1792930783-2255-onboarding-1  Creating
+ Container onboarding-r51-r51-1792930783-2255-onboarding-1  Created
+ Container onboarding-r51-r51-1792930783-2255-onboarding-1  Starting
+ Container onboarding-r51-r51-1792930783-2255-onboarding-1  Started
 PASS compose up (isolated project)
 PASS compose service healthy: Up 5 seconds (healthy)
 PASS compose secrets readable by UID 10001
 PASS compose secrets 0400 uid10001, unauthorized UID 10002 denied
 PASS exactly one writer container in the compose project
-PASS compose published port loopback-only (127.0.0.1:37173)
-SUMMARY pass=63 fail=0 image=sha256:7552cfd0123680f800a26bc2975c436ddda9ff8db9b80f2cc29228ff42f28911 platform=linux/amd64
+PASS compose published port loopback-only (127.0.0.1:47969)
+SUMMARY pass=63 fail=0 image=sha256:53b2f1d77a39d60f15392b73a9d1c6291e8ea1fb5b104f6af23a07262f2991cb platform=linux/amd64
