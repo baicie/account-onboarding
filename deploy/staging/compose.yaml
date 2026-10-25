@@ -71,11 +71,15 @@ services:
     depends_on:
       app:
         condition: service_healthy
-    networks: [staging-internal]
+    networks: [staging-internal, staging-edge]
 
 networks:
+  # App can only talk on the internal network. The ingress also joins a
+  # non-internal edge network so Docker can publish its loopback-only ports;
+  # the app itself remains unpublished and unreachable from the edge network.
   staging-internal:
     internal: true
+  staging-edge: {}
 
 secrets:
   onboarding_master_key:
