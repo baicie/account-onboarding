@@ -73,3 +73,30 @@ material.
 - `TestExternalOperationCancellationIsUnknown` (cancel after PREPARED)
 - `TestExternalOperationDiagnosticsAdminOnly`
 - Provider duplicate fail-closed tests remain in the Cloudflare package.
+
+## R9 decision: durable operation gate, not just an event projection
+
+R8 used append-only events as both audit and status source. Review proved that
+this is insufficient as a mutual-exclusion/authorization primitive: a later
+FAILED event could overwrite an earlier OUTCOME_UNKNOWN, and concurrent workers
+could race. R9 therefore adds migration 0004 `external_operations` as the
+authoritative state machine, while keeping events as human-readable audit:
+
+- `BeginExternalOperation` inserts `PREPARED` (intent) atomically.
+- `MarkExternalOperationInFlight` is the only PREPARED→IN_FLIGHT CAS permit; it
+  revalidates the run lease owner and fencing generation. Concurrent candidates
+  may exist but exactly one wins; losers must not call the provider.
+- `CompleteExternalOperation` accepts only IN_FLIGHT→CONFIRMED /
+  OUTCOME_UNKNOWN / RECONCILIATION_REQUIRED / FAILED_DEFINITE. It cannot
+  overwrite an ambiguous or confirmed state.
+- Ambiguous/unknown/resolved/in-flight states block automatic retry; only an
+  operator `ResolveExternalOperation` (audited, version-CAS) can close them.
+- The event log remains the audit trail (IN_FLIGHT/status events), but the table
+  is the lock/permit and authoritative projection. This avoids treating event
+  history as a mutex while preserving append-only forensic records.
+- `/readyz` requires the table (schema 4), so an app cannot serve traffic with
+  the gate missing.
+
+Trade-off: an old binary cannot run against schema 4 (guard refuses); rollback
+must restore the pre-upgrade schema-3 backup or use a binary whose max schema
+supports the DB. R9 exercises both paths in CI.

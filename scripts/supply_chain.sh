@@ -24,15 +24,15 @@ BINARY_SHA="$(docker run --rm --entrypoint cat "$IMAGE" /app/onboardd \
 GOLANG_REF="$(awk -F= '/^ARG GOLANG_IMAGE=/{print $2; exit}' Dockerfile)"
 RUNTIME_REF="$(awk -F= '/^ARG RUNTIME_IMAGE=/{print $2; exit}' Dockerfile)"
 BASE_REFS="golang_image=${GOLANG_REF:-NOT_RUN} runtime_image=${RUNTIME_REF:-NOT_RUN}"
-BASE_DIGESTS="NOT_RUN"
+BASE_DIGESTS=""
 if command -v docker >/dev/null 2>&1; then
   for ref in "${GOLANG_REF:-}" "${RUNTIME_REF:-}"; do
     [ -n "$ref" ] || continue
     d="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("digest",""))' 2>/dev/null || true)"
-    [ -n "$d" ] && BASE_DIGESTS="${BASE_DIGESTS};${ref}@${d}"
+    [ -n "$d" ] && BASE_DIGESTS="${BASE_DIGESTS:+$BASE_DIGESTS; }${ref}@${d}"
   done
 fi
-[ "$BASE_DIGESTS" = "NOT_RUN" ] && BASE_DIGESTS="NOT_RUN (tag-pinned; registry digest not resolved)"
+[ -z "$BASE_DIGESTS" ] && BASE_DIGESTS="NOT_RUN (tag-pinned; registry digest not resolved)"
 go mod verify > "$OUT/go-mod-verify.txt"
 go list -m -json all > "$OUT/go-modules.jsonl" 2>/dev/null
 python3 - "$OUT" "$COMMIT" "$GO_VERSION" "$IMAGE_ID_HEX" "$SIZE" "$ARCH" "$USER_CFG" "$BINARY_SHA" "$BASE_REFS" "$BASE_DIGESTS" <<'PY'
