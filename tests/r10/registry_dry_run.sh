@@ -31,7 +31,7 @@ grep -q "commit $GIT_SHA" "$WORK/version.txt" && ok "image-internal commit match
 bash "$ROOT/scripts/supply_chain.sh" "$IMAGE_LOCAL" "$WORK/supply" >/dev/null
 ok "SBOM/provenance generated"
 # Isolated registry (local only).
-docker run -d --name "$ID-registry" -p "127.0.0.1:$REG_PORT:5000" registry:2.8.3 >/dev/null
+docker run -d --name "$ID-registry" -p "127.0.0.1:$REG_PORT:5000" registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373 >/dev/null
 for _ in $(seq 1 60); do curl -fsS "http://$REG/v2/" >/dev/null 2>&1 && break; sleep 0.5; done
 curl -fsS "http://$REG/v2/" >/dev/null && ok "throwaway OCI registry reachable" || { bad "registry unavailable"; exit 1; }
 docker tag "$IMAGE_LOCAL" "$IMAGE_REG"
@@ -93,28 +93,11 @@ COSIGN_PASSWORD=test-only-password "$COSIGN" attest --key "$WORK/cosign.key" --y
 "$COSIGN" verify-attestation --key "$WORK/cosign.pub" --insecure-ignore-tlog --allow-insecure-registry \
   --type custom "$DIGEST_REF" > "$WORK/attestation.json" 2>"$WORK/cosign-verify-attestation.err" \
   && ok "attestation verified" || { bad "attestation verification failed"; tail -5 "$WORK/cosign-verify-attestation.err"; }
-python3 - "$WORK/attestation.json" "$GIT_SHA" <<'PY' && ok "attestation binds commit" || bad "attestation commit binding missing"
-import base64,json,sys
-want=sys.argv[2]
-try:
-    data=json.load(open(sys.argv[1]))
-except Exception:
-    sys.exit(1)
-items=data if isinstance(data,list) else [data]
-found=False
-for item in items:
-    payload=item.get('payload') if isinstance(item,dict) else None
-    if payload:
-        try:
-            import json as j
-            if want in j.dumps(j.loads(base64.b64decode(payload)),sort_keys=True):
-                found=True
-        except Exception:
-            pass
-    if isinstance(item,dict) and want in json.dumps(item):
-        found=True
-sys.exit(0 if found else 1)
-PY
+if python3 "$ROOT/tests/r10/validate_attestation.py" "$WORK/attestation.json" "$DIGEST" "$GIT_SHA"; then
+  ok "attestation subject digest + exact commit verified"
+else
+  bad "attestation statement validation failed"
+fi
 echo "SUMMARY pass=$PASS fail=$FAIL digest=$DIGEST image_id=$IMAGE_ID"
 trap - EXIT
 cleanup || true

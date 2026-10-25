@@ -195,8 +195,13 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           set -euo pipefail
-          curl -fsSL https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 -o /usr/local/bin/cosign
-          chmod +x /usr/local/bin/cosign
+          V=2.4.1
+          mkdir -p /tmp/cosign-install && cd /tmp/cosign-install
+          curl -fsSL -o cosign-linux-amd64 "https://github.com/sigstore/cosign/releases/download/v${V}/cosign-linux-amd64"
+          curl -fsSL -o cosign_checksums.txt "https://github.com/sigstore/cosign/releases/download/v${V}/cosign_checksums.txt"
+          grep " cosign-linux-amd64$" cosign_checksums.txt | sha256sum -c -
+          install -m 0755 cosign-linux-amd64 /usr/local/bin/cosign
+          cosign version
           cosign sign --yes "$DIGEST"
           cosign attest --yes --predicate candidate/candidate-provenance.json --type custom "$DIGEST"
       - name: Emit immutable rollback digest
