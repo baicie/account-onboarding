@@ -10,6 +10,7 @@ on:
       - feat/r9-release-hardening
       - feat/r10-live-preflight
       - feat/r11-integration-readiness
+      - feat/r12-acceptance-integrity
 concurrency:
   group: supply-chain
   cancel-in-progress: false
