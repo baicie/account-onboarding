@@ -84,3 +84,5 @@ You can start Docker Desktop by running 'docker desktop start'.
 ## conclusion
 DOCKER_RUNTIME_UNAVAILABLE: client 29.7.2 present, daemon/VM not running (socket stale, _ping 000, no ServerVersion).
 No install/start of Docker Desktop or host service was attempted; no settings changed.
+## git clarification
+tracked_changes=0 (git status --short --untracked-files=no is empty; the probe was generated while the R6.1 report/log were being added)
