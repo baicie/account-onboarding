@@ -3,7 +3,7 @@ name: r10-release-dry-run
 # no production credentials, no Release/Tag. This is not a publish experiment.
 on:
   push:
-    branches: [feat/r10-live-preflight, feat/r11-integration-readiness]
+    branches: [feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity]
   workflow_dispatch:
 permissions:
   contents: read
