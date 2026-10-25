@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func runPreflight(t *testing.T, url, caPath, tokenPath, report string, extra ...string) (string, error) {
@@ -23,6 +24,28 @@ func runPreflight(t *testing.T, url, caPath, tokenPath, report string, extra ...
 	cmd.Env = append(os.Environ(), "ONBOARD_CF_TEST_ADDRESSES=r11-test@example.test")
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func runPreflightArgs(t *testing.T, args []string, extraEnv []string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("bash", append([]string{"scripts/cloudflare_preflight.sh"}, args...)...)
+	cmd.Dir = filepath.Join("..", "..")
+	cmd.Env = append(os.Environ(), extraEnv...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func requireScriptsExecutable(t *testing.T) {
+	t.Helper()
+	for _, path := range []string{"scripts/cloudflare_preflight.sh", "tests/r11/deploy_recovery.sh"} {
+		info, err := os.Stat(filepath.Join("..", "..", path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			t.Fatalf("%s is not executable (mode %o); runbook executes it directly", path, info.Mode().Perm())
+		}
+	}
 }
 
 func writeTLSFixture(t *testing.T, srv *httptest.Server) (caPath, tokenPath string) {
@@ -131,6 +154,12 @@ func TestCloudflareMockLiveStopsOn429AndRedirect(t *testing.T) {
 			http.Redirect(w, r, "https://evil.example/", http.StatusFound)
 		}, "REDIRECT_REFUSED"},
 		{"forbidden", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusForbidden) }, "AUTH_DENIED"},
+		{"unauthorized", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) }, "AUTH_DENIED"},
+		{"oversize", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"messages":["` + strings.Repeat("x", 1100000) + `"]}`))
+		}, "RESPONSE_TOO_LARGE"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewTLSServer(tc.h)
@@ -146,6 +175,72 @@ func TestCloudflareMockLiveStopsOn429AndRedirect(t *testing.T) {
 				t.Fatalf("report = %s, want stop %s; out=%s", raw, tc.want, out)
 			}
 		})
+	}
+}
+
+func TestCloudflareMockTimeout(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(12 * time.Second)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"messages":[]}`))
+	}))
+	defer srv.Close()
+	ca, token := writeTLSFixture(t, srv)
+	report := filepath.Join(t.TempDir(), "report.json")
+	out, err := runPreflight(t, srv.URL, ca, token, report, "--max-seconds", "10")
+	if err == nil {
+		t.Fatalf("expected timeout failure, got success: %s", out)
+	}
+	raw, _ := os.ReadFile(report)
+	if !strings.Contains(string(raw), `"stop_reason": "TIMEOUT"`) {
+		t.Fatalf("report = %s, want TIMEOUT; out=%s", raw, out)
+	}
+}
+
+func TestCloudflareMockCleansTempHeader(t *testing.T) {
+	tmp := t.TempDir()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"messages":[]}`))
+	}))
+	defer srv.Close()
+	ca, token := writeTLSFixture(t, srv)
+	report := filepath.Join(t.TempDir(), "report.json")
+	args := []string{"--mock-live", "--mock-url", srv.URL, "--mock-ca", ca,
+		"--test-address", "r11-test@example.test", "--token-file", token,
+		"--max-requests", "1", "--max-seconds", "30", "--report", report}
+	out, err := runPreflightArgs(t, args, []string{"TMPDIR=" + tmp, "ONBOARD_CF_TEST_ADDRESSES=r11-test@example.test"})
+	if err != nil {
+		t.Fatalf("mock-live failed: %v\n%s", err, out)
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("preflight temp files were not cleaned: %v", entries)
+	}
+}
+
+func TestCloudflareLiveDemoRejectsInvalidAuthorizationFile(t *testing.T) {
+	dir := t.TempDir()
+	token := filepath.Join(dir, "token")
+	if err := os.WriteFile(token, []byte("test-address-jwt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"--live", "--base-url", "https://example.com", "--test-address", "r11-test@example.test",
+		"--token-file", token, "--max-requests", "1", "--max-seconds", "10"}
+	env := []string{"ONBOARD_CF_TEST_ADDRESSES=r11-test@example.test"}
+	if out, err := runPreflightArgs(t, base, env); err == nil || !strings.Contains(out, "ONBOARD_CF_LIVE_AUTHORIZATION") {
+		t.Fatalf("missing authz file accepted: %v %s", err, out)
+	}
+	authz := filepath.Join(dir, "authz.txt")
+	if err := os.WriteFile(authz, []byte("AUTHORIZED=NO\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env = append(env, "ONBOARD_CF_LIVE_AUTHORIZATION="+authz)
+	if out, err := runPreflightArgs(t, base, env); err == nil || !strings.Contains(out, "authorization file is invalid") {
+		t.Fatalf("invalid authz file accepted: %v %s", err, out)
 	}
 }
 
@@ -188,4 +283,8 @@ func TestCloudflareMockRejectsPermissiveTokenFile(t *testing.T) {
 	if !strings.Contains(out, "mode 0600") {
 		t.Fatalf("unexpected token permission rejection: %s", out)
 	}
+}
+
+func TestCloudflareScriptsAreExecutableForRunbook(t *testing.T) {
+	requireScriptsExecutable(t)
 }
