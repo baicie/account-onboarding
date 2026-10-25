@@ -1,0 +1,7 @@
+DRY RUN — no network calls, no credentials read.
+  test_address:    r10-test@example.test
+  request_budget:  10
+  time_budget_sec: 120
+  read-only path:  /api/parsed_mails (existing Cloudflare mailbox GET contract)
+  forbidden:       create/modify/delete mailbox, send mail, DNS/Worker/D1 changes
+  modes:           dry(default) | mock-live(local HTTPS only) | live(authorized read-only)
