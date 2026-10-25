@@ -59,7 +59,11 @@ chmod 555 "$WORK/data"; start "$ID-ro" "$PORT" "$WORK/data" || true
 sleep 4
 if [ "$(curl -sS -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)" != "200" ]; then ok "read-only DB dir fails closed"; else bad "read-only DB dir served"; fi
 chmod 777 "$WORK/data"; docker rm -f "$ID-ro" >/dev/null 2>&1 || true
-cp -a "$WORK/data/." "$WORK/data2/"; printf 'not-a-sqlite-db' > "$WORK/data2/state.sqlite"
+if ! cp -a "$WORK/data/." "$WORK/data2/" 2>/dev/null; then
+  sudo -n cp -a "$WORK/data/." "$WORK/data2/"
+  sudo -n chown -R "$(id -u):$(id -g)" "$WORK/data2"
+fi
+printf 'not-a-sqlite-db' > "$WORK/data2/state.sqlite"
 start "$ID-corrupt" "$PORT" "$WORK/data2" || true; sleep 4
 if docker inspect -f '{{.State.Running}}' "$ID-corrupt" 2>/dev/null | grep -q false; then ok "corrupt DB fails closed"; else
   [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)" != "200" ] && ok "corrupt DB not ready" || bad "corrupt DB served"

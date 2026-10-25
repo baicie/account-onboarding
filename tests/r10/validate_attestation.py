@@ -48,7 +48,8 @@ def main():
         if not isinstance(pred, dict):
             fail("missing predicate object")
         if pred.get("commit") != want_commit:
-            fail("predicate commit mismatch (must be exact full SHA)")
+            fail("predicate commit mismatch (must be exact full SHA); predicate keys=%s statement keys=%s" %
+                 (sorted(pred.keys()), sorted(st.keys())))
         if pred.get("registry_digest") != want_digest:
             fail("predicate registry_digest mismatch")
         pt = st.get("predicateType", "")
