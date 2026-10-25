@@ -37,6 +37,7 @@ cleanup(){
   if [ -d "$WORK" ]; then
     if [ "$(id -u)" = "0" ]; then rm -rf "$WORK"; else sudo -n rm -rf "$WORK" >/dev/null 2>&1 || rm -rf "$WORK" || true; fi
   fi
+  return 0
 }
 trap cleanup EXIT
 

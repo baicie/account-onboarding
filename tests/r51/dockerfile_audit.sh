@@ -10,7 +10,7 @@ ok()   { PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf 'FAIL %s\n' "$1"; }
 warn() { WARN=$((WARN+1)); printf 'WARN %s\n' "$1"; }
 
-grep -q '^ARG GOLANG_IMAGE=golang:1.25-bookworm$' "$DF" \
+grep -q '^ARG GOLANG_IMAGE=golang:1.25.5-bookworm$' "$DF" \
   && grep -q '^ARG RUNTIME_IMAGE=debian:bookworm-slim$' "$DF" \
   && grep -q '^FROM ${GOLANG_IMAGE} AS build$' "$DF" \
   && grep -q '^FROM ${RUNTIME_IMAGE} AS runtime$' "$DF" \
