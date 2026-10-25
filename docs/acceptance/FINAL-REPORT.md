@@ -39,6 +39,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
+| **R13** integration reliability | **R13_PARTIAL** (2026-10-26) | UI state enforcement/CONFIRMED recovery/audit 404; shared Go+shell parsed_mails fixture; owner-only secret files; deploy drill 16/16 (restart/bad secret/schema-too-new/report); candidate identity gate with tampered negative; local notifier fake; CI all success on c49a630, publish skipped. Authorized Live NOT_RUN; no GHCR/release — [`R13.md`](R13.md) |
 | **R12** CI acceptance integrity | **PASS_WITH_LIMITATIONS** (2026-10-26) | Fixed real CI blockers: Cloudflare preflight quote/shellcheck (ci/candidate/staging/supply), read-only DB fault injection, executable modes; added 401/oversize/timeout/temp/authz tests; deploy 12/12; lifecycle/UI hardening; final CI all success with publish skipped. Authorized Live NOT_RUN; no GHCR/release. REVIEW-R12 PASS_WITH_LIMITATIONS P0/P1/P2=0/P3=8 — [`R12.md`](R12.md) |
 | **R11** integration readiness + release safety | **CONTROLLED_LIVE_TEST_READY** (2026-10-25) | UNRESOLVED stays pending with audit; engine lifecycle fail-closed; reconciliation UI/audit history; strict signed-attestation validation; mock/authorized Cloudflare preflight; first-install/recovery 11/11; ARM64 BUILD+RUNTIME_PASS; alerts. Final CI 40192593181/40192593104/40192593089/40192593256/40192593098/40192593177; no live platform/GHCR — [`R11.md`](R11.md) |
 | **R10** live safety + release dry-run | **LIVE_PREFLIGHT_READY** (2026-10-25) | Worker-lifecycle/fenced external gate + migration 0005/schema 5, credential-bound atomic audit, isolated OCI registry publish/sign/attest dry run **15/15**, rollback **20/20**, Caddy **18/18**, staging 27/27 + container 63/63, Cloudflare preflight dry-run, admin UI/metrics. Final CI 40183814895/40183814849/40183814916/40183814840/40183814884; no GHCR/live platform — [`R10.md`](R10.md) |
@@ -473,3 +474,18 @@ make verify 0, race 0, 379 top-level (374 PASS+5 SKIP)/704. Independent
 REVIEW-R12: PASS_WITH_LIMITATIONS (P0=0/P1=0/P2=0/P3=8); Authorized Read-Only
 Cloudflare Live and real platform/GHCR/release/deploy remain NOT_RUN; LIVE_READY
 not claimed.
+
+## 22. R13 integration reliability (2026-10-26)
+
+Branch `feat/r13-integration-reliability`, PR #6 Draft/OPEN, code/CI HEAD
+`c49a630` (base R12 d9e3ee9). R13 adds reconciliation action-state enforcement
+(PREPARED/IN_FLIGHT no form, CONFIRMED restricted recovery, audit 404), a shared
+Go/shell provider envelope fixture, owner-only secret file enforcement, a
+deploy drill expanded to 16/16 (Docker restart, bad secret permissions,
+schema-too-new, report.json), a candidate identity gate with tampered-negative
+proof, and a local notifier fake boundary. CI 40214124373 (ci),
+40214120881 (deploy 16/16/Cloudflare/ARM64), 40214120890 staging,
+40214120963 supply, 40214120883 rollback/Caddy, 40214120935 dry-run,
+40214120968 candidate success incl. identity gate; publish skipped. Authorized
+Read-Only Cloudflare Live and real platform/GHCR/deploy remain NOT_RUN;
+LIVE_READY not claimed. R13 verdict awaits independent REVIEW-R13.

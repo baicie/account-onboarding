@@ -32,3 +32,15 @@
   binaries must refuse newer schemas.
 - Master key rotation: use the documented keyring envelope; never place keys in
   evidence or command history.
+
+## R13 additions
+
+- Secret files must be regular and owner-only (0400/0600); startup now rejects
+  group/other-readable files. Do not relax permissions to work around a mount.
+- The isolated drill now covers Docker restart, bad secret permissions, and a
+  schema version newer than the binary. The expected failure is fail-closed
+  with a specific diagnostic, not merely a non-200 response.
+- The drill emits `report.json` with pass/fail counts, commit, cleanup status and
+  timestamp. Treat `cleanup_status=attempted` as evidence to verify, not proof.
+- A schema-newer database must never be opened by an old binary; restore the
+  matching backup/version instead.

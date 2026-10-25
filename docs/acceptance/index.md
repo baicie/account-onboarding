@@ -23,6 +23,7 @@ live-platform success.
 | [R6.1.md](R6.1.md) | R6.1 | Container runtime closure attempt: Docker daemon unavailable, all runtime gates **NOT_RUN** | **DEPLOYMENT_BLOCKED**; no image/ID/digest |
 | [R7.md](R7.md) | R7 | Source-review closure + real container CI (Actions 40161727232, 63/63 PASS, image inspect verified) | **CONTAINER_RC_READY**; image ID only, no registry digest |
 | [REVIEW-R7.md](REVIEW-R7.md) | R7 | Independent review: PASS, P0=0/P1=0, P2 fixed | see report |
+| [R13.md](R13.md) | R13 | Integration reliability: UI action states/CONFIRMED recovery, shared parsed_mails fixture, secret permissions, deploy 16/16, candidate identity gate | **R13_PARTIAL**; no live/GHCR |
 | [R12.md](R12.md) | R12 | CI convergence: preflight syntax/negative tests, executable modes, deploy 12/12, lifecycle/UI, release evidence | **PASS_WITH_LIMITATIONS**; Authorized Live NOT_RUN; no GHCR/release |
 | [R11.md](R11.md) | R11 | UNRESOLVED review semantics, fail-closed lifecycle, UI audit, strict attestation, Cloudflare preflight, deploy/arm64 | **CONTROLLED_LIVE_TEST_READY**; no live platform/GHCR |
 | [R10.md](R10.md) | R10 | Lifecycle/fenced external gate, schema 5, credential audit, OCI sign/attest dry run, Cloudflare preflight | **LIVE_PREFLIGHT_READY**; no live platforms/GHCR |
