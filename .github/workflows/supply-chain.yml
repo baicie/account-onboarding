@@ -50,26 +50,25 @@ jobs:
           output-file: ${{ env.EVIDENCE }}/sbom.spdx.json
           syft-version: v1.20.0
           upload-artifact: false
+      - name: Install pinned Trivy
+        run: |
+          set -euo pipefail
+          V=0.56.2
+          curl -sSfL -o /tmp/trivy.tgz "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_Linux-64bit.tar.gz"
+          curl -sSfL -o /tmp/trivy.sha256 "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_checksums.txt"
+          grep "trivy_${V}_Linux-64bit.tar.gz" /tmp/trivy.sha256 | sha256sum -c -
+          tar -xzf /tmp/trivy.tgz -C /usr/local/bin trivy
+          trivy --version > "$EVIDENCE/trivy-version.txt"
       - name: Trivy image scan (CRITICAL blocks; HIGH reported)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: ${{ env.IMAGE }}
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: CRITICAL
-          output: ${{ env.EVIDENCE }}/trivy-critical.txt
+        run: |
+          set -euo pipefail
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 \
+            --format table -o "$EVIDENCE/trivy-critical.txt" "$IMAGE"
       - name: Trivy HIGH report (non-blocking, explicit)
         if: always()
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: ${{ env.IMAGE }}
-          format: table
-          exit-code: "0"
-          ignore-unfixed: true
-          severity: HIGH
-          output: ${{ env.EVIDENCE }}/trivy-high.txt
+        run: |
+          trivy image --severity HIGH --ignore-unfixed --exit-code 0 \
+            --format table -o "$EVIDENCE/trivy-high.txt" "$IMAGE" || true
       - name: Record scanner versions and limits
         if: always()
         run: |
