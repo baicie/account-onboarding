@@ -4,6 +4,9 @@
 name: staging-acceptance
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/r8-staging-readiness
 concurrency:
   group: staging-acceptance
   cancel-in-progress: false
