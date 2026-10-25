@@ -290,27 +290,6 @@ Docker build/run, GHCR, TLS ingress and real-platform live tests remain
 `NOT_RUN`; this PASS must not be read as "internet-ready" or "live platforms
 verified".
 
-## 15. R6.1 container runtime closure attempt (2026-10-25)
-
-This round's only executable scope was the Docker gate; the daemon is still
-unavailable, so it stopped early instead of repeating offline tests.
-
-| Item | Result |
-|---|---|
-| Docker client / compose | 29.7.2 / v5.5.0 (client only) |
-| Docker engine | **unavailable**: `docker version`/`docker info`/`ServerVersion` exit 1; socket stale (`_ping` 000); `docker desktop status` exit 1 |
-| Authorized alternate Docker env | none (`DOCKER_HOST` unset; only local contexts; no remote authorization) |
-| Build / Image ID / Digest | **NOT_RUN / N/A** (no image built, nothing pushed) |
-| Container run, health, non-root, read-only, cap_drop, SQLite init/upgrade/WAL perms, volume persistence, SIGTERM/SIGKILL, lease/lock, single-writer, revocation persistence, encrypted backup/restore, fail-closed configs | **NOT_RUN** |
-| Code changes | none (no runtime failure observed) |
-| Resources created | none; nothing to clean up |
-| Final | **DEPLOYMENT_BLOCKED**; `CONTAINER_RC_READY` not met; `LIVE_READY` out of scope |
-
-Exact operator unblock steps are in [`R6.1.md`](R6.1.md) §6: start Docker
-Desktop/daemon, verify `docker info` exit 0, then rerun `make verify`,
-`docker compose config`, `tests/r51/docker_acceptance.sh` and record the image
-ID/platform for review.
-
 ## 14. R6 autonomous sprint (2026-10-25)
 
 Full progress log and commands: [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md).
@@ -333,3 +312,24 @@ assertion); Cloudflare dry-run's config assertion now uses a real
 on Go import paths/env-var names. Remaining deployment blockers:
 Docker runtime evidence, production TLS ingress, and live-platform
 authorizations. `CONTAINER_RC_READY` is **not** claimed.
+
+## 15. R6.1 container runtime closure attempt (2026-10-25)
+
+This round's only executable scope was the Docker gate; the daemon is still
+unavailable, so it stopped early instead of repeating offline tests.
+
+| Item | Result |
+|---|---|
+| Docker client / compose | 29.7.2 / v5.5.0 (client only) |
+| Docker engine | **unavailable**: `docker version`/`docker info`/`ServerVersion` exit 1; socket stale (`_ping` 000); `docker desktop status` exit 1 |
+| Authorized alternate Docker env | none (`DOCKER_HOST` unset; only local contexts; no remote authorization) |
+| Build / Image ID / Digest | **NOT_RUN / N/A** (no image built, nothing pushed) |
+| Container run, health, non-root, read-only, cap_drop, SQLite init/upgrade/WAL perms, volume persistence, SIGTERM/SIGKILL, lease/lock, single-writer, revocation persistence, encrypted backup/restore, fail-closed configs | **NOT_RUN** |
+| Code changes | none (no runtime failure observed) |
+| Resources created | none; nothing to clean up |
+| Final | **DEPLOYMENT_BLOCKED**; `CONTAINER_RC_READY` not met; `LIVE_READY` out of scope |
+
+Exact operator unblock steps are in [`R6.1.md`](R6.1.md) §6: start Docker
+Desktop/daemon, verify `docker info` exit 0, then rerun `make verify`,
+`docker compose config`, `tests/r51/docker_acceptance.sh` and record the image
+ID/platform for review.
