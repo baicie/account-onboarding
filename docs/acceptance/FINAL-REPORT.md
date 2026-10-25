@@ -4,8 +4,11 @@
 - **Repository**: `/Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding`
 - **Git state**: local commits through R6: `e557387` (v0.1.0), `3719026` (R5-A
   durable session revocation), R5.1/R5.1-B commits, R6 commits `43f7f1a`,
-  `55e6555`, `7bd33a6`, `ca834ee`, `38b17df`, `661e960` and the final evidence/docs commit
-  `a35c978` containing this report; **nothing was pushed, merged, released or deployed**
+  `55e6555`, `7bd33a6`, `ca834ee`, `38b17df`, `661e960` and the final evidence/docs commits
+  through R6.1 (`20d0cb0`, `d8438f6`, `e812d41`). At the user's explicit request at the
+  end of R6.1, local `main` was pushed to `origin/main` (new branch; source/docs only).
+  No tag, release, image, GHCR push, merge or deployment was made; production/live
+  platforms remain untouched.
 - **Design pack**: `account-onboarding-design-v0.1.0/` (v0.1.0, read-only input)
 - **Verdict**: **`LOCAL_RC_READY`** for the local release candidate; after the R6 sprint the
   deployment block is narrowed to the missing container runtime evidence (Docker
