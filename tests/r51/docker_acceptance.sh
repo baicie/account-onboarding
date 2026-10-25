@@ -569,20 +569,20 @@ elif sudo -n true >/dev/null 2>&1; then
 else
   chmod 0444 "$COMPOSE_SECRETS"/* 2>/dev/null || true
 fi
-R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$COMPOSE_SECRETS/master.key" \
-  R51_ADMIN_TOKEN="$COMPOSE_SECRETS/admin.token" R51_PORT="$PORT" \
-  docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" config >/dev/null \
-  && ok "compose config (isolated override)" || bad "compose config"
-R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$COMPOSE_SECRETS/master.key" \
-  R51_ADMIN_TOKEN="$COMPOSE_SECRETS/admin.token" R51_PORT="$PORT" \
-  docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" up -d >/dev/null \
-  && ok "compose up (isolated project)" || bad "compose up"
+compose_isolated() {
+  R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$COMPOSE_SECRETS/master.key" \
+    R51_ADMIN_TOKEN="$COMPOSE_SECRETS/admin.token" R51_PORT="$PORT" \
+    docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" "$@"
+}
+compose_isolated config >/dev/null && ok "compose config (isolated override)" || bad "compose config"
+compose_isolated up -d >/dev/null && ok "compose up (isolated project)" || bad "compose up"
+C=""
 for _ in $(seq 1 90); do
-  C="$(docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" ps --format '{{.Status}}' 2>/dev/null | head -1)"
+  C="$(compose_isolated ps --format '{{.Status}}' 2>/dev/null | head -1 || true)"
   echo "$C" | grep -qi healthy && break; sleep 1
 done
 echo "$C" | grep -qi healthy && ok "compose service healthy: $C" || bad "compose health: $C"
-COMPOSE_CID="$(docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" ps -q onboarding 2>/dev/null | head -1)"
+COMPOSE_CID="$(compose_isolated ps -q onboarding 2>/dev/null | head -1 || true)"
 if [ -n "$COMPOSE_CID" ] && docker exec "$COMPOSE_CID" test -r /run/secrets/onboarding_master_key \
      && docker exec "$COMPOSE_CID" test -r /run/secrets/onboard_admin_token; then
   ok "compose secrets readable by UID 10001"
@@ -602,11 +602,9 @@ else
 fi
 COUNT="$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format '{{.ID}}' | wc -l | tr -d ' ')"
 [ "$COUNT" = "1" ] && ok "exactly one writer container in the compose project" || bad "writer count=$COUNT"
-COMPOSE_PORT="$(R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$COMPOSE_SECRETS/master.key" R51_ADMIN_TOKEN="$COMPOSE_SECRETS/admin.token" R51_PORT="$PORT" docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" port onboarding 8788 2>/dev/null || true)"
+COMPOSE_PORT="$(compose_isolated port onboarding 8788 2>/dev/null || true)"
 case "$COMPOSE_PORT" in 127.0.0.1:*) ok "compose published port loopback-only ($COMPOSE_PORT)";; *) bad "compose port: $COMPOSE_PORT";; esac
-R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$COMPOSE_SECRETS/master.key" \
-  R51_ADMIN_TOKEN="$COMPOSE_SECRETS/admin.token" R51_PORT="$PORT" \
-  docker compose -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/tests/r51/compose.override.yaml" down -v >/dev/null 2>&1 || true
+compose_isolated down -v >/dev/null 2>&1 || true
 
 echo "SUMMARY pass=$PASS fail=$FAIL image=$IMG_ID platform=$ARCH"
 [ "$FAIL" = "0" ]
