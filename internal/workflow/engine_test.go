@@ -662,7 +662,6 @@ func TestEngineStartRejectsSecondStart(t *testing.T) {
 	}
 }
 
-
 func TestEngineConcurrentStartSerializesLifecycle(t *testing.T) {
 	h := newHarness(t, func(cfg *workflow.Config, _ *provider.Registry) {
 		cfg.TickInterval = time.Hour
