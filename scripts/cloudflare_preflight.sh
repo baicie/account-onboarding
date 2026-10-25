@@ -38,7 +38,7 @@ ADDR_FILE="${ONBOARD_CF_TEST_ADDRESSES_FILE:-}"
 if ! python3 - "$TEST_ADDRESS" "$ADDR_FILE" <<'PY'
 import os, re, sys
 address, allow_file = sys.argv[1:]
-if not re.fullmatch(r"[^@\\s]+@[^@\\s]+", address):
+if not re.fullmatch("[^@\\s]+@[^@\\s]+", address):
     sys.exit(2)
 allowed = os.environ.get("ONBOARD_CF_TEST_ADDRESSES", "").split()
 if allow_file:
@@ -66,7 +66,7 @@ fd = os.open(out, flags, 0o600)
 os.fchmod(fd, 0o600)
 with os.fdopen(fd, "w", encoding="utf-8") as stream:
     json.dump(data, stream, indent=2, sort_keys=True)
-    stream.write("\\n")
+    stream.write(chr(10))
 PY
 }
 if [ "$MODE" = "dry" ]; then
@@ -98,11 +98,24 @@ if not stat.S_ISREG(st.st_mode) or (st.st_mode & 0o077) or st.st_size < 1 or st.
     sys.exit(2)
 PY
 then echo "ERROR: token file must be a regular file with mode 0600 and bounded size" >&2; exit 2; fi
-TOKEN="$(cat "$TOKEN_FILE")"
+TOKEN="$(python3 - "$TOKEN_FILE" <<'PY'
+import sys
+try:
+    data = open(sys.argv[1], "rb").read()
+except OSError:
+    sys.exit(2)
+if data.endswith(b"\n"):
+    data = data[:-1]
+if not data or b"\n" in data or b"\r" in data or len(data) > 8192:
+    sys.exit(2)
+try:
+    token = data.decode("utf-8")
+except UnicodeDecodeError:
+    sys.exit(2)
+sys.stdout.write(token)
+PY
+)" || { echo "ERROR: token file is empty or contains invalid line breaks" >&2; exit 2; }
 [ -n "$TOKEN" ] || { echo "ERROR: token file empty" >&2; exit 2; }
-case "$TOKEN" in *
-\n'*|*
-\r'*) echo "ERROR: token file contains invalid line breaks" >&2; exit 2 ;; esac
 TARGET="$MOCK_URL"
 if [ "$MODE" = "live" ]; then TARGET="$BASE_URL"; fi
 if [ "$MODE" != "mock" ] && [ "$MODE" != "live" ]; then echo "ERROR: unsupported mode" >&2; exit 2; fi
@@ -129,7 +142,7 @@ PY
 HOST="$(printf '%s\n' "$TARGET_META" | sed -n '1p')"
 PORT="$(printf '%s\n' "$TARGET_META" | sed -n '2p')"
 if [ "$MODE" = "live" ]; then
-  AUTHZ="\${ONBOARD_CF_LIVE_AUTHORIZATION:-}"
+  AUTHZ="${ONBOARD_CF_LIVE_AUTHORIZATION:-}"
   [ -n "$AUTHZ" ] && [ -r "$AUTHZ" ] || { echo "ERROR: live requires ONBOARD_CF_LIVE_AUTHORIZATION file" >&2; exit 2; }
   if ! python3 - "$AUTHZ" "$HOST" "$TEST_ADDRESS" "$MAX_REQUESTS" "$MAX_SECONDS" <<'PY'
 import datetime as dt, os, stat, sys
@@ -173,17 +186,17 @@ sys.exit(0)
 PY
   then echo "ERROR: authorization file is invalid, out of window, or does not match the exact live scope/budget" >&2; exit 2; fi
 fi
-TMP_DIR="$(mktemp -d "\${TMPDIR:-/tmp}/cf-preflight.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cf-preflight.XXXXXX")"
 chmod 700 "$TMP_DIR"
 HEADER_FILE="$TMP_DIR/headers"
 BODY_FILE="$TMP_DIR/body"
 printf 'Authorization: Bearer %s\n' "$TOKEN" > "$HEADER_FILE"
 chmod 600 "$HEADER_FILE"
 unset TOKEN
-cleanup_temp() { if [ -n "\${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi; TMP_DIR=""; }
+cleanup_temp() { if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi; TMP_DIR=""; }
 trap cleanup_temp EXIT
 CURL=(curl -sS --connect-timeout 10 --max-redirs 0 --proto '=https' --max-time "$MAX_SECONDS" --max-filesize 1048576 --header "@$HEADER_FILE" -H 'Accept: application/json')
-[ -n "$CA_FILE" ] && [ "$MODE" = "mock" ] && CURL+=(--cacert "$CA_FILE")
+if [ -n "$CA_FILE" ] && [ "$MODE" = "mock" ]; then CURL+=(--cacert "$CA_FILE"); fi
 USED=0 STOP="" AUTH_RESULT=NOT_VERIFIED READ_RESULT=NOT_RUN TLS_RESULT=NOT_VERIFIED SCHEMA_RESULT=NOT_RUN
 CODE=000 CONTENT_TYPE="" BYTES=0 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" START_EPOCH="$(date +%s)"
 REQUEST_PATH="/api/parsed_mails?limit=1&offset=0"
@@ -193,12 +206,12 @@ else
   USED=$((USED+1))
   REQUEST_URL="$TARGET$REQUEST_PATH"
   set +e
-  META="$("\${CURL[@]}" -o "$BODY_FILE" -w 
-%{http_code}\n%{content_type}' "$REQUEST_URL" 2>/dev/null)"
+  META="$("${CURL[@]}" -o "$BODY_FILE" -w '%{http_code}|%{content_type}' "$REQUEST_URL" 2>/dev/null)"
   CURL_RC=$?
   set -e
-  CODE="$(printf '%s\n' "$META" | sed -n '1p')"
-  CONTENT_TYPE="$(printf '%s\n' "$META" | sed -n '2p')"
+  CODE="${META%%|*}"
+  CONTENT_TYPE="${META#*|}"
+  [ "$CONTENT_TYPE" = "$META" ] && CONTENT_TYPE=""
   [ -n "$CODE" ] || CODE=000
   [ -f "$BODY_FILE" ] && BYTES="$(wc -c < "$BODY_FILE" | tr -d ' ')" || BYTES=0
   if [ "$CURL_RC" -eq 0 ]; then
@@ -259,7 +272,7 @@ PY
           AUTH_RESULT=ACCEPTED
           STOP=COMPLETED
         else
-          STOP="RESPONSE_\${SCHEMA_RESULT:-SCHEMA_INVALID}"
+          STOP="RESPONSE_${SCHEMA_RESULT:-SCHEMA_INVALID}"
           READ_RESULT=FAIL
         fi
         ;;
