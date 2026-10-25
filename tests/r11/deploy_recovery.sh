@@ -6,8 +6,8 @@ if ! docker info >/dev/null 2>&1; then echo "NOT_RUN: Docker unavailable"; exit 
 ID="r12-deploy-$(date +%s)-$$"; WORK="$ROOT/.sandbox/r12/deploy-$ID"
 PASS=0; FAIL=0
 SECVOL=""; EMPTYVOL=""; IMAGE=""
-ok(){ PASS=$((PASS+1)); printf 'PASS %s\\n' "$1"; }
-bad(){ FAIL=$((FAIL+1)); printf 'FAIL %s\\n' "$1"; }
+ok(){ PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
+bad(){ FAIL=$((FAIL+1)); printf 'FAIL %s\n' "$1"; }
 free_port(){ python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
 cleanup(){
   docker rm -f "$ID-app" "$ID-app2" "$ID-nosecret" "$ID-ro" "$ID-corrupt" "$ID-partial" >/dev/null 2>&1 || true
