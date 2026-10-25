@@ -445,12 +445,40 @@ func (s *Store) ResolveExternalOperation(ctx context.Context, id string, r Exter
 		return ExternalOperation{}, err
 	}
 	defer tx.Rollback()
+	var currentStatus string
+	var leaseUntil sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT e.status, r.lease_until_ms
+		FROM external_operations e JOIN runs r ON r.id=e.run_id WHERE e.id=?`, id).
+		Scan(&currentStatus, &leaseUntil); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ExternalOperation{}, ErrNotFound
+		}
+		return ExternalOperation{}, err
+	}
+	switch currentStatus {
+	case ExternalOutcomeUnknown, ExternalReconciliationReq:
+	case ExternalConfirmed:
+		// A step commit can fail after the remote write was confirmed. This is
+		// the audited recovery path, but only for outcomes that acknowledge the
+		// resource exists; it can never claim "no resource" for a confirmation.
+		if r.Resolution == "NO_RESOURCE_CREATED" {
+			return ExternalOperation{}, fmt.Errorf("%w: CONFIRMED cannot be resolved as no-resource-created", ErrConflict)
+		}
+	case ExternalInFlight:
+		// A live worker may still be inside the provider call. Only a lease
+		// that has expired (worker stopped) may be manually resolved.
+		if leaseUntil.Valid && leaseUntil.Int64 > now {
+			return ExternalOperation{}, fmt.Errorf("%w: operation is IN_FLIGHT under a live lease", ErrConflict)
+		}
+	default:
+		return ExternalOperation{}, fmt.Errorf("%w: operation status %s is not resolvable", ErrConflict, currentStatus)
+	}
 	res, err := tx.ExecContext(ctx, `UPDATE external_operations
 		SET status=?, resolution=?, resolution_reason=?, evidence_reference=?, resolved_at_ms=?,
 		    version=version+1, updated_at_ms=?
-		WHERE id=? AND version=? AND status IN (?,?,?)`,
+		WHERE id=? AND version=? AND status IN (?,?,?,?)`,
 		ExternalResolved, r.Resolution, r.Reason, r.EvidenceReference, now, now,
-		id, r.ExpectedVersion, ExternalInFlight, ExternalOutcomeUnknown, ExternalReconciliationReq)
+		id, r.ExpectedVersion, ExternalInFlight, ExternalOutcomeUnknown, ExternalReconciliationReq, ExternalConfirmed)
 	if err != nil {
 		return ExternalOperation{}, err
 	}

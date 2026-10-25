@@ -154,6 +154,20 @@ jobs:
                "$(python3 -c 'import json;print(json.load(open("candidate/candidate-provenance.json"))["image_id"])')"
           docker load -i candidate/image.tar
           docker run --rm account-onboarding:candidate version | grep -q "commit $COMMIT"
+      - name: Assert candidate scan evidence before publish
+        run: |
+          set -euo pipefail
+          test -f candidate/supply/govulncheck.txt
+          test -f candidate/supply/shellcheck.txt
+          test -f candidate/supply/trivy-critical.txt
+          grep -q "No vulnerabilities found" candidate/supply/govulncheck.txt
+          if grep -qE "CVE-[0-9]{4}|GHSA-" candidate/supply/trivy-critical.txt; then
+            echo "refusing publish: candidate CRITICAL scan contains vulnerabilities"; exit 1
+          fi
+          if [ -s candidate/supply/shellcheck.txt ]; then
+            echo "refusing publish: candidate ShellCheck errors"; exit 1
+          fi
+          echo "candidate scan evidence present and clean"
       - name: Re-scan loaded image
         run: |
           set -euo pipefail

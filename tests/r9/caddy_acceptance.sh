@@ -74,7 +74,7 @@ echo "$HSTS" | grep -qi 'max-age=300' && ok "HSTS present ($HSTS)" || bad "HSTS:
 UNAUTH="$(curl -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1" -o /dev/null -w '%{http_code}' "$BASE/readyz" 2>/dev/null || echo 000)"
 [ "$UNAUTH" = "401" ] && ok "/readyz requires auth through Caddy (401)" || bad "readyz unauth=$UNAUTH"
 REDIR="$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Host: localhost' "http://127.0.0.1:$HTTP_PORT/healthz" 2>/dev/null || true)"
-case "$REDIR" in "308 https://localhost:8443/healthz") ok "Caddy HTTP 308 redirect to HTTPS" ;; *) bad "Caddy redirect=$REDIR" ;; esac
+case "$REDIR" in "308 https://localhost:$HTTPS_PORT/healthz") ok "Caddy HTTP 308 redirect to published HTTPS port" ;; *) bad "Caddy redirect=$REDIR" ;; esac
 HOSTCODE="$(curl -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1" -H 'Host: evil.example' -o /dev/null -w '%{http_code}' "$BASE/healthz" 2>/dev/null || echo 000)"
 [ "$HOSTCODE" = "421" ] && ok "Caddy rejects unknown Host (421)" || bad "Caddy evil host=$HOSTCODE"
 if command -v openssl >/dev/null 2>&1; then

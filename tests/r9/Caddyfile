@@ -35,5 +35,5 @@
 }
 
 :8080 {
-	redir https://localhost:8443{uri} 308
+	redir https://{env.R9_PUBLIC_HOST}{uri} 308
 }

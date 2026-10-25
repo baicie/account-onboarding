@@ -23,7 +23,11 @@ TOKEN_FILE="${ONBOARD_ADMIN_TOKEN_FILE:-}"
 }
 TOKEN="$(tr -d '\r\n' < "$TOKEN_FILE")"
 [ -n "$TOKEN" ] || { echo "ERROR: admin token file is empty" >&2; exit 2; }
-AUTH=(-H "Authorization: Bearer $TOKEN")
+AUTH_HDR="$(mktemp "${TMPDIR:-/tmp}/onboard-admin-hdr.XXXXXX")"
+chmod 600 "$AUTH_HDR"
+printf 'Authorization: Bearer %s\n' "$TOKEN" > "$AUTH_HDR"
+trap 'rm -f "$AUTH_HDR"' EXIT
+AUTH=(-H "@$AUTH_HDR")
 case "${1:-}" in
   list)
     shift

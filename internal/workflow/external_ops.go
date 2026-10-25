@@ -32,11 +32,14 @@ func ExternalCompletionStatus(err error) string {
 	switch errs.ClassOf(err) {
 	case errs.ClassConflict:
 		return storage.ExternalReconciliationReq
-	case errs.ClassTimeoutUncertain, errs.ClassUpstreamTransient, errs.ClassInternal,
-		errs.ClassProviderBug, errs.ClassCancelled:
-		return storage.ExternalOutcomeUnknown
-	default:
+	case errs.ClassValidation, errs.ClassNotAuthorized, errs.ClassRateLimited,
+		errs.ClassNotFound:
+		// Definite pre-write failures: no remote resource was created.
 		return storage.ExternalFailedDefinite
+	default:
+		// Auth-required/expired, timeout, transient, internal, provider-bug,
+		// cancelled and unknown classes are all potentially post-write.
+		return storage.ExternalOutcomeUnknown
 	}
 }
 

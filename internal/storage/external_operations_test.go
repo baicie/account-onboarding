@@ -325,3 +325,90 @@ func TestBeginExternalOperationFailsClosedWithoutTable(t *testing.T) {
 		t.Fatal("BeginExternalOperation succeeded without the durable gate table")
 	}
 }
+
+func TestResolveRejectsLiveInFlightAndSupportsExpiredLease(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "live.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "gate-live")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "NO_RESOURCE_CREATED", Reason: "operator race", ExpectedVersion: op.Version,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("resolve live IN_FLIGHT = %v, want conflict", err)
+	}
+	// Simulate a dead worker whose lease expired; then manual resolution is allowed.
+	if _, err := s.writeDB.ExecContext(ctx, `UPDATE runs SET lease_until_ms=? WHERE id=?`,
+		time.Now().Add(-time.Minute).UnixMilli(), claim.Run.ID); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "NO_RESOURCE_CREATED", Reason: "worker expired; provider console shows no resource",
+		ExpectedVersion: op.Version,
+	})
+	if err != nil || resolved.Status != ExternalResolved {
+		t.Fatalf("expired-lease resolve = %+v err=%v", resolved, err)
+	}
+}
+
+func TestResolveConfirmedRecoveryPath(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "confirmed.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "gate-confirmed")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.CompleteExternalOperation(ctx, op.OperationKey, ExternalConfirmed, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "NO_RESOURCE_CREATED", Reason: "invalid", ExpectedVersion: op.Version,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("CONFIRMED no-resource = %v, want conflict", err)
+	}
+	resolved, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "RESOURCE_CONFIRMED", Reason: "step commit failed after remote success",
+		EvidenceReference: "ticket-confirmed-1", ExpectedVersion: op.Version,
+	})
+	if err != nil || resolved.Status != ExternalResolved {
+		t.Fatalf("CONFIRMED recovery = %+v err=%v", resolved, err)
+	}
+	audits, _ := s.ListAudit(ctx, 5)
+	if len(audits) == 0 || audits[0].Detail["resolution"] != "RESOURCE_CONFIRMED" ||
+		audits[0].Detail["evidence_reference"] != "ticket-confirmed-1" {
+		t.Fatalf("resolution audit detail incomplete: %+v", audits)
+	}
+}
+
+func TestExternalOperationsUnfilteredQueryPlanUsesCreatedIndex(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "plan2.sqlite"))
+	rows, err := s.readDB.Query(`EXPLAIN QUERY PLAN SELECT id FROM external_operations
+		ORDER BY created_at_ms DESC, id DESC LIMIT 10`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	plan := ""
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan += detail + " "
+	}
+	if !contains(plan, "idx_external_ops_created") {
+		t.Fatalf("unfiltered query plan does not use created index: %s", plan)
+	}
+}

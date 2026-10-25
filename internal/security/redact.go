@@ -94,6 +94,10 @@ var eventPayloadAllowlist = map[string]bool{
 	"request_fingerprint": true,
 	"status":              true,
 	"error_class":         true,
+	// Operator resolution audit (R9): enum/ticket reference only; values still
+	// pass through Redact and are length-capped.
+	"resolution":         true,
+	"evidence_reference": true,
 }
 
 // SanitizeEventPayload filters an event payload down to the allowlist and

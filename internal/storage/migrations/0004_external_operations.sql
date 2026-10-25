@@ -33,6 +33,8 @@ CREATE INDEX IF NOT EXISTS idx_external_ops_run
     ON external_operations(run_id, created_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_external_ops_provider
     ON external_operations(provider, created_at_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_external_ops_created
+    ON external_operations(created_at_ms DESC, id DESC);
 
 INSERT OR IGNORE INTO schema_migrations(version,applied_at_ms)
 VALUES(4, CAST(strftime('%s','now') AS INTEGER)*1000);
