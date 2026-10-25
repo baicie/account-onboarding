@@ -30,11 +30,11 @@ published an image or touched production.
   Resolve or explicitly accept unresolved items before upgrading. Never let an
   unknown remote write retry automatically.
 - Confirm the new image's schema max is >= current schema. Start with the new
-  image; it migrates and `/readyz` requires schema 4 and the external gate table.
+  image; it migrates and `/readyz` requires schema 5 and the external gate table.
 
 ## 3. Upgrade verification
 
-- `/readyz` 200, `/v1/meta` schema 4, image-internal commit matches deployed SHA.
+- `/readyz` 200, `/v1/meta` schema 5, image-internal commit matches deployed SHA.
 - Existing runs/events/session revocations still readable.
 - External operations: no operation left in IN_FLIGHT without an operator plan;
   CONFIRMED operations are not re-executed.
@@ -48,9 +48,15 @@ Two distinct operations:
 | Binary rollback to previous image | Previous binary's max schema >= current DB schema; otherwise it MUST refuse | start old image; `/v1/meta`; R9 `old_image_rollback.sh` proves schema-4 refusal |
 | Database restore | Any failure recovery; restore pre-upgrade backup into a fresh volume | `scripts/restore.sh --snapshot ... --target ... --keyring ...`; verify before start |
 
-**Never** run an older binary on a newer schema. R9 uses the durable
+**Never** run an older binary on a newer schema. R9/R10 uses the durable
 `schema_migrations` guard: the old binary exits with a schema-too-new error.
 A failed/wrong-key restore must not overwrite the existing valid DB (verified).
+
+A live worker may still be inside an external call even after its lease expires.
+The single-process lifecycle barrier marks leftover IN_FLIGHT as
+RECONCILIATION_REQUIRED at startup/after graceful Stop; operators must never
+resolve IN_FLIGHT directly. The audited resolve path records the credential
+subject, operation ID, run ID and before/after versions.
 
 After restoring an older DB, external operations whose audit rows lived only in
 the newer DB must be reconstructed from the provider console/audit artifacts;

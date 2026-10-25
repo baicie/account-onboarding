@@ -1,0 +1,13 @@
+{
+  "commit": "d381327b55b406df3446897c68651f25686ba516",
+  "go_version": "go1.26.10",
+  "image_id": "f86683682a9bb044dd32e3c0fd066de35a1bc68dafb3b33227e2f4f70b8753eb",
+  "image_size_bytes": 97876683,
+  "platform": "linux/amd64",
+  "user": "10001:10001",
+  "binary_sha256": "835a4f671900b09d344ae1885a059284e43b6889630c111e71e6523aace4fe1b",
+  "base_image_refs": "golang_image=golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af runtime_image=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "base_image_digests": "golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af; debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "sbom_sha256": "3dc5a4ec9a8bd765454371719360303a0d0d6f779c606709a7f9b924d67be967",
+  "note": "Image ID is local; no registry manifest digest unless the image was actually pushed. Base-image digests are NOT_RUN when the builder tag is not resolvable."
+}

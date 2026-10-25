@@ -16,6 +16,13 @@ operator authorization and a change window.
 
 Do not reuse or delete existing mailboxes; do not change existing routing.
 
+## Dry-run tool
+
+`scripts/cloudflare_preflight.sh` defaults to a no-network dry run. `--live`
+requires a dedicated test-address allowlist (`ONBOARD_CF_TEST_ADDRESSES_FILE`),
+HTTPS base URL and a readable admin token file; it still refuses create/send/
+delete. R10 only ran the dry run and fail-closed self test, never a real call.
+
 ## Preflight
 
 1. Confirm the candidate digest/schema and that the external-operation gate is

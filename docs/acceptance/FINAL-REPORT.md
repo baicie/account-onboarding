@@ -39,6 +39,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
+| **R10** live safety + release dry-run | **LIVE_PREFLIGHT_READY (pending review)** (2026-10-25) | Worker-lifecycle/fenced external gate + migration 0005/schema 5, credential-bound atomic audit, isolated OCI registry publish/sign/attest dry run **15/15**, rollback **20/20**, Caddy **18/18**, staging 27/27 + container 63/63, Cloudflare preflight dry-run, admin UI/metrics. Final CI 40182041338/40182041263/40182041283/40182041317/40182041245; no GHCR/live platform — [`R10.md`](R10.md) |
 | **R9** external consistency + release hardening | **RELEASE_CANDIDATE_READY** (2026-10-25) | Durable migration-0004 external-write gate (PREPARED/IN_FLIGHT/CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/FAILED_DEFINITE/RESOLVED) with lease-fenced CAS, sticky no-retry after unknown, paginated global reconciliation counts, audited admin resolve API/CLI, old-image schema-3→4 rollback **20/20**, real Caddy TLS proxy **17/17**, candidate release pipeline (publish skipped). Final CI 40176187395/40176187340/40176187307/40176187349; no GHCR push/live platform — [`R9.md`](R9.md) |
 | **R8** staging release readiness | **STAGING_RC_READY** (2026-10-25) | Real CI: isolated test-CA HTTPS staging **27/27**, R8 container regression **63/63**, supply chain **PASS** (govulncheck 0, Trivy CRITICAL/HIGH 0, ShellCheck errors 0, CycloneDX+SPDX SBOM); external-operation reconciliation audit/API/ADR; future-schema rollback guard. No GHCR push/digest, no production TLS/live platforms — [`R8.md`](R8.md) |
 | **R7** source-review closure + container CI | **CONTAINER_RC_READY** (2026-10-25) | All container gates executed on GitHub Actions run 40161727232 (Docker Engine 28.0.4, linux/amd64): image build + injected commit, Image ID `sha256:352b85ec…9763`, non-root/read-only/cap_drop, health/readiness, schema 3, v2 upgrade, WAL/SHM 0600, secret 0400 + UID 10002 denial, idempotency contract, revocation, SIGTERM/SIGKILL, single-writer, encrypted backup/restore + restored instance, fail-closed configs, compose parity: **63 PASS / 0 FAIL**. P0 fixes: idempotency test contract, deadline/cancel sweep race. `REVIEW-R7.md` PASS (P0=0/P1=0; P2 image-inspect evidence fixed and verified) — see [`R7.md`](R7.md) |
@@ -48,7 +49,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 353 top-level tests (348 PASS + 5 opt-in SKIP) / 665 passes including subtests, 0 FAIL** (after R8 sprint fixes)
+- `go test ./... -count=1` → **29 packages (14 with test files), 360 top-level tests (355 PASS + 5 opt-in SKIP) / 675 passes including subtests, 0 FAIL** (after R8 sprint fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -413,3 +414,24 @@ publish/tag and never ran. `REVIEW-R9.md` final verdict: PASS, P0=0/P1=0/P2=0/P3
 `RELEASE_CANDIDATE_READY` is claimed for the reviewed candidate. `LIVE_READY`
 remains out of scope; real Cloudflare/GitHub/WorkBuddy and production TLS/GHCR
 are NOT_RUN.
+
+## 19. R10 live preflight hardening (2026-10-25)
+
+Branch `feat/r10-live-preflight` (code/CI HEAD `d381327`, base R9 `e0b09b0`;
+main `9726fc1`). Final CI all PASS: staging **27/27**, container **63/63**,
+supply-chain (pinned actions/base digests; govuln/Trivy/ShellCheck clean),
+old-image rollback **20/20** on schema 5, real Caddy **18/18**, isolated
+OCI registry + cosign sign/attest dry run **15/15**, release Candidate PASS
+with real scans + publish-gate audit (Publish skipped), Cloudflare preflight
+dry-run/self-test.
+
+Key changes: migration 0005 (schema 5) with lifecycle/fencing/audit columns;
+CompleteExternalOperation fences lease/gen/version and cannot overwrite admin
+resolution; worker lifecycle barrier converts PREPARED→FAILED_DEFINITE and
+IN_FLIGHT→RECONCILIATION_REQUIRED at startup/graceful stop; Resolve refuses
+IN_FLIGHT and records authenticated credential actor, real run ID and
+before/after versions atomically; isolated release dry run uses a throwaway
+registry and SHA-256-verified cosign with test keys; actions and base images
+pinned; admin reconciliation UI and honest metrics. `LIVE_PREFLIGHT_READY`
+remains pending independent REVIEW-R10; `LIVE_READY` is not claimed and real
+Cloudflare/GitHub/WorkBuddy, production TLS/ACME and GHCR publish remain NOT_RUN.
