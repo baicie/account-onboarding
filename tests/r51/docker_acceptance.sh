@@ -341,8 +341,17 @@ db.close()
 PY
 chmod 666 "$WORK/v2data/state.sqlite" # created by host python under umask 077
 run_app "$PROJECT-upgrade" "$PORT_UPGRADE" "$WORK/v2data"
-wait_http "$PORT_UPGRADE" /readyz 200 60 && ok "v2 database upgraded and /readyz 200" || bad "v2 upgrade readyz"
-[ "$(meta_schema "$PORT_UPGRADE")" = "3" ] && ok "v2 -> schema 3 after container start" || bad "v2 upgrade schema"
+if wait_http "$PORT_UPGRADE" /readyz 200 60; then
+  ok "v2 database upgraded and /readyz 200"
+  [ "$(meta_schema "$PORT_UPGRADE")" = "3" ] && ok "v2 -> schema 3 after container start" || bad "v2 upgrade schema"
+else
+  bad "v2 upgrade readyz"
+  echo "--- v2 upgrade diagnostics (state/logs/permissions) ---"
+  docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' "$PROJECT-upgrade" 2>&1 || true
+  docker logs "$PROJECT-upgrade" 2>&1 | tail -30 || true
+  ls -la "$WORK/v2data" 2>&1 || true
+  docker exec "$PROJECT-upgrade" ls -la /app/data 2>&1 || true
+fi
 docker rm -f "$PROJECT-upgrade" >/dev/null 2>&1 || true
 
 echo "=== runs + idempotency contract ==="
@@ -353,12 +362,16 @@ request_json POST /v1/runs "" "$BODY"
 assert_http 400 "POST /v1/runs without Idempotency-Key rejected"
 [ "$(json_field "$RESP_FILE" error.class)" = "VALIDATION" ] && ok "missing-key error class VALIDATION" || bad "missing-key error class"
 # Distinct keys -> distinct runs.
-RUN1="$(create_run_id r51b-run-1 'create run 1 (distinct key)')"
-RUN2="$(create_run_id r51b-run-2 'create run 2 (distinct key)')"
-[ -n "$RUN1" ] && [ -n "$RUN2" ] && [ "$RUN1" != "$RUN2" ]   && ok "distinct Idempotency-Key -> distinct runs" || bad "distinct run creation"
+create_run r51b-run-1 'create run 1 (distinct key)' || true
+RUN1="$CREATED_ID"
+create_run r51b-run-2 'create run 2 (distinct key)' || true
+RUN2="$CREATED_ID"
+[ -n "$RUN1" ] && [ -n "$RUN2" ] && [ "$RUN1" != "$RUN2" ] && ok "distinct Idempotency-Key -> distinct runs" || bad "distinct run creation"
 # Same key + same body -> same run (replay).
-IDEM="$(create_run_id r51b-idem 'create replay run')"
-IDEM2="$(create_run_id r51b-idem 'replay same key/body')"
+create_run r51b-idem 'create replay run' || true
+IDEM="$CREATED_ID"
+create_run r51b-idem 'replay same key/body' || true
+IDEM2="$CREATED_ID"
 [ -n "$IDEM" ] && [ "$IDEM" = "$IDEM2" ] && ok "same Idempotency-Key -> same run" || bad "idempotent replay mismatch"
 # Same key + different body -> conflict, not a new run.
 request_json POST /v1/runs r51b-idem "$BODY_ALT"
