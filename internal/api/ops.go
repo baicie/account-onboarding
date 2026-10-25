@@ -96,6 +96,24 @@ func (s *Server) handleResolveExternalOperation(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, op)
 }
 
+// handleExternalOperationAudit returns the review/resolution history for one
+// operation. Admin-only; evidence/reason are already redacted on write.
+func (s *Server) handleExternalOperationAudit(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	entries, err := s.Store.ListExternalOperationAudit(r.Context(), id, limit)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": entries})
+}
+
 // handleOpsMetrics exposes bounded aggregate diagnostics. It is admin-only and
 // deliberately returns fixed status/error-class labels only — never emails,
 // tokens, JWT/OAuth state, addresses or passwords.

@@ -61,7 +61,7 @@ func loadPages() (map[string]*page, error) {
 		return nil, err
 	}
 	pages := map[string]*page{}
-	for _, name := range []string{"login", "dashboard", "run", "ops_external"} {
+	for _, name := range []string{"login", "dashboard", "run", "ops_external", "ops_external_detail"} {
 		clone, err := layout.Clone()
 		if err != nil {
 			return nil, err

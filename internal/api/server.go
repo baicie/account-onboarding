@@ -102,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/audit", s.apiAuth(false, false, s.handleListAudit))
 	mux.HandleFunc("GET /v1/ops/external", s.apiAuth(false, true, s.handleListExternalOperations))
 	mux.HandleFunc("POST /v1/ops/external/{id}/resolve", s.apiAuth(true, true, s.handleResolveExternalOperation))
+	mux.HandleFunc("GET /v1/ops/external/{id}/audit", s.apiAuth(false, true, s.handleExternalOperationAudit))
 	mux.HandleFunc("GET /v1/ops/metrics", s.apiAuth(false, true, s.handleOpsMetrics))
 
 	// Minimal operator UI.
@@ -113,6 +114,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ui/runs/{id}", s.uiAuth(s.handleRunPage))
 	mux.HandleFunc("GET /ui/ops/external", s.uiAuth(s.handleOpsExternalPage))
 	mux.HandleFunc("POST /ui/ops/external/{id}/resolve", s.uiAuth(s.handleOpsExternalResolveUI))
+	mux.HandleFunc("GET /ui/ops/external/{id}", s.uiAuth(s.handleOpsExternalDetail))
 	mux.HandleFunc("POST /ui/runs", s.uiAuth(s.handleCreateRunUI))
 	mux.HandleFunc("POST /ui/runs/{id}/resume", s.uiAuth(s.handleResumeUI))
 	mux.HandleFunc("POST /ui/runs/{id}/cancel", s.uiAuth(s.handleCancelUI))

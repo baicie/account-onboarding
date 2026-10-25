@@ -94,9 +94,75 @@ func (s *Server) handleOpsExternalResolveUI(w http.ResponseWriter, r *http.Reque
 		Actor:             info.Actor,
 		RequestedAtMS:     time.Now().UTC().UnixMilli(),
 	})
+	back := url.Values{}
+	if v := strings.TrimSpace(r.FormValue("return_status")); v != "" {
+		back.Set("status", v)
+	}
+	if v := strings.TrimSpace(r.FormValue("return_provider")); v != "" {
+		back.Set("provider", v)
+	}
+	if v := strings.TrimSpace(r.FormValue("return_cursor")); v != "" {
+		back.Set("cursor", v)
+	}
 	if err != nil {
-		http.Redirect(w, r, "/ui/ops/external?error="+url.QueryEscape(errs.SummaryOf(err)), http.StatusSeeOther)
+		back.Set("error", errs.SummaryOf(err))
+		http.Redirect(w, r, "/ui/ops/external?"+back.Encode(), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/ui/ops/external?notice=resolution+recorded", http.StatusSeeOther)
+	back.Set("notice", "review recorded")
+	http.Redirect(w, r, "/ui/ops/external?"+back.Encode(), http.StatusSeeOther)
+}
+
+type auditRow struct {
+	ID         int64
+	Actor      string
+	Action     string
+	CreatedAt  int64
+	Resolution string
+	Reason     string
+	Evidence   string
+	FromStatus string
+	ToStatus   string
+}
+
+type opsExternalDetailPage struct {
+	pageData
+	Op             storage.ExternalOperation
+	Audits         []auditRow
+	ReturnStatus   string
+	ReturnProvider string
+	ReturnCursor   string
+}
+
+func (s *Server) handleOpsExternalDetail(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	id := r.PathValue("id")
+	op, err := s.Store.GetExternalOperationByID(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	entries, err := s.Store.ListExternalOperationAudit(r.Context(), id, 100)
+	if err != nil {
+		http.Error(w, "could not load audit history", http.StatusInternalServerError)
+		return
+	}
+	data := opsExternalDetailPage{
+		pageData: pageData{Title: "Operation " + op.OperationKey, Version: Version, CSRFToken: info.CSRF,
+			SignedIn: true, Actor: info.Actor},
+		Op: op, ReturnStatus: r.URL.Query().Get("status"),
+		ReturnProvider: r.URL.Query().Get("provider"), ReturnCursor: r.URL.Query().Get("cursor"),
+	}
+	for _, e := range entries {
+		row := auditRow{ID: e.ID, Actor: e.Actor, Action: e.Action, CreatedAt: e.CreatedAtMS}
+		row.Resolution, _ = e.Detail["resolution"].(string)
+		row.Reason, _ = e.Detail["reason"].(string)
+		row.Evidence, _ = e.Detail["evidence_reference"].(string)
+		row.FromStatus, _ = e.Detail["from_status"].(string)
+		row.ToStatus, _ = e.Detail["to_status"].(string)
+		data.Audits = append(data.Audits, row)
+	}
+	if err := s.pages["ops_external_detail"].render(w, http.StatusOK, data); err != nil {
+		s.Log.Error("render operation detail", "error", err)
+	}
 }
