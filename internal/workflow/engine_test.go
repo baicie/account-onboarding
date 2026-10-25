@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
