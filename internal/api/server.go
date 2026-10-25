@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/resume", s.apiAuth(true, true, s.handleResumeRun))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", s.apiAuth(true, true, s.handleCancelRun))
 	mux.HandleFunc("GET /v1/audit", s.apiAuth(false, false, s.handleListAudit))
+	mux.HandleFunc("GET /v1/ops/external", s.apiAuth(false, true, s.handleListExternalOperations))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)

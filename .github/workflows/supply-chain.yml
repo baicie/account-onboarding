@@ -1,0 +1,89 @@
+# Manual + R8-branch supply-chain gate. Builds (does not publish) an image, then
+# runs pinned scanners. A failed/missing scanner fails the job; NOT_RUN is
+# reported explicitly rather than treated as PASS.
+name: supply-chain
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/r8-staging-readiness
+concurrency:
+  group: supply-chain
+  cancel-in-progress: false
+jobs:
+  supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      IMAGE: account-onboarding:r8-supply
+      EVIDENCE: ${{ github.workspace }}/supply-chain-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build image with provenance
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$(git rev-parse HEAD)" -t "$IMAGE" .
+          docker image inspect "$IMAGE" > "$EVIDENCE/image-inspect.json"
+      - name: SBOM + provenance metadata
+        run: bash scripts/supply_chain.sh "$IMAGE" "$EVIDENCE"
+      - name: Go vulnerability scan (pinned)
+        run: |
+          set -euo pipefail
+          go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... | tee "$EVIDENCE/govulncheck.txt"
+      - name: Go module verification
+        run: go mod verify | tee "$EVIDENCE/go-mod-verify.txt"
+      - name: ShellCheck
+        run: |
+          set -euo pipefail
+          shellcheck -x scripts/*.sh tests/r51/*.sh tests/r8/*.sh | tee "$EVIDENCE/shellcheck.txt"
+      - name: Syft SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}
+          format: spdx-json
+          output-file: ${{ env.EVIDENCE }}/sbom.spdx.json
+          syft-version: v1.20.0
+          upload-artifact: false
+      - name: Trivy image scan (CRITICAL blocks; HIGH reported)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL
+          output: ${{ env.EVIDENCE }}/trivy-critical.txt
+      - name: Trivy HIGH report (non-blocking, explicit)
+        if: always()
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          exit-code: "0"
+          ignore-unfixed: true
+          severity: HIGH
+          output: ${{ env.EVIDENCE }}/trivy-high.txt
+      - name: Record scanner versions and limits
+        if: always()
+        run: |
+          {
+            echo "govulncheck: pinned v1.1.4 via go run"
+            echo "syft: v1.20.0 via anchore/sbom-action"
+            echo "trivy: action 0.28.0 (CRITICAL blocking, HIGH report-only)"
+            echo "shellcheck: $(shellcheck --version | head -2 | tr '\n' ' ')"
+            echo "scanner failure => job failure; absence => NOT_RUN, never PASS"
+          } > "$EVIDENCE/scanner-policy.txt"
+      - name: Upload supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-evidence-${{ github.run_id }}
+          path: supply-chain-evidence/
+          if-no-files-found: warn

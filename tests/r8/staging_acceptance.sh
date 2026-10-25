@@ -56,11 +56,12 @@ ING_ID="$(docker image inspect --format '{{.Id}}' "$INGRESS_IMAGE")"
 ok "images built: app=$APP_ID ingress=$ING_ID commit=$GIT_SHA"
 
 # Host ownership contract for bind mounts/secrets.
-chown 10001:10001 "$WORK/data" "$WORK/secrets/master.key" "$WORK/secrets/admin.token"
-chmod 750 "$WORK/data"
-chmod 400 "$WORK/secrets/master.key" "$WORK/secrets/admin.token"
-chown -R 10001:10001 "$WORK/certs"
-chmod 400 "$WORK/certs/server-key.pem"
+if [ "$(id -u)" = "0" ]; then OWN=""; else OWN="sudo -n"; fi
+$OWN chown 10001:10001 "$WORK/data" "$WORK/secrets/master.key" "$WORK/secrets/admin.token"
+$OWN chmod 750 "$WORK/data"
+$OWN chmod 400 "$WORK/secrets/master.key" "$WORK/secrets/admin.token"
+$OWN chown -R 10001:10001 "$WORK/certs"
+$OWN chmod 400 "$WORK/certs/server-key.pem"
 
 echo "=== compose up ==="
 compose config >/dev/null && ok "staging compose config valid" || bad "compose config"

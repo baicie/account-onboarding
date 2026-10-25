@@ -938,3 +938,30 @@ func TestConcurrentHTTPReadsAndWrites(t *testing.T) {
 		t.Fatalf("persisted runs = %d, want >= %d", len(page.Items), writers)
 	}
 }
+
+func TestExternalOperationDiagnosticsAdminOnly(t *testing.T) {
+	e := newEnv(t, nil)
+	status, body := e.request(t, http.MethodGet, "/v1/ops/external", nil, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("admin GET /v1/ops/external = %d %s", status, body)
+	}
+	var resp struct {
+		Items  []any          `json:"items"`
+		Counts map[string]int `json:"counts"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode: %v (%s)", err, body)
+	}
+	if resp.Counts["total"] != 0 || resp.Counts["needs_reconciliation"] != 0 {
+		t.Fatalf("unexpected counts: %+v", resp.Counts)
+	}
+	viewer := "viewer-token-0123456789"
+	e.cfg.ReadOnlyToken = viewer
+	// Rebuild the server so the viewer token is wired into auth.
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) {
+		cfg.ReadOnlyToken = viewer
+	})
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/external", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer GET /v1/ops/external = %d, want 403", status)
+	}
+}

@@ -530,3 +530,79 @@ func TestEngineStartStopDoesNotLeakGoroutines(t *testing.T) {
 	}
 	t.Fatalf("goroutine leak: baseline=%d now=%d", baseline, runtime.NumGoroutine())
 }
+
+type externalFailingMailbox struct {
+	provider.MailboxProvider
+	err error
+}
+
+func (m externalFailingMailbox) Descriptor() provider.Descriptor {
+	return m.MailboxProvider.Descriptor()
+}
+
+func (m externalFailingMailbox) CreateAddress(context.Context, provider.CreateAddressRequest) (provider.Mailbox, error) {
+	return provider.Mailbox{}, m.err
+}
+
+func TestExternalOperationConfirmedOnSuccess(t *testing.T) {
+	h := newHarness(t, nil)
+	run := h.create(t, sandboxRequest("external-confirmed-1"))
+	final := h.waitTerminal(t, run.ID, 500)
+	if final.Status != "COMPLETED" {
+		t.Fatalf("run status = %s", final.Status)
+	}
+	ops, err := h.store.ListExternalOperations(context.Background(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ops) != 1 || ops[0].Status != "CONFIRMED" || ops[0].NeedsReview {
+		t.Fatalf("external ops = %+v", ops)
+	}
+	events, err := h.store.ListEvents(context.Background(), run.ID, 0, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, ev := range events {
+		counts[ev.Type]++
+	}
+	if counts["EXTERNAL_OPERATION_PREPARED"] != 1 || counts["EXTERNAL_OPERATION_CONFIRMED"] != 1 {
+		t.Fatalf("external audit events = %+v", counts)
+	}
+}
+
+func TestExternalOperationTimeoutRequiresReconciliation(t *testing.T) {
+	h := newHarness(t, func(_ *workflow.Config, reg *provider.Registry) {
+		reg.AddMailbox(externalFailingMailbox{
+			MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),
+			err:             errs.New(errs.ClassTimeoutUncertain, "test.mailbox", "timeout after write"),
+		})
+	})
+	run := h.create(t, sandboxRequest("external-timeout-1"))
+	_ = h.waitTerminal(t, run.ID, 700)
+	ops, err := h.store.ListExternalOperations(context.Background(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ops) != 1 || ops[0].Status != "OUTCOME_UNKNOWN" || !ops[0].NeedsReview {
+		t.Fatalf("external timeout ops = %+v", ops)
+	}
+}
+
+func TestExternalOperationDuplicateNeedsOperatorReconciliation(t *testing.T) {
+	h := newHarness(t, func(_ *workflow.Config, reg *provider.Registry) {
+		reg.AddMailbox(externalFailingMailbox{
+			MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),
+			err:             errs.New(errs.ClassConflict, "test.mailbox", "address already exists"),
+		})
+	})
+	run := h.create(t, sandboxRequest("external-conflict-1"))
+	_ = h.waitTerminal(t, run.ID, 700)
+	ops, err := h.store.ListExternalOperations(context.Background(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ops) != 1 || ops[0].Status != "RECONCILIATION_REQUIRED" || !ops[0].NeedsReview {
+		t.Fatalf("external conflict ops = %+v", ops)
+	}
+}

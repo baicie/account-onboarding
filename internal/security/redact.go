@@ -88,6 +88,12 @@ var eventPayloadAllowlist = map[string]bool{
 	"credential_ref_kind": true,
 	"waiting_for":         true,
 	"resume_state":        true,
+	// External operation audit (non-secret enums/digest); see
+	// docs/adr/0001-external-operation-reconciliation.md.
+	"operation_type":      true,
+	"request_fingerprint": true,
+	"status":              true,
+	"error_class":         true,
 }
 
 // SanitizeEventPayload filters an event payload down to the allowlist and

@@ -88,6 +88,13 @@ func (e *Engine) stepPrepareMailbox(ctx context.Context, rc *RunContext) (Outcom
 		domain = e.cfg.Domains[0]
 	}
 	name := "onboard" + shortID(rc.Run.ID)
+	providerName := mp.Descriptor().Name
+	fingerprint := externalRequestFingerprint(providerName, name, domain)
+	// Audit the remote intent before the write. If this fails we must not call
+	// the provider, otherwise a remote side effect could exist with no audit.
+	if err := rc.beginExternalOperation(ctx, providerName, "mailbox.create", fingerprint); err != nil {
+		return Outcome{}, err
+	}
 	mb, err := mp.CreateAddress(ctx, provider.CreateAddressRequest{
 		Key:          rc.Run.ID,
 		Name:         name,
@@ -95,9 +102,11 @@ func (e *Engine) stepPrepareMailbox(ctx context.Context, rc *RunContext) (Outcom
 		EnablePrefix: false,
 	})
 	if err != nil {
+		rc.failedExternalOperation(ctx, providerName, "mailbox.create", fingerprint, err)
 		return Outcome{}, err
 	}
 	out := rc.Success()
+	out.Events = append(out.Events, rc.confirmedExternalOperation(providerName, "mailbox.create", fingerprint))
 	out.Resources = []storage.ResourceDraft{{
 		Kind:         "mailbox",
 		ExternalID:   mb.ID,
