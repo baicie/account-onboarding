@@ -8,6 +8,7 @@ on:
     branches:
       - feat/r8-staging-readiness
       - feat/r9-release-hardening
+      - feat/r10-live-preflight
 concurrency:
   group: staging-acceptance
   cancel-in-progress: false

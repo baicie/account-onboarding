@@ -7,7 +7,7 @@
 name: release-image
 on:
   push:
-    branches: [feat/r9-release-hardening]
+    branches: [feat/r9-release-hardening, feat/r10-live-preflight]
   workflow_dispatch:
     inputs:
       publish:
