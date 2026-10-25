@@ -51,6 +51,12 @@ def main():
         # {"Data": <our JSON>, "Timestamp": "..."}. Require that exact shape;
         # arbitrary annotations/fields are never accepted as the commit.
         data = pred.get("Data")
+        if isinstance(data, str):
+            # cosign custom attestation may carry Data as a JSON string.
+            try:
+                data = json.loads(data)
+            except Exception:
+                fail("predicate.Data is not valid JSON")
         if not isinstance(data, dict):
             fail("predicate.Data missing (cosign custom predicate shape)")
         if data.get("commit") != want_commit:
