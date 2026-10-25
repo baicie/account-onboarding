@@ -108,6 +108,7 @@ var eventPayloadAllowlist = map[string]bool{
 	"resolved_at_ms":     true,
 	"resolved_by":        true,
 	"actor":              true,
+	"review_action":      true,
 }
 
 // SanitizeEventPayload filters an event payload down to the allowlist and

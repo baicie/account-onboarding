@@ -591,3 +591,77 @@ func TestResolveAuditFailureRollsBack(t *testing.T) {
 		t.Fatalf("audit failure changed status: %+v err=%v", got, err)
 	}
 }
+
+func TestUnresolvedReviewKeepsPendingQueueAndAudit(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "unresolved.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "unresolved-review")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = completeExternalTest(t, s, claim, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := op.Version
+	reviewed, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "UNRESOLVED", Reason: "not yet verified in provider console",
+		EvidenceReference: "ticket-pending", ExpectedVersion: before,
+		Actor: "bearer:admin:test", RequestedAtMS: time.Now().UnixMilli(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviewed.Status != ExternalOutcomeUnknown || reviewed.Version != before+1 {
+		t.Fatalf("UNRESOLVED must stay pending with version bump: %+v", reviewed)
+	}
+	page, err := s.ListExternalOperations(ctx, ExternalOperationFilter{Status: ExternalOutcomeUnknown, Limit: 10})
+	if err != nil || len(page.Items) != 1 || page.TotalNeedsReconciliation != 1 {
+		t.Fatalf("UNRESOLVED disappeared from reconciliation queue: %+v err=%v", page, err)
+	}
+	audits, err := s.ListAudit(ctx, 10)
+	if err != nil || len(audits) == 0 || audits[0].Action != "external_operation.review" ||
+		audits[0].Detail["resolution"] != "UNRESOLVED" || audits[0].Detail["review_action"] != "UNRESOLVED_KEEP_PENDING" {
+		t.Fatalf("review audit missing: %+v err=%v", audits, err)
+	}
+	// A repeated review uses the new version and is recorded independently.
+	again, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "UNRESOLVED", Reason: "still pending", ExpectedVersion: reviewed.Version,
+		Actor: "bearer:admin:test", RequestedAtMS: time.Now().UnixMilli(),
+	})
+	if err != nil || again.Status != ExternalOutcomeUnknown || again.Version != before+2 {
+		t.Fatalf("repeated UNRESOLVED = %+v err=%v", again, err)
+	}
+	// Review must not become a retry permit.
+	if _, err := s.BeginExternalOperation(ctx, beginParams(claim)); !errors.Is(err, ErrExternalOperationBlocked) {
+		t.Fatalf("begin after UNRESOLVED = %v, want blocked", err)
+	}
+}
+
+func TestRecoveryFailsClosedWhenAuditWriteFails(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "recovery-audit.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "recovery-audit")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.writeDB.ExecContext(ctx, `DROP TABLE audit_log`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecoverExternalOperations(ctx, "STARTUP"); err == nil {
+		t.Fatal("recovery succeeded without audit table")
+	}
+	got, err := s.GetExternalOperation(ctx, op.OperationKey)
+	if err != nil || got.Status != ExternalInFlight {
+		t.Fatalf("failed recovery changed status: %+v err=%v", got, err)
+	}
+}

@@ -512,6 +512,46 @@ func (s *Store) ResolveExternalOperation(ctx context.Context, id string, r Exter
 	default:
 		return ExternalOperation{}, fmt.Errorf("%w: operation status %s is not resolvable", ErrConflict, op.Status)
 	}
+	// An UNRESOLVED review is NOT a closure. Keep the operation in its pending
+	// status (OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED, or CONFIRMED for a
+	// post-commit recovery review), record an auditable review event and bump
+	// the optimistic version so a concurrent reviewer cannot reuse it.
+	if r.Resolution == "UNRESOLVED" {
+		res, err := tx.ExecContext(ctx, `UPDATE external_operations
+			SET version=version+1, updated_at_ms=?
+			WHERE id=? AND version=? AND status IN (?,?,?)`,
+			now, id, r.ExpectedVersion, ExternalOutcomeUnknown, ExternalReconciliationReq, ExternalConfirmed)
+		if err != nil {
+			return ExternalOperation{}, err
+		}
+		n, _ := res.RowsAffected()
+		if n != 1 {
+			return ExternalOperation{}, fmt.Errorf("%w: version conflict or operation is not reviewable", ErrConflict)
+		}
+		detail := s.redactor.SanitizeEventPayload(map[string]any{
+			"operation_id": id, "run_id": op.RunID, "resolution": r.Resolution,
+			"reason": r.Reason, "evidence_reference": r.EvidenceReference, "actor": r.Actor,
+			"from_status": op.Status, "to_status": op.Status,
+			"version_before": op.Version, "version_after": op.Version + 1,
+			"requested_at_ms": r.RequestedAtMS, "reviewed_at_ms": now,
+			"provider": op.Provider, "operation_type": op.OperationType,
+			"review_action": "UNRESOLVED_KEEP_PENDING",
+		})
+		rawDetail, err := json.Marshal(detail)
+		if err != nil {
+			return ExternalOperation{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (actor, action, run_id, detail_json, created_at_ms)
+			VALUES (?,?,?,?,?)`, r.Actor, "external_operation.review", op.RunID, string(rawDetail), now); err != nil {
+			return ExternalOperation{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return ExternalOperation{}, err
+		}
+		op.Version++
+		op.UpdatedAtMS = now
+		return op, nil
+	}
 	res, err := tx.ExecContext(ctx, `UPDATE external_operations
 		SET status=?, resolution=?, resolution_reason=?, evidence_reference=?, resolved_by=?,
 		    resolved_from_status=?, resolution_version=?, resolved_at_ms=?, version=version+1, updated_at_ms=?
@@ -606,4 +646,42 @@ func (s *Store) AgeOfOldestNeedsReconciliation(ctx context.Context, nowMS int64)
 		return 0, nil
 	}
 	return nowMS - oldest.Int64, nil
+}
+
+// ListExternalOperationAudit returns the audited review/resolution history for
+// one operation (newest first). It intentionally derives operation_id from the
+// audit detail instead of trusting a caller-supplied run.
+func (s *Store) ListExternalOperationAudit(ctx context.Context, operationID string, limit int) ([]AuditEntry, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.readDB.QueryContext(ctx, `SELECT id, actor, action, COALESCE(run_id,''), detail_json, created_at_ms
+		FROM audit_log WHERE json_extract(detail_json, '$.operation_id')=? ORDER BY id DESC LIMIT ?`,
+		operationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		var raw string
+		if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.RunID, &raw, &e.CreatedAtMS); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &e.Detail); err != nil {
+			e.Detail = map[string]any{}
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetExternalOperationByID(ctx context.Context, id string) (ExternalOperation, error) {
+	op, err := scanExternalOperation(s.readDB.QueryRowContext(ctx,
+		`SELECT `+externalOperationColumns+` FROM external_operations WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExternalOperation{}, ErrNotFound
+	}
+	return op, err
 }
