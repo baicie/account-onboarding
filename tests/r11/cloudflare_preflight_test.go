@@ -83,6 +83,16 @@ func TestCloudflareMockLiveReadOnly(t *testing.T) {
 	if strings.Contains(out, "test-address-jwt") || strings.Contains(string(raw), "test-address-jwt") {
 		t.Fatal("bearer token leaked into output or report")
 	}
+	reportInfo, err := os.Stat(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reportInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("report permissions = %o, want 600", reportInfo.Mode().Perm())
+	}
+	if !strings.Contains(string(raw), `"target_host": "127.0.0.1"`) || !strings.Contains(string(raw), `"target_port": "`) {
+		t.Fatalf("report should contain parsed host/port, not the full URL: %s", raw)
+	}
 }
 
 func TestCloudflareMockLiveStopsOn429AndRedirect(t *testing.T) {
@@ -135,5 +145,47 @@ func TestCloudflareMockLiveStopsOn429AndRedirect(t *testing.T) {
 				t.Fatalf("report = %s, want stop %s; out=%s", raw, tc.want, out)
 			}
 		})
+	}
+}
+
+
+func TestCloudflareMockRejectsNonLoopbackTarget(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("non-loopback rejection must happen before network I/O")
+	}))
+	defer srv.Close()
+	ca, token := writeTLSFixture(t, srv)
+	report := filepath.Join(t.TempDir(), "report.json")
+	out, err := runPreflight(t, srv.URL, ca, token, report, "--mock-url", "https://example.invalid")
+	if err == nil {
+		t.Fatalf("non-loopback target unexpectedly accepted: %s", out)
+	}
+	if !strings.Contains(out, "target must be a valid HTTPS origin") {
+		t.Fatalf("unexpected rejection: %s", out)
+	}
+}
+
+func TestCloudflareMockRejectsPermissiveTokenFile(t *testing.T) {
+	var requests atomic.Bool
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(\`{"messages":[]}\`))
+	}))
+	defer srv.Close()
+	ca, token := writeTLSFixture(t, srv)
+	if err := os.Chmod(token, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report := filepath.Join(t.TempDir(), "report.json")
+	out, err := runPreflight(t, srv.URL, ca, token, report)
+	if err == nil {
+		t.Fatalf("permissive token file unexpectedly accepted: %s", out)
+	}
+	if requests.Load() {
+		t.Fatal("request reached provider despite permissive token file permissions")
+	}
+	if !strings.Contains(out, "mode 0600") {
+		t.Fatalf("unexpected token permission rejection: %s", out)
 	}
 }
