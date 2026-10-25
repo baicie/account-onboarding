@@ -199,6 +199,7 @@ func TestScanCleanBuildMetadataShapes(t *testing.T) {
 		"ONBOARD_CLOUDFLARE_SITE_PASSWORD_FILE=/run/secrets/site-pass",
 		"docker inspect --format '{{json .HostConfig.CapDrop}}' app",
 		" Container onboarding-r51-r51-1792901234-11967-onboarding-1  Creating",
+		" container_name=r51-1792901234-11967-onboarding-1",
 	}, "\n")
 	rep, err := ScanReader("metadata.log", strings.NewReader(clean), ScanOptions{})
 	if err != nil {
@@ -207,11 +208,13 @@ func TestScanCleanBuildMetadataShapes(t *testing.T) {
 	if !rep.Clean() {
 		t.Fatalf("metadata produced findings: %+v", rep.Findings)
 	}
-	// High-confidence detections must still work on the same shapes.
+	// High-confidence detections must still work on the same shapes, and a
+	// generic long kebab string must not be silently masked.
 	dirty := strings.Join([]string{
 		"Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345",
 		"password=supersecretvalue",
 		"github.com/evil/ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"abcdefgh-ijkl-mnop-qrst-uvwx-yz012345-6789abcd",
 	}, "\n")
 	rep, err = ScanReader("dirty.log", strings.NewReader(dirty), ScanOptions{})
 	if err != nil {

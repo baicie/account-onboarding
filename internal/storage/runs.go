@@ -468,7 +468,7 @@ func (s *Store) SweepDeadlines(ctx context.Context, limit int) ([]string, error)
 		if _, err := s.appendEventTx(ctx, tx, id, "RUN_FAILED", "", map[string]any{
 			"failure_class": "TIMEOUT_UNCERTAIN",
 			"reason":        "absolute run deadline exceeded",
-		}, now); err != nil {
+		}, txNow); err != nil {
 			tx.Rollback()
 			return done, err
 		}

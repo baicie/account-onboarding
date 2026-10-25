@@ -18,7 +18,7 @@
 //	401/403          -> NOT_AUTHORIZED          admin/site credential rejected
 //	404              -> NOT_FOUND (GetMessage)  / PROVIDER_BUG (list, create)
 //	405              -> PROVIDER_BUG (list)     detail endpoint absent -> list fallback
-//	409              -> CONFLICT                duplicate address (bounded recovery below)
+//	409              -> CONFLICT                duplicate address (fail-closed, no retry)
 //	410              -> AUTH_EXPIRED            address JWT no longer valid
 //	429              -> RATE_LIMITED            Retry-After honoured
 //	5xx              -> UPSTREAM_TRANSIENT

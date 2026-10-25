@@ -606,5 +606,16 @@ COMPOSE_PORT="$(compose_isolated port onboarding 8788 2>/dev/null || true)"
 case "$COMPOSE_PORT" in 127.0.0.1:*) ok "compose published port loopback-only ($COMPOSE_PORT)";; *) bad "compose port: $COMPOSE_PORT";; esac
 compose_isolated down -v >/dev/null 2>&1 || true
 
+if [ -n "${R51_EVIDENCE_DIR:-}" ]; then
+  mkdir -p "$R51_EVIDENCE_DIR"
+  docker image inspect "$IMAGE" > "$R51_EVIDENCE_DIR/image-inspect.json"
+  {
+    echo "image_id=$IMG_ID"
+    echo "platform=$ARCH"
+    echo "user=$IMG_USER"
+    echo "size=$IMG_SIZE"
+    echo "commit=$GIT_SHA"
+  } > "$R51_EVIDENCE_DIR/image.txt"
+fi
 echo "SUMMARY pass=$PASS fail=$FAIL image=$IMG_ID platform=$ARCH"
 [ "$FAIL" = "0" ]

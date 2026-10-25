@@ -44,19 +44,30 @@ jobs:
           cat "$EVIDENCE_DIR/docker-environment.txt"
       - name: Docker runtime acceptance (isolated project/ports/data)
         shell: bash
+        env:
+          R51_EVIDENCE_DIR: ${{ github.workspace }}/container-evidence
         run: |
           set -euo pipefail
           bash tests/r51/docker_acceptance.sh 2>&1 | tee "$EVIDENCE_DIR/container-acceptance.log"
           grep -qE '^SUMMARY pass=[0-9]+ fail=0' "$EVIDENCE_DIR/container-acceptance.log"
-      - name: Record image identity
+      - name: Validate recorded image identity
         if: always()
         shell: bash
         run: |
-          set -uo pipefail
-          IMG="$(grep -oE 'image=sha256:[0-9a-f]+' "$EVIDENCE_DIR/container-acceptance.log" 2>/dev/null | head -1 | cut -d= -f2 || true)"
-          echo "image_id=$IMG" > "$EVIDENCE_DIR/image.txt"
-          if [ -n "$IMG" ]; then docker image inspect "$IMG" > "$EVIDENCE_DIR/image-inspect.json" 2>&1 || true; fi
-          echo "Image ID: ${IMG:-N/A (build did not complete)}"
+          set -euo pipefail
+          echo "--- image.txt ---"
+          cat "$EVIDENCE_DIR/image.txt"
+          test -s "$EVIDENCE_DIR/image-inspect.json"
+          python3 - "$EVIDENCE_DIR" <<'PY'
+          import json, sys
+          root = sys.argv[1]
+          image_id = open(root + "/image.txt").read().split("image_id=", 1)[1].splitlines()[0]
+          inspect = json.load(open(root + "/image-inspect.json"))
+          assert isinstance(inspect, list) and inspect, "image inspect is empty"
+          assert inspect[0]["Id"] == image_id, (inspect[0]["Id"], image_id)
+          assert inspect[0]["Os"] == "linux"
+          print("image inspect OK", image_id, inspect[0]["Architecture"], inspect[0]["Config"]["User"])
+          PY
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4

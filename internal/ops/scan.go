@@ -86,7 +86,7 @@ var (
 	// Generated container/network/project identifiers are kebab-case
 	// (onboarding-r51-r51-1792901234-11967-onboarding-1); mask multi-segment
 	// lowercase identifiers for the heuristic long_token rule.
-	scanKebabIdent = regexp.MustCompile(`\b[a-z0-9]+(?:-[a-z0-9]+){3,}\b`)
+	scanKebabIdent = regexp.MustCompile(`\b(?:onboarding|r51|account-onboarding)(?:-[a-z0-9]+){2,}\b`)
 )
 
 // pathLikeSpans returns the byte ranges of path-like substrings. Long-token
