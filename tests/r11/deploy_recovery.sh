@@ -78,8 +78,12 @@ for f in sorted(glob.glob(sys.argv[1]+'/000[1-3]_*.sql')):
 db.commit(); db.close()
 PY
 chmod 777 "$WORK/partial"
-if ! chown 10001:10001 "$WORK/partial/state.sqlite" 2>/dev/null; then sudo -n chown 10001:10001 "$WORK/partial/state.sqlite"; fi
-chmod 600 "$WORK/partial/state.sqlite"
+if ! chown 10001:10001 "$WORK/partial/state.sqlite" 2>/dev/null; then
+  sudo -n chown 10001:10001 "$WORK/partial/state.sqlite"
+  sudo -n chmod 600 "$WORK/partial/state.sqlite"
+else
+  chmod 600 "$WORK/partial/state.sqlite"
+fi
 start "$ID-partial" "$PORT" "$WORK/partial"
 if wait_ready "$PORT"; then ok "partial schema 3 upgrades to 5"; else bad "partial schema upgrade"; docker logs "$ID-partial" 2>&1 | tail -20; fi
 SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT/v1/meta" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("schema_version",0))' 2>/dev/null || echo 0)"
