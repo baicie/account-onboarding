@@ -166,7 +166,7 @@ func TestHTTPHardeningHeadersAndCSP(t *testing.T) {
 	// Root redirect also carries the browser security headers.
 	resp, _ = doHTTP(t, http.MethodGet, base+"/", nil, nil)
 	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("root status = %d, want 303", resp.StatusCode)
+		t.Fatalf("root status = %d, want 403", resp.StatusCode)
 	}
 	if loc := resp.Header.Get("Location"); loc != "/ui/" {
 		t.Fatalf("root Location = %q, want /ui/", loc)
@@ -183,7 +183,7 @@ func TestHTTPUIRedirects(t *testing.T) {
 	for _, path := range []string{"/ui/", "/ui/runs/does-not-exist"} {
 		resp, _ := doHTTP(t, http.MethodGet, base+path, nil, nil)
 		if resp.StatusCode != http.StatusSeeOther {
-			t.Fatalf("%s status = %d, want 303", path, resp.StatusCode)
+			t.Fatalf("%s status = %d, want 403", path, resp.StatusCode)
 		}
 		if loc := resp.Header.Get("Location"); loc != "/ui/login" {
 			t.Fatalf("%s Location = %q, want /ui/login", path, loc)
@@ -265,7 +265,7 @@ func TestHTTPBearerAuthNearMisses(t *testing.T) {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		t.Fatalf("decode meta: %v", err)
 	}
-	if meta.Version == "" || meta.SchemaVersion != 3 || meta.Mode != "sandbox" {
+	if meta.Version == "" || meta.SchemaVersion != 4 || meta.Mode != "sandbox" {
 		t.Fatalf("meta = %+v", meta)
 	}
 	if strings.Contains(string(raw), admin) {
@@ -439,7 +439,7 @@ func TestHTTPReadinessAndReadModel(t *testing.T) {
 	if err := json.Unmarshal(raw, &ready); err != nil {
 		t.Fatalf("decode readyz: %v", err)
 	}
-	if !ready.Ready || ready.SchemaVersion != 3 || !strings.EqualFold(ready.WAL, "wal") {
+	if !ready.Ready || ready.SchemaVersion != 4 || !strings.EqualFold(ready.WAL, "wal") {
 		t.Fatalf("readyz = %+v", ready)
 	}
 }
@@ -494,7 +494,7 @@ func TestHTTPSecureCookieFlags(t *testing.T) {
 	plain := newTestStack(t)
 	resp, _ := doHTTP(t, http.MethodPost, plain.HTTPBaseURL()+"/ui/login", loginForm(plain.AdminToken), formHeaders(nil))
 	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("plain login status = %d, want 303", resp.StatusCode)
+		t.Fatalf("plain login status = %d, want 403", resp.StatusCode)
 	}
 	cookies := resp.Cookies()
 	if len(cookies) == 0 {

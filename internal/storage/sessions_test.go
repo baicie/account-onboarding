@@ -112,8 +112,8 @@ func TestMigration0003AppliesToExistingV2Database(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a v0.1.0 (schema 2) database: drop the new table and its
-	// migration marker, keeping the rest of the data.
+	// Simulate a v0.1.0 (schema 2) database: drop the new tables and their
+	// migration markers, keeping the rest of the data.
 	raw, err := sql.Open("sqlite3", "file:"+path+"?_foreign_keys=on")
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +121,10 @@ func TestMigration0003AppliesToExistingV2Database(t *testing.T) {
 	if _, err := raw.ExecContext(ctx, `DROP TABLE session_revocations`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := raw.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 3`); err != nil {
+	if _, err := raw.ExecContext(ctx, `DROP TABLE external_operations`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version IN (3,4)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := raw.Close(); err != nil {
@@ -130,8 +133,8 @@ func TestMigration0003AppliesToExistingV2Database(t *testing.T) {
 	upgraded := openSessionStore(t, path)
 	defer upgraded.Close()
 	health, err := upgraded.Health(ctx)
-	if err != nil || health.SchemaVersion != 3 {
-		t.Fatalf("schema after upgrade = %d err=%v", health.SchemaVersion, err)
+	if err != nil || health.SchemaVersion != 4 || !health.ExternalOperationsReady {
+		t.Fatalf("schema after upgrade = %d ext=%v err=%v", health.SchemaVersion, health.ExternalOperationsReady, err)
 	}
 	// The pre-upgrade revocation row is of course gone (table was dropped), but
 	// the upgraded store must accept and persist a new revocation.
@@ -155,7 +158,7 @@ func TestHealthProbesSessionRevocationTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if health.SchemaVersion != 3 || !health.SessionRevocationsReady {
+	if health.SchemaVersion != 4 || !health.SessionRevocationsReady || !health.ExternalOperationsReady {
 		t.Fatalf("health = %+v", health)
 	}
 	if err := s.Close(); err != nil {
@@ -179,8 +182,8 @@ func TestHealthProbesSessionRevocationTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if health.SchemaVersion != 3 || health.SessionRevocationsReady {
-		t.Fatalf("degraded health = %+v (want schema 3, revocations not ready)", health)
+	if health.SchemaVersion != 4 || health.SessionRevocationsReady {
+		t.Fatalf("degraded health = %+v (want schema 4, revocations not ready)", health)
 	}
 	if err := degraded.RevokeSession(ctx, "sid", time.Now(), time.Now().Add(time.Hour)); err == nil {
 		t.Fatal("revocation succeeded without the revocation table")

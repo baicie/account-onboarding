@@ -68,7 +68,10 @@ type RunContext struct {
 	Now       time.Time
 	Deadline  time.Time
 	Selection provider.ProviderSnapshot
-	Log       *slog.Logger
+	// Claim is the fenced step lease. External writes must present it so a
+	// stale/expired worker cannot acquire a new remote-write permit.
+	Claim storage.Claim
+	Log   *slog.Logger
 }
 
 // Store exposes the persistence layer for resource/mail-receipt lookups.

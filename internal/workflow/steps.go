@@ -90,9 +90,11 @@ func (e *Engine) stepPrepareMailbox(ctx context.Context, rc *RunContext) (Outcom
 	name := "onboard" + shortID(rc.Run.ID)
 	providerName := mp.Descriptor().Name
 	fingerprint := externalRequestFingerprint(providerName, name, domain)
-	// Audit the remote intent before the write. If this fails we must not call
-	// the provider, otherwise a remote side effect could exist with no audit.
-	if err := rc.beginExternalOperation(ctx, providerName, "mailbox.create", fingerprint); err != nil {
+	// Write-ahead gate: acquire the durable IN_FLIGHT permit before ANY remote
+	// call. If this fails we must not call the provider; an ambiguous prior
+	// outcome blocks retries until an admin resolves it.
+	op, err := rc.beginExternalOperation(ctx, providerName, "mailbox.create", fingerprint)
+	if err != nil {
 		return Outcome{}, err
 	}
 	mb, err := mp.CreateAddress(ctx, provider.CreateAddressRequest{
@@ -102,11 +104,21 @@ func (e *Engine) stepPrepareMailbox(ctx context.Context, rc *RunContext) (Outcom
 		EnablePrefix: false,
 	})
 	if err != nil {
-		rc.failedExternalOperation(ctx, providerName, "mailbox.create", fingerprint, err)
+		status := ExternalCompletionStatus(err)
+		if cerr := rc.completeExternalOperation(ctx, op, status, string(errs.ClassOf(err))); cerr != nil {
+			// Leaving IN_FLIGHT is the conservative outcome; it blocks retries.
+			rc.Log.Error("external operation completion failed", "error", cerr, "status", status)
+		}
 		return Outcome{}, err
 	}
+	// Confirming the operation is part of the external-write contract. If this
+	// fails, the remote resource may exist but the local gate stays IN_FLIGHT
+	// (manual reconciliation), never an automatic retry.
+	if err := rc.completeExternalOperation(ctx, op, storage.ExternalConfirmed, ""); err != nil {
+		return Outcome{}, errs.Wrap(errs.ClassInternal, "external.operation",
+			"remote resource created but local confirmation failed", err)
+	}
 	out := rc.Success()
-	out.Events = append(out.Events, rc.confirmedExternalOperation(providerName, "mailbox.create", fingerprint))
 	out.Resources = []storage.ResourceDraft{{
 		Kind:         "mailbox",
 		ExternalID:   mb.ID,

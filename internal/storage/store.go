@@ -294,6 +294,10 @@ type Health struct {
 	// from migration 0003 is present. A missing table means cookie sessions
 	// cannot be revoked reliably, so /readyz must not report ready.
 	SessionRevocationsReady bool `json:"session_revocations_ready"`
+	// ExternalOperationsReady reports that the migration-0004 write-ahead
+	// external-operation gate is present. Without it an ambiguous remote write
+	// could be retried unsafely, so /readyz must not report ready.
+	ExternalOperationsReady bool `json:"external_operations_ready"`
 }
 
 // Health verifies schema version, WAL mode and write capability.
@@ -311,6 +315,12 @@ func (s *Store) Health(ctx context.Context) (Health, error) {
 		return h, fmt.Errorf("probe session revocation table: %w", err)
 	}
 	h.SessionRevocationsReady = tables == 1
+	var extTables int
+	if err := s.readDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='external_operations'`).Scan(&extTables); err != nil {
+		return h, fmt.Errorf("probe external operations table: %w", err)
+	}
+	h.ExternalOperationsReady = extTables == 1
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return h, fmt.Errorf("begin write probe: %w", err)

@@ -319,6 +319,7 @@ func (e *Engine) execute(ctx context.Context, claim *storage.Claim) (result stor
 		Now:       e.now().UTC(),
 		Deadline:  time.UnixMilli(claim.Run.DeadlineMS).UTC(),
 		Selection: e.selectionFromSnapshot(claim.Run),
+		Claim:     *claim,
 		Log: e.log.With("run_id", claim.Run.ID, "step", claim.StepName,
 			"template", claim.Run.Template, "attempt", claim.Attempt),
 	}

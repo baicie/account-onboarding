@@ -4,82 +4,93 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 
 	"github.com/baicie/account-onboarding/internal/errs"
 	"github.com/baicie/account-onboarding/internal/storage"
 )
 
-// External side effects (mailbox provisioning) are audited in the durable event
-// log. The remote create and the local commit cannot share a transaction, so we
-// record PREPARED before the call, CONFIRMED in the step-commit transaction on
-// success, and OUTCOME_UNKNOWN / RECONCILIATION_REQUIRED on ambiguous failures.
-// The latest event per operation_key is the reconciliation state; see
-// docs/adr/0001-external-operation-reconciliation.md.
+// External side effects use a durable write-ahead gate (migration 0004):
+// BeginExternalOperation atomically acquires an IN_FLIGHT permit for the
+// run/step operation key; CompleteExternalOperation is the only way to reach
+// CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/FAILED_DEFINITE. Ambiguous
+// outcomes block all later automatic attempts until an admin resolves them.
+// Events are human-readable audit side records; the table is authoritative.
 func externalOperationKey(runID, step string) string {
 	return runID + ":" + step + ":v1"
 }
 
 func externalRequestFingerprint(provider, name, domain string) string {
 	sum := sha256.Sum256([]byte("external-op|" + provider + "|" + name + "|" + domain))
-	// Truncated digest is enough for correlation and avoids storing long tokens.
 	return hex.EncodeToString(sum[:8])
 }
 
-func externalOpPayload(runID, step, provider, opType, fingerprint, status, errClass string, attempt int64) map[string]any {
-	return map[string]any{
-		"operation_key":       externalOperationKey(runID, step),
-		"provider":            provider,
-		"operation_type":      opType,
-		"request_fingerprint": fingerprint,
-		"status":              status,
-		"error_class":         errClass,
-		"attempt":             attempt,
-	}
-}
-
-// ExternalFailureStatus maps a provider error to the reconciliation state. A
-// create call is a write: transport/5xx/timeouts may have landed remotely, so
-// they must never be treated as "definitely not created".
-func ExternalFailureStatus(err error) string {
+// ExternalCompletionStatus maps a provider error to the final gate state. A
+// create call is a write: transport/5xx/timeouts/cancel may have reached the
+// provider, so they must never become FAILED_DEFINITE.
+func ExternalCompletionStatus(err error) string {
 	switch errs.ClassOf(err) {
 	case errs.ClassConflict:
-		return "RECONCILIATION_REQUIRED"
+		return storage.ExternalReconciliationReq
 	case errs.ClassTimeoutUncertain, errs.ClassUpstreamTransient, errs.ClassInternal,
 		errs.ClassProviderBug, errs.ClassCancelled:
-		// A cancellation after PREPARED may interrupt the POST after the remote
-		// side effect landed; it is never a definite "not created".
-		return "OUTCOME_UNKNOWN"
+		return storage.ExternalOutcomeUnknown
 	default:
-		return "FAILED"
+		return storage.ExternalFailedDefinite
 	}
 }
 
-// appendExternalEvent is best-effort for failure paths (the original provider
-// error is more important) but fail-closed for the pre-call PREPARED write.
-func (rc *RunContext) appendExternalEvent(ctx context.Context, eventType, status, errClass, provider, opType, fingerprint string) error {
-	return rc.Store().AppendEvent(ctx, rc.Run.ID, eventType, rc.Def.Name,
-		externalOpPayload(rc.Run.ID, rc.Def.Name, provider, opType, fingerprint, status, errClass, rc.Step.AttemptCount))
+func (rc *RunContext) beginExternalOperation(ctx context.Context, provider, opType, fingerprint string) (storage.ExternalOperation, error) {
+	claim := rc.Claim
+	op, err := rc.Store().BeginExternalOperation(ctx, storage.BeginExternalOperationParams{
+		RunID:             rc.Run.ID,
+		StepName:          rc.Def.Name,
+		Provider:          provider,
+		OperationType:     opType,
+		Fingerprint:       fingerprint,
+		LeaseOwner:        claim.Owner,
+		FencingGeneration: claim.Generation,
+	})
+	if err != nil {
+		if errors.Is(err, storage.ErrExternalOperationBlocked) || errors.Is(err, storage.ErrConflict) {
+			return storage.ExternalOperation{}, errs.Wrap(errs.ClassConflict, "external.operation",
+				"external operation is not retry-safe and requires reconciliation", err)
+		}
+		return storage.ExternalOperation{}, errs.Wrap(errs.ClassInternal, "external.operation",
+			"could not acquire external operation permit", err)
+	}
+	// Only the atomic PREPARED -> IN_FLIGHT CAS grants the remote-call permit.
+	// Concurrent workers may both hold a PREPARED candidate; exactly one wins
+	// and losers must never call the provider.
+	op, err = rc.Store().MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		return storage.ExternalOperation{}, errs.Wrap(errs.ClassConflict, "external.operation",
+			"could not acquire remote-write permit", err)
+	}
+	rc.auditExternal(ctx, "EXTERNAL_OPERATION_IN_FLIGHT", op, "")
+	return op, nil
 }
 
-func (rc *RunContext) beginExternalOperation(ctx context.Context, provider, opType, fingerprint string) error {
-	if err := rc.appendExternalEvent(ctx, storage.ExternalOperationEventPrefix+"PREPARED", "PREPARED", "", provider, opType, fingerprint); err != nil {
-		return errs.Wrap(errs.ClassInternal, "external.prepare", "could not record external operation audit", err)
+func (rc *RunContext) completeExternalOperation(ctx context.Context, op storage.ExternalOperation, status, errorClass string) error {
+	updated, err := rc.Store().CompleteExternalOperation(ctx, op.OperationKey, status, errorClass)
+	if err != nil {
+		return err
 	}
+	rc.auditExternal(ctx, "EXTERNAL_OPERATION_"+status, updated, errorClass)
 	return nil
 }
 
-func (rc *RunContext) failedExternalOperation(ctx context.Context, provider, opType, fingerprint string, cause error) {
-	status := ExternalFailureStatus(cause)
-	eventType := storage.ExternalOperationEventPrefix + status
-	if err := rc.appendExternalEvent(ctx, eventType, status, string(errs.ClassOf(cause)), provider, opType, fingerprint); err != nil {
-		rc.Log.Error("external operation audit write failed", "error", err, "status", status)
+func (rc *RunContext) auditExternal(ctx context.Context, eventType string, op storage.ExternalOperation, errorClass string) {
+	payload := map[string]any{
+		"operation_key":       op.OperationKey,
+		"provider":            op.Provider,
+		"operation_type":      op.OperationType,
+		"request_fingerprint": op.Fingerprint,
+		"status":              op.Status,
+		"error_class":         errorClass,
+		"attempt":             op.AttemptCount,
 	}
-}
-
-func (rc *RunContext) confirmedExternalOperation(provider, opType, fingerprint string) storage.EventDraft {
-	return storage.EventDraft{
-		Type: storage.ExternalOperationEventPrefix + "CONFIRMED",
-		Payload: externalOpPayload(rc.Run.ID, rc.Def.Name, provider, opType, fingerprint,
-			"CONFIRMED", "", rc.Step.AttemptCount),
+	if err := rc.Store().AppendEvent(ctx, rc.Run.ID, eventType, rc.Def.Name, payload); err != nil {
+		rc.Log.Error("external operation audit event failed", "error", err, "event", eventType)
 	}
 }
