@@ -39,6 +39,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
+| **R11** integration readiness + release safety | **CONTROLLED_LIVE_TEST_READY (pending review)** (2026-10-25) | UNRESOLVED stays pending with audit; engine lifecycle fail-closed; reconciliation UI/audit history; strict signed-attestation validation; mock/authorized Cloudflare preflight; first-install/recovery 11/11; ARM64 BUILD+RUNTIME_PASS; alerts. Final CI 40190151000/40190150884/40190150927/40190150903/40190150915/40190151078; no live platform/GHCR — [`R11.md`](R11.md) |
 | **R10** live safety + release dry-run | **LIVE_PREFLIGHT_READY** (2026-10-25) | Worker-lifecycle/fenced external gate + migration 0005/schema 5, credential-bound atomic audit, isolated OCI registry publish/sign/attest dry run **15/15**, rollback **20/20**, Caddy **18/18**, staging 27/27 + container 63/63, Cloudflare preflight dry-run, admin UI/metrics. Final CI 40183814895/40183814849/40183814916/40183814840/40183814884; no GHCR/live platform — [`R10.md`](R10.md) |
 | **R9** external consistency + release hardening | **RELEASE_CANDIDATE_READY** (2026-10-25) | Durable migration-0004 external-write gate (PREPARED/IN_FLIGHT/CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/FAILED_DEFINITE/RESOLVED) with lease-fenced CAS, sticky no-retry after unknown, paginated global reconciliation counts, audited admin resolve API/CLI, old-image schema-3→4 rollback **20/20**, real Caddy TLS proxy **17/17**, candidate release pipeline (publish skipped). Final CI 40176187395/40176187340/40176187307/40176187349; no GHCR push/live platform — [`R9.md`](R9.md) |
 | **R8** staging release readiness | **STAGING_RC_READY** (2026-10-25) | Real CI: isolated test-CA HTTPS staging **27/27**, R8 container regression **63/63**, supply chain **PASS** (govulncheck 0, Trivy CRITICAL/HIGH 0, ShellCheck errors 0, CycloneDX+SPDX SBOM); external-operation reconciliation audit/API/ADR; future-schema rollback guard. No GHCR push/digest, no production TLS/live platforms — [`R8.md`](R8.md) |
@@ -49,7 +50,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 360 top-level tests (355 PASS + 5 opt-in SKIP) / 675 passes including subtests, 0 FAIL** (after R8 sprint fixes)
+- `go test ./... -count=1` → **29 packages (14 with test files), 370 top-level tests (365 PASS + 5 opt-in SKIP) / 688 passes including subtests, 0 FAIL** (after R8 sprint fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -435,3 +436,24 @@ registry and SHA-256-verified cosign with test keys; actions and base images
 pinned; admin reconciliation UI and honest metrics. `LIVE_PREFLIGHT_READY`
 remains pending independent REVIEW-R10; `LIVE_READY` is not claimed and real
 Cloudflare/GitHub/WorkBuddy, production TLS/ACME and GHCR publish remain NOT_RUN.
+
+## 20. R11 integration readiness (2026-10-25)
+
+Branch `feat/r11-integration-readiness` (code/CI HEAD `dad3e33`, base R10
+`4dcb091`/`d9bcc6f`; main `9726fc1`). Final CI all PASS: r11-integration
+(deploy recovery 11/11, Cloudflare HTTPS mock-live, **ARM64 BUILD+RUNTIME_PASS**),
+staging 27/27 + container 63/63, supply-chain PASS, rollback 20/20, Caddy 18/18,
+isolated OCI sign/attest dry run 15/15 with strict in-toto subject/Data commit
+validation, Candidate PASS / Publish skipped. Local: make verify 0; race 0;
+370 top-level (365 PASS+5 SKIP)/688.
+
+Key fixes: UNRESOLVED is review-only (pending status, queue/count, version bump,
+atomic review audit; only three verified resolutions close); Engine.Start
+fail-closed with zero workers on lifecycle recovery failure, Stop returns
+recovery errors; reconciliation UI/audit history with escaping/CSRF tests;
+strict signed-attestation validation and cosign checksum; Cloudflare
+dry/mock/authorized-read-only preflight (authorized live NOT_RUN); first-install/
+SIGKILL/secret/read-only/corrupt/partial-schema drill; arm64 build+smoke;
+local alert rules + admin endpoint. `CONTROLLED_LIVE_TEST_READY` remains pending
+independent REVIEW-R11; `LIVE_READY` is not claimed and real live/production
+actions remain NOT_RUN.

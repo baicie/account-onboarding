@@ -1,0 +1,4 @@
+govulncheck: v1.1.4; shellcheck: -S error; trivy: v0.76.1 checksum-verified
+CRITICAL blocks, HIGH report-only, --ignore-unfixed used for both.
+scanned_at_utc=2026-10-25T11:49:17Z
+scanner_db_updated_at=2026-10-25T07:10:41.872962161Z

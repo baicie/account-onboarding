@@ -1,0 +1,10 @@
+{
+  "commit": "dad3e33921a1232cee1e412dbbe93cc1085f49a3",
+  "image_id": "sha256:c48b2645d06095528cdbdb7ab37f9f998594fbc3ce3aa9761937a6e140420390",
+  "image_tar_sha256": "05501074672b7d4721299b962ab20122d0d60cd174d5503ba898259cf1e621ea",
+  "sbom_sha256": "dbd204c9dce894e059377ef79edd33f7c5e49303bf524f937dcbfb657e91919d",
+  "base_image_refs": "golang_image=golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af runtime_image=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "base_image_digests": "golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af; debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "platform": "linux/amd64",
+  "publish_default": false
+}
