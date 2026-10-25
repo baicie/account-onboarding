@@ -66,8 +66,7 @@ func (s *Server) handleOpsExternalPage(w http.ResponseWriter, r *http.Request) {
 		data.Items = append(data.Items, opsExternalRow{
 			ID: op.ID, RunID: op.RunID, Provider: op.Provider, OperationType: op.OperationType,
 			Status: op.Status, NeedsReview: op.Status == storage.ExternalOutcomeUnknown ||
-				op.Status == storage.ExternalReconciliationReq || op.Status == storage.ExternalInFlight ||
-				op.Status == storage.ExternalPrepared,
+				op.Status == storage.ExternalReconciliationReq,
 			CreatedAtMS: op.CreatedAtMS, Version: op.Version,
 			Resolution: op.Resolution, ResolutionReason: op.ResolutionReason,
 			ResolvedBy: op.ResolvedBy, EvidenceReference: op.EvidenceReference,
