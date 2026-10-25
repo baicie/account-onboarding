@@ -13,14 +13,14 @@ sha=d.split(':',1)[1]
 def st(**over):
     x={"_type":"https://in-toto.io/Statement/v0.1","predicateType":"https://cosign.sigstore.dev/attestation/v1",
        "subject":[{"name":"image","digest":{"sha256":sha}}],
-       "predicate":{"commit":c,"registry_digest":d}}
+       "predicate":{"Data":{"commit":c,"registry_digest":d},"Timestamp":"2026-01-01T00:00:00Z"}}
     x.update(over); return x
 def env(statement):
     return [{"payloadType":"application/vnd.in-toto+json","payload":base64.b64encode(json.dumps(statement).encode()).decode(),"signatures":[{"keyid":"","sig":"test"}]}]
 json.dump(env(st()),open(os.path.join(w,'valid.json'),'w'))
-json.dump(env(st(predicate={"commit":c,"registry_digest":"sha256:"+"0"*64})),open(os.path.join(w,'wrong-digest.json'),'w'))
-json.dump(env(st(predicate={"commit":"c"*40,"registry_digest":d})),open(os.path.join(w,'wrong-commit.json'),'w'))
-x=st(predicate={}); x['annotations']={'commit':c}; json.dump(env(x),open(os.path.join(w,'commit-annotation-only.json'),'w'))
+json.dump(env(st(predicate={"Data":{"commit":c,"registry_digest":"sha256:"+"0"*64},"Timestamp":"x"})),open(os.path.join(w,'wrong-digest.json'),'w'))
+json.dump(env(st(predicate={"Data":{"commit":"c"*40,"registry_digest":d},"Timestamp":"x"})),open(os.path.join(w,'wrong-commit.json'),'w'))
+x=st(predicate={'annotations':{'commit':c}}); x['annotations']={'commit':c}; json.dump(env(x),open(os.path.join(w,'commit-annotation-only.json'),'w'))
 json.dump(env({"_type":"https://in-toto.io/Statement/v0.1","predicateType":"https://cosign.sigstore.dev/attestation/v1","subject":[{"digest":{"sha256":sha}}]}),open(os.path.join(w,'missing-predicate.json'),'w'))
 json.dump([{"payloadType":"application/vnd.in-toto+json","payload":"not-base64!!"}],open(os.path.join(w,'invalid-payload.json'),'w'))
 x=st(); x['subject'].append({"digest":{"sha256":sha}}); json.dump(env(x),open(os.path.join(w,'duplicate-subject.json'),'w'))

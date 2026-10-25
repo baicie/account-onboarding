@@ -47,11 +47,16 @@ def main():
         pred = st.get("predicate")
         if not isinstance(pred, dict):
             fail("missing predicate object")
-        if pred.get("commit") != want_commit:
-            fail("predicate commit mismatch (must be exact full SHA); predicate keys=%s statement keys=%s" %
-                 (sorted(pred.keys()), sorted(st.keys())))
-        if pred.get("registry_digest") != want_digest:
-            fail("predicate registry_digest mismatch")
+        # cosign attest --type custom wraps the supplied predicate as
+        # {"Data": <our JSON>, "Timestamp": "..."}. Require that exact shape;
+        # arbitrary annotations/fields are never accepted as the commit.
+        data = pred.get("Data")
+        if not isinstance(data, dict):
+            fail("predicate.Data missing (cosign custom predicate shape)")
+        if data.get("commit") != want_commit:
+            fail("predicate.Data.commit mismatch (must be exact full SHA); keys=%s" % sorted(data.keys()))
+        if data.get("registry_digest") != want_digest:
+            fail("predicate.Data.registry_digest mismatch")
         pt = st.get("predicateType", "")
         if not pt.startswith("https://cosign.sigstore.dev/attestation/"):
             fail("unexpected predicateType %r" % pt)
