@@ -4,7 +4,7 @@ name: r9-release
 # no production credentials, no real DNS/ACME, no image push.
 on:
   push:
-    branches: [feat/r9-release-hardening, feat/r10-live-preflight]
+    branches: [feat/r9-release-hardening, feat/r10-live-preflight, feat/r11-integration-readiness]
   workflow_dispatch:
 
 permissions:
