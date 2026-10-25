@@ -104,6 +104,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/ops/external/{id}/resolve", s.apiAuth(true, true, s.handleResolveExternalOperation))
 	mux.HandleFunc("GET /v1/ops/external/{id}/audit", s.apiAuth(false, true, s.handleExternalOperationAudit))
 	mux.HandleFunc("GET /v1/ops/metrics", s.apiAuth(false, true, s.handleOpsMetrics))
+	mux.HandleFunc("GET /v1/ops/alerts", s.apiAuth(false, true, s.handleOpsAlerts))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)

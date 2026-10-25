@@ -1196,3 +1196,23 @@ func TestReconciliationUISecurityAndAuditHistory(t *testing.T) {
 		t.Fatalf("UI resolve without CSRF = %d, want 403", resp.StatusCode)
 	}
 }
+
+func TestOpsAlertsAdminOnly(t *testing.T) {
+	e := newEnv(t, nil)
+	status, body := e.request(t, http.MethodGet, "/v1/ops/alerts", nil, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("admin alerts = %d %s", status, body)
+	}
+	var resp struct {
+		Alerts []map[string]any `json:"alerts"`
+		Count  int              `json:"count"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Count != len(resp.Alerts) {
+		t.Fatalf("alerts shape: %v %s", err, body)
+	}
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/alerts", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer alerts = %d, want 403", status)
+	}
+}

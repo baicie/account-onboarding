@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baicie/account-onboarding/internal/alerts"
 	"github.com/baicie/account-onboarding/internal/errs"
 	"github.com/baicie/account-onboarding/internal/storage"
 )
@@ -129,4 +130,25 @@ func (s *Server) handleOpsMetrics(w http.ResponseWriter, r *http.Request) {
 		"commit":          Commit,
 		"generated_at_ms": time.Now().UTC().UnixMilli(),
 	})
+}
+
+func (s *Server) handleOpsAlerts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	m, err := s.Store.OperationalMetrics(ctx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	health, err := s.Store.Health(ctx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	alerts := alerts.EvaluateAlerts(alerts.AlertInput{
+		Metrics: m, Ready: health.Writable && health.SchemaVersion >= 5 &&
+			health.SessionRevocationsReady && health.ExternalOperationsReady,
+		ExpectedSchema: 5, NowMS: time.Now().UTC().UnixMilli(), BackupMaxAgeMS: (7 * 24 * time.Hour).Milliseconds(),
+		ReconciliationThreshold: 10, ProviderErrorThreshold: 20,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "count": len(alerts)})
 }

@@ -136,3 +136,9 @@ func (s *Store) OperationalMetrics(ctx context.Context) (OperationalMetrics, err
 	}
 	return m, nil
 }
+
+// TotalNeedsReconciliation is the sum of pending external-operation states.
+func (m OperationalMetrics) TotalNeedsReconciliation() int64 {
+	return m.ExternalStatusCounts[ExternalPrepared] + m.ExternalStatusCounts[ExternalInFlight] +
+		m.ExternalStatusCounts[ExternalOutcomeUnknown] + m.ExternalStatusCounts[ExternalReconciliationReq]
+}
