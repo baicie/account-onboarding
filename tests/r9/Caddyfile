@@ -21,10 +21,10 @@
 			max_size 1MB
 		}
 		reverse_proxy app:8788 {
-			header_up Host {http.request.host}
-			header_up X-Forwarded-Host {http.request.host}
+			header_up Host {env.R9_PUBLIC_HOST}
+			header_up X-Forwarded-Host {env.R9_PUBLIC_HOST}
 			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-Port 443
+			header_up X-Forwarded-Port {env.R9_PUBLIC_PORT}
 			transport http {
 				dial_timeout 5s
 				response_header_timeout 10s
