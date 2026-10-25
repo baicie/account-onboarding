@@ -67,11 +67,19 @@ func (s *Server) handleResolveExternalOperation(w http.ResponseWriter, r *http.R
 		writeError(w, r, errsValidation("resolution reason is required"))
 		return
 	}
+	if len(req.Reason) > 2000 || len(req.EvidenceReference) > 512 ||
+		strings.ContainsAny(req.Reason, "\x00\r\n") || strings.ContainsAny(req.EvidenceReference, "\x00\r\n") {
+		writeError(w, r, errsValidation("resolution reason/evidence invalid or too long"))
+		return
+	}
+	info, _ := authInfoFrom(r)
 	op, err := s.Store.ResolveExternalOperation(r.Context(), id, storage.ExternalResolution{
 		Resolution:        strings.ToUpper(strings.TrimSpace(req.Resolution)),
 		Reason:            req.Reason,
 		EvidenceReference: req.EvidenceReference,
 		ExpectedVersion:   req.ExpectedVersion,
+		Actor:             info.Actor,
+		RequestedAtMS:     time.Now().UTC().UnixMilli(),
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {

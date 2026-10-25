@@ -3,7 +3,7 @@
 #
 #   old image (R8 commit, schema 3, future-schema guard)
 #     -> create run/event/session, encrypted backup
-#     -> new image migrates to schema 4 and serves the data
+#     -> new image migrates to schema 5 and serves the data
 #     -> old image MUST refuse the schema-4 DB (rollback safety)
 #     -> restore the pre-upgrade backup to a new volume; old image serves schema 3
 #     -> wrong key / failed restore must not overwrite valid data
@@ -100,10 +100,10 @@ ENC="$(ls "$WORK"/backup/*.sqlite.enc | head -1)"
 cp "$WORK/inspect/state.sqlite" "$WORK/upgrade/state.sqlite"
 docker run --rm --user 0:0 -v "$WORK/upgrade:/data" --entrypoint sh "$NEW_IMAGE" -c 'chown 10001:10001 /data/state.sqlite && chmod 600 /data/state.sqlite'
 
-echo "=== new version: schema 4 upgrade ==="
+echo "=== new version: schema 5 upgrade ==="
 run_app "$ID-new" "$NEW_IMAGE" "$PORT2" "$WORK/upgrade"
 wait_http "$PORT2" /readyz 200 90 && ok "new image upgraded DB and is ready" || bad "new ready"
-[ "$(meta_schema "$PORT2")" = "4" ] && ok "new schema is 4" || bad "new schema=$(meta_schema "$PORT2")"
+[ "$(meta_schema "$PORT2")" = "5" ] && ok "new schema is 5" || bad "new schema=$(meta_schema "$PORT2")"
 curl -sS "${AUTH[@]}" "$BASE2/v1/runs/$RUN" | grep -q '"id"' && ok "new image serves old run" || bad "new run missing"
 # Deliberate crash of the new instance before rollback.
 docker kill -s KILL "$ID-new" >/dev/null
@@ -115,9 +115,9 @@ sleep 5
 STATE="$(docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}}' "$ID-oldrefuse" 2>/dev/null || echo missing)"
 LOGS="$(docker logs "$ID-oldrefuse" 2>&1 || true)"
 if echo "$LOGS" | grep -qi "schema is newer\|schema_too_new\|newer than this binary"; then
-  ok "old image refused schema 4 ($STATE)"
+  ok "old image refused schema 5 ($STATE)"
 else
-  bad "old image did not refuse schema 4 ($STATE) logs=$(echo "$LOGS" | tail -2 | tr '\n' ' ')"
+  bad "old image did not refuse schema 5 ($STATE) logs=$(echo "$LOGS" | tail -2 | tr '\n' ' ')"
 fi
 docker rm -f "$ID-oldrefuse" >/dev/null 2>&1 || true
 

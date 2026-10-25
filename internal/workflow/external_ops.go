@@ -75,7 +75,14 @@ func (rc *RunContext) beginExternalOperation(ctx context.Context, provider, opTy
 }
 
 func (rc *RunContext) completeExternalOperation(ctx context.Context, op storage.ExternalOperation, status, errorClass string) error {
-	updated, err := rc.Store().CompleteExternalOperation(ctx, op.OperationKey, status, errorClass)
+	updated, err := rc.Store().CompleteExternalOperation(ctx, storage.CompleteExternalOperationParams{
+		OperationKey:      op.OperationKey,
+		Status:            status,
+		ErrorClass:        errorClass,
+		LeaseOwner:        rc.Claim.Owner,
+		FencingGeneration: rc.Claim.Generation,
+		OperationVersion:  op.Version,
+	})
 	if err != nil {
 		return err
 	}

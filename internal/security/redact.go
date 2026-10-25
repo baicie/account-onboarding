@@ -98,6 +98,16 @@ var eventPayloadAllowlist = map[string]bool{
 	// pass through Redact and are length-capped.
 	"resolution":         true,
 	"evidence_reference": true,
+	"operation_id":       true,
+	"run_id":             true,
+	"from_status":        true,
+	"to_status":          true,
+	"version_before":     true,
+	"version_after":      true,
+	"requested_at_ms":    true,
+	"resolved_at_ms":     true,
+	"resolved_by":        true,
+	"actor":              true,
 }
 
 // SanitizeEventPayload filters an event payload down to the allowlist and

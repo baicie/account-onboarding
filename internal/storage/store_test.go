@@ -74,7 +74,7 @@ func TestMigrateHealthAndWAL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if health.SchemaVersion != 4 {
+	if health.SchemaVersion != 5 {
 		t.Fatalf("schema version = %d", health.SchemaVersion)
 	}
 	if health.WALMode != "wal" {
@@ -448,7 +448,7 @@ func TestBackupIntegrityAndSecretsList(t *testing.T) {
 	}
 	defer snap.Close()
 	health, err := snap.Health(ctx)
-	if err != nil || health.SchemaVersion != 4 {
+	if err != nil || health.SchemaVersion != 5 {
 		t.Fatalf("snapshot health: %+v %v", health, err)
 	}
 	if _, err := snap.GetRun(ctx, run.ID); err != nil {

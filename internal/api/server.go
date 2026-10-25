@@ -3,6 +3,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -253,15 +255,23 @@ func (s *Server) apiAuth(requireCSRF bool, adminOnly bool, next http.HandlerFunc
 	}
 }
 
+// credentialActor identifies the credential subject. A shared Bearer token
+// cannot identify a natural person, so it is explicitly labelled as the token
+// credential (stable truncated fingerprint, never the token itself).
+func credentialActor(kind, token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return kind + ":sha256:" + hex.EncodeToString(sum[:6])
+}
+
 func (s *Server) authenticate(r *http.Request) (authInfo, bool) {
 	// Bearer token path (API clients).
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		token := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 		if s.Cfg.AdminToken != "" && security.ConstantTimeEqual(token, s.Cfg.AdminToken) {
-			return authInfo{Actor: "operator", Role: "admin", Via: "bearer"}, true
+			return authInfo{Actor: credentialActor("bearer:admin", token), Role: "admin", Via: "bearer"}, true
 		}
 		if s.Cfg.ReadOnlyToken != "" && security.ConstantTimeEqual(token, s.Cfg.ReadOnlyToken) {
-			return authInfo{Actor: "viewer", Role: "viewer", Via: "bearer"}, true
+			return authInfo{Actor: credentialActor("bearer:viewer", token), Role: "viewer", Via: "bearer"}, true
 		}
 		return authInfo{}, false
 	}
@@ -288,7 +298,7 @@ func (s *Server) authenticate(r *http.Request) (authInfo, bool) {
 	if revoked {
 		return authInfo{}, false
 	}
-	return authInfo{Actor: "operator", Role: "admin", Via: "cookie", CSRF: csrf,
+	return authInfo{Actor: "cookie:operator", Role: "admin", Via: "cookie", CSRF: csrf,
 		SessionID: sessionID, SessionExpires: expiresAt}, true
 }
 
@@ -503,7 +513,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "database unavailable"})
 		return
 	}
-	ready := health.Writable && health.SchemaVersion >= 4 && health.SessionRevocationsReady &&
+	ready := health.Writable && health.SchemaVersion >= 5 && health.SessionRevocationsReady &&
 		health.ExternalOperationsReady &&
 		strings.EqualFold(health.WALMode, "wal")
 	if len(s.Cfg.MasterKey) != 32 {

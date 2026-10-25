@@ -144,6 +144,15 @@ func (e *Engine) Template(name string) (*Template, bool) {
 
 // Start launches the worker pool and deadline sweeper.
 func (e *Engine) Start(ctx context.Context) {
+	// Single-writer lifecycle barrier: the previous process is known dead when
+	// the instance lock was acquired. Any PREPARED intent never reached the
+	// provider (Mark precedes the call); any IN_FLIGHT row may have reached it
+	// and must stay in manual reconciliation.
+	if n, err := e.store.RecoverExternalOperations(ctx, "STARTUP_PREVIOUS_PROCESS"); err != nil {
+		e.log.ErrorContext(ctx, "external operation startup recovery failed", "error", err)
+	} else if n > 0 {
+		e.log.WarnContext(ctx, "recovered leftover external operations", "count", n)
+	}
 	for i := 0; i < e.cfg.MaxConcurrency; i++ {
 		e.wg.Add(1)
 		go func(worker int) {
@@ -180,6 +189,16 @@ func (e *Engine) Start(ctx context.Context) {
 func (e *Engine) Stop() {
 	e.stopOnce.Do(func() { close(e.stopCh) })
 	e.wg.Wait()
+	// Workers are drained. Any remaining IN_FLIGHT operation could still have
+	// reached the provider, so record a reconciliation requirement rather than
+	// inferring that no remote write occurred.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if n, err := e.store.RecoverExternalOperations(ctx, "GRACEFUL_STOP"); err != nil {
+		e.log.Error("external operation stop recovery failed", "error", err)
+	} else if n > 0 {
+		e.log.Warn("recovered external operations on stop", "count", n)
+	}
 }
 
 func (e *Engine) workerLoop(ctx context.Context, worker int) {

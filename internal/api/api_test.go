@@ -998,10 +998,14 @@ func TestExternalOperationResolveAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.store.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
+	op, err = e.store.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.store.CompleteExternalOperation(ctx, op.OperationKey, storage.ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
+	if _, err := e.store.CompleteExternalOperation(ctx, storage.CompleteExternalOperationParams{
+		OperationKey: op.OperationKey, Status: storage.ExternalOutcomeUnknown, ErrorClass: "TIMEOUT_UNCERTAIN",
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation, OperationVersion: op.Version,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	op, err = e.store.GetExternalOperation(ctx, op.OperationKey)
@@ -1019,6 +1023,14 @@ func TestExternalOperationResolveAPI(t *testing.T) {
 	var resolved storage.ExternalOperation
 	if err := json.Unmarshal(raw, &resolved); err != nil || resolved.Status != storage.ExternalResolved {
 		t.Fatalf("resolve response = %+v err=%v", resolved, err)
+	}
+	audits, err := e.store.ListAudit(ctx, 10)
+	if err != nil || len(audits) == 0 {
+		t.Fatalf("audit list: %v %+v", err, audits)
+	}
+	if audits[0].Action != "external_operation.resolve" || audits[0].RunID != run.ID ||
+		!strings.HasPrefix(audits[0].Actor, "bearer:admin:sha256:") {
+		t.Fatalf("audit identity/run binding = %+v", audits[0])
 	}
 	// Duplicate/stale resolution is a conflict.
 	if status, _ := e.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", body, adminToken, nil); status != http.StatusConflict {

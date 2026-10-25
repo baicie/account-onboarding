@@ -46,6 +46,18 @@ func beginParams(claim Claim) BeginExternalOperationParams {
 	}
 }
 
+func completeExternalTest(t *testing.T, s *Store, claim Claim, key, status, class string) (ExternalOperation, error) {
+	t.Helper()
+	op, err := s.GetExternalOperation(context.Background(), key)
+	if err != nil {
+		return ExternalOperation{}, err
+	}
+	return s.CompleteExternalOperation(context.Background(), CompleteExternalOperationParams{
+		OperationKey: key, Status: status, ErrorClass: class,
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation, OperationVersion: op.Version,
+	})
+}
+
 func TestExternalOperationGateBlocksAfterAmbiguousOutcome(t *testing.T) {
 	s := newSweepStore(t, filepath.Join(t.TempDir(), "gate.sqlite"))
 	ctx := context.Background()
@@ -67,7 +79,7 @@ func TestExternalOperationGateBlocksAfterAmbiguousOutcome(t *testing.T) {
 	if _, err := s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); !errors.Is(err, ErrExternalOperationBlocked) {
 		t.Fatalf("second mark = %v, want blocked", err)
 	}
-	if _, err := s.CompleteExternalOperation(ctx, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
+	if _, err := completeExternalTest(t, s, claim, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
 		t.Fatal(err)
 	}
 	// No automatic retry after an unknown outcome.
@@ -75,7 +87,7 @@ func TestExternalOperationGateBlocksAfterAmbiguousOutcome(t *testing.T) {
 		t.Fatalf("begin after unknown = %v, want blocked", err)
 	}
 	// A later completion cannot overwrite the unknown outcome.
-	if _, err := s.CompleteExternalOperation(ctx, op.OperationKey, ExternalFailedDefinite, "VALIDATION"); !errors.Is(err, ErrConflict) {
+	if _, err := completeExternalTest(t, s, claim, op.OperationKey, ExternalFailedDefinite, "VALIDATION"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("overwrite unknown = %v, want conflict", err)
 	}
 	got, err := s.GetExternalOperation(ctx, op.OperationKey)
@@ -95,7 +107,7 @@ func TestExternalOperationFailedDefiniteAllowsRetry(t *testing.T) {
 	if _, err := s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CompleteExternalOperation(ctx, op.OperationKey, ExternalFailedDefinite, "VALIDATION"); err != nil {
+	if _, err := completeExternalTest(t, s, claim, op.OperationKey, ExternalFailedDefinite, "VALIDATION"); err != nil {
 		t.Fatal(err)
 	}
 	second, err := s.BeginExternalOperation(ctx, beginParams(claim))
@@ -134,13 +146,14 @@ func TestExternalOperationResolveCAS(t *testing.T) {
 	if _, err := s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CompleteExternalOperation(ctx, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
+	if _, err := completeExternalTest(t, s, claim, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := s.GetExternalOperation(ctx, op.OperationKey)
 	resolved, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
 		Resolution: "RESOURCE_CONFIRMED", Reason: "operator verified mailbox exists",
 		EvidenceReference: "ticket-123", ExpectedVersion: before.Version,
+		Actor: "test-admin", RequestedAtMS: time.Now().UnixMilli(),
 	})
 	if err != nil || resolved.Status != ExternalResolved {
 		t.Fatalf("resolve = %+v err=%v", resolved, err)
@@ -149,6 +162,7 @@ func TestExternalOperationResolveCAS(t *testing.T) {
 	if _, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
 		Resolution: "NO_RESOURCE_CREATED", Reason: "second operator",
 		ExpectedVersion: before.Version,
+		Actor:           "test-admin", RequestedAtMS: time.Now().UnixMilli(),
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("second resolve = %v, want conflict", err)
 	}
@@ -290,12 +304,13 @@ func TestExternalOperationSurvivesRestartAndAudit(t *testing.T) {
 	if _, err := s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CompleteExternalOperation(ctx, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
+	if _, err := completeExternalTest(t, s, claim, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT_UNCERTAIN"); err != nil {
 		t.Fatal(err)
 	}
 	op, _ = s.GetExternalOperation(ctx, op.OperationKey)
 	resolved, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
 		Resolution: "NO_RESOURCE_CREATED", Reason: "verified absent", ExpectedVersion: op.Version,
+		Actor: "test-admin", RequestedAtMS: time.Now().UnixMilli(),
 	})
 	if err != nil || resolved.Status != ExternalResolved {
 		t.Fatalf("resolve: %+v %v", resolved, err)
@@ -340,17 +355,23 @@ func TestResolveRejectsLiveInFlightAndSupportsExpiredLease(t *testing.T) {
 	}
 	if _, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
 		Resolution: "NO_RESOURCE_CREATED", Reason: "operator race", ExpectedVersion: op.Version,
+		Actor: "test-admin", RequestedAtMS: time.Now().UnixMilli(),
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("resolve live IN_FLIGHT = %v, want conflict", err)
 	}
-	// Simulate a dead worker whose lease expired; then manual resolution is allowed.
-	if _, err := s.writeDB.ExecContext(ctx, `UPDATE runs SET lease_until_ms=? WHERE id=?`,
-		time.Now().Add(-time.Minute).UnixMilli(), claim.Run.ID); err != nil {
+	// Lease expiry alone is never enough to infer the worker stopped. The
+	// single-process lifecycle barrier must clear IN_FLIGHT first.
+	if n, err := s.RecoverExternalOperations(ctx, "TEST_WORKER_STOPPED"); err != nil || n != 1 {
+		t.Fatalf("lifecycle recovery n=%d err=%v", n, err)
+	}
+	op, err = s.GetExternalOperation(ctx, op.OperationKey)
+	if err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
 		Resolution: "NO_RESOURCE_CREATED", Reason: "worker expired; provider console shows no resource",
 		ExpectedVersion: op.Version,
+		Actor:           "test-admin", RequestedAtMS: time.Now().UnixMilli(),
 	})
 	if err != nil || resolved.Status != ExternalResolved {
 		t.Fatalf("expired-lease resolve = %+v err=%v", resolved, err)
@@ -368,18 +389,20 @@ func TestResolveConfirmedRecoveryPath(t *testing.T) {
 	if _, err := s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation); err != nil {
 		t.Fatal(err)
 	}
-	op, err = s.CompleteExternalOperation(ctx, op.OperationKey, ExternalConfirmed, "")
+	op, err = completeExternalTest(t, s, claim, op.OperationKey, ExternalConfirmed, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
 		Resolution: "NO_RESOURCE_CREATED", Reason: "invalid", ExpectedVersion: op.Version,
+		Actor: "test-admin", RequestedAtMS: time.Now().UnixMilli(),
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("CONFIRMED no-resource = %v, want conflict", err)
 	}
 	resolved, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
 		Resolution: "RESOURCE_CONFIRMED", Reason: "step commit failed after remote success",
 		EvidenceReference: "ticket-confirmed-1", ExpectedVersion: op.Version,
+		Actor: "test-admin", RequestedAtMS: time.Now().UnixMilli(),
 	})
 	if err != nil || resolved.Status != ExternalResolved {
 		t.Fatalf("CONFIRMED recovery = %+v err=%v", resolved, err)
@@ -410,5 +433,161 @@ func TestExternalOperationsUnfilteredQueryPlanUsesCreatedIndex(t *testing.T) {
 	}
 	if !contains(plan, "idx_external_ops_created") {
 		t.Fatalf("unfiltered query plan does not use created index: %s", plan)
+	}
+}
+
+func TestCompleteRejectsStaleLeaseAndPreservesReconciliation(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "stale-complete.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "complete-stale")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A newer worker/lease generation owns the run now.
+	if _, err := s.writeDB.ExecContext(ctx, `UPDATE runs SET lease_owner='new-worker', fencing_generation=fencing_generation+1 WHERE id=?`, claim.Run.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.CompleteExternalOperation(ctx, CompleteExternalOperationParams{
+		OperationKey: op.OperationKey, Status: ExternalConfirmed,
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation, OperationVersion: op.Version,
+	})
+	if !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("stale completion = %v, want ErrLeaseLost", err)
+	}
+	got, err := s.GetExternalOperation(ctx, op.OperationKey)
+	if err != nil || got.Status != ExternalReconciliationReq || got.LastErrorClass != "LEASE_LOST_AFTER_REMOTE_CALL_MAYBE_SENT" {
+		t.Fatalf("stale completion state = %+v err=%v", got, err)
+	}
+}
+
+func TestAdminResolveWinsAgainstLateWorkerCompletion(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "resolve-race.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "resolve-race")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecoverExternalOperations(ctx, "CRASH_SIMULATED"); err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.GetExternalOperation(ctx, op.OperationKey)
+	if err != nil || op.Status != ExternalReconciliationReq {
+		t.Fatalf("recovered op = %+v err=%v", op, err)
+	}
+	resolved, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "RESOURCE_CONFIRMED", Reason: "operator checked provider console",
+		EvidenceReference: "ticket-late-worker", ExpectedVersion: op.Version,
+		Actor: "bearer:admin:test", RequestedAtMS: time.Now().UnixMilli(),
+	})
+	if err != nil || resolved.Status != ExternalResolved {
+		t.Fatalf("resolve = %+v err=%v", resolved, err)
+	}
+	if _, err := s.CompleteExternalOperation(ctx, CompleteExternalOperationParams{
+		OperationKey: op.OperationKey, Status: ExternalConfirmed,
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation, OperationVersion: resolved.Version,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("late completion after resolve = %v, want conflict", err)
+	}
+	got, _ := s.GetExternalOperation(ctx, op.OperationKey)
+	if got.Status != ExternalResolved {
+		t.Fatalf("late completion overwrote resolve: %+v", got)
+	}
+	audits, _ := s.ListAudit(ctx, 10)
+	if len(audits) == 0 || audits[0].Actor != "bearer:admin:test" || audits[0].RunID != op.RunID {
+		t.Fatalf("audit identity/run binding: %+v", audits)
+	}
+	if audits[0].Detail["operation_id"] != op.ID || audits[0].Detail["actor"] != "bearer:admin:test" {
+		t.Fatalf("audit detail binding: %+v", audits[0].Detail)
+	}
+}
+
+func TestRecoverySeparatesPreparedAndInflight(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "recovery.sqlite"))
+	ctx := context.Background()
+	c1 := claimedRun(t, s, "recovery-prepared")
+	// Begin leaves PREPARED (provider call not started).
+	if _, err := s.BeginExternalOperation(ctx, beginParams(c1)); err != nil {
+		t.Fatal(err)
+	}
+	// A second run is IN_FLIGHT (may have reached the provider).
+	c2 := claimedRun(t, s, "recovery-inflight")
+	if _, err := s.BeginExternalOperation(ctx, beginParams(c2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MarkExternalOperationInFlight(ctx, c2.Run.ID+":"+c2.StepName+":v1", c2.Owner, c2.Generation); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.RecoverExternalOperations(ctx, "STARTUP_PREVIOUS_PROCESS")
+	if err != nil || n != 2 {
+		t.Fatalf("recovery n=%d err=%v", n, err)
+	}
+	p, _ := s.GetExternalOperation(ctx, c1.Run.ID+":"+c1.StepName+":v1")
+	f, _ := s.GetExternalOperation(ctx, c2.Run.ID+":"+c2.StepName+":v1")
+	if p.Status != ExternalFailedDefinite {
+		t.Fatalf("PREPARED recovery = %+v, want FAILED_DEFINITE", p)
+	}
+	if f.Status != ExternalReconciliationReq {
+		t.Fatalf("IN_FLIGHT recovery = %+v, want RECONCILIATION_REQUIRED", f)
+	}
+}
+
+func TestCompleteRejectsOperationVersionMismatch(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "version.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "version-check")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CompleteExternalOperation(ctx, CompleteExternalOperationParams{
+		OperationKey: op.OperationKey, Status: ExternalConfirmed,
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation, OperationVersion: op.Version + 1,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("version mismatch = %v, want conflict", err)
+	}
+}
+
+func TestResolveAuditFailureRollsBack(t *testing.T) {
+	s := newSweepStore(t, filepath.Join(t.TempDir(), "audit-fail.sqlite"))
+	ctx := context.Background()
+	claim := claimedRun(t, s, "audit-fail")
+	op, err := s.BeginExternalOperation(ctx, beginParams(claim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = completeExternalTest(t, s, claim, op.OperationKey, ExternalOutcomeUnknown, "TIMEOUT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.writeDB.ExecContext(ctx, `DROP TABLE audit_log`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ResolveExternalOperation(ctx, op.ID, ExternalResolution{
+		Resolution: "RESOURCE_CONFIRMED", Reason: "audit should fail", ExpectedVersion: op.Version,
+		Actor: "test-admin", RequestedAtMS: time.Now().UnixMilli(),
+	}); err == nil {
+		t.Fatal("resolve succeeded without audit table")
+	}
+	got, err := s.GetExternalOperation(ctx, op.OperationKey)
+	if err != nil || got.Status != ExternalOutcomeUnknown {
+		t.Fatalf("audit failure changed status: %+v err=%v", got, err)
 	}
 }

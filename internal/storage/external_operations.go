@@ -12,7 +12,7 @@ import (
 	"github.com/baicie/account-onboarding/internal/security"
 )
 
-// External operation statuses. See migrations/0004 and ADR 0001.
+// External operation statuses (migration 0004/0005). See ADR 0001.
 const (
 	ExternalPrepared          = "PREPARED"
 	ExternalInFlight          = "IN_FLIGHT"
@@ -23,37 +23,36 @@ const (
 	ExternalResolved          = "RESOLVED"
 )
 
-// ErrExternalOperationBlocked means an operation may not be called again
-// automatically: it is in flight, outcome is unknown, needs reconciliation, is
-// already confirmed, or was resolved by an operator.
 var ErrExternalOperationBlocked = errors.New("external operation blocked: reconciliation required")
 
 // ExternalOperation is the authoritative permit/state for one remote write.
 type ExternalOperation struct {
-	ID                string `json:"id"`
-	RunID             string `json:"run_id"`
-	StepName          string `json:"step_name"`
-	OperationKey      string `json:"operation_key"`
-	Provider          string `json:"provider"`
-	OperationType     string `json:"operation_type"`
-	Fingerprint       string `json:"request_fingerprint"`
-	Status            string `json:"status"`
-	AttemptCount      int64  `json:"attempt_count"`
-	Version           int64  `json:"version"`
-	LastErrorClass    string `json:"last_error_class,omitempty"`
-	Resolution        string `json:"resolution,omitempty"`
-	ResolutionReason  string `json:"resolution_reason,omitempty"`
-	EvidenceReference string `json:"evidence_reference,omitempty"`
-	PreparedAtMS      int64  `json:"prepared_at_ms"`
-	StartedAtMS       *int64 `json:"started_at_ms,omitempty"`
-	ResolvedAtMS      *int64 `json:"resolved_at_ms,omitempty"`
-	CreatedAtMS       int64  `json:"created_at_ms"`
-	UpdatedAtMS       int64  `json:"updated_at_ms"`
+	ID                 string `json:"id"`
+	RunID              string `json:"run_id"`
+	StepName           string `json:"step_name"`
+	OperationKey       string `json:"operation_key"`
+	Provider           string `json:"provider"`
+	OperationType      string `json:"operation_type"`
+	Fingerprint        string `json:"request_fingerprint"`
+	Status             string `json:"status"`
+	AttemptCount       int64  `json:"attempt_count"`
+	Version            int64  `json:"version"`
+	WorkerID           string `json:"worker_id,omitempty"`
+	LeaseGeneration    int64  `json:"lease_generation"`
+	LastErrorClass     string `json:"last_error_class,omitempty"`
+	Resolution         string `json:"resolution,omitempty"`
+	ResolutionReason   string `json:"resolution_reason,omitempty"`
+	EvidenceReference  string `json:"evidence_reference,omitempty"`
+	ResolvedBy         string `json:"resolved_by,omitempty"`
+	ResolvedFromStatus string `json:"resolved_from_status,omitempty"`
+	ResolutionVersion  int64  `json:"resolution_version,omitempty"`
+	PreparedAtMS       int64  `json:"prepared_at_ms"`
+	StartedAtMS        *int64 `json:"started_at_ms,omitempty"`
+	ResolvedAtMS       *int64 `json:"resolved_at_ms,omitempty"`
+	CreatedAtMS        int64  `json:"created_at_ms"`
+	UpdatedAtMS        int64  `json:"updated_at_ms"`
 }
 
-// BeginExternalOperationParams gates one remote write attempt. LeaseOwner and
-// FencingGeneration are mandatory when called from a worker: a stale/expired
-// worker must not be able to acquire a new permit.
 type BeginExternalOperationParams struct {
 	RunID             string
 	StepName          string
@@ -64,7 +63,18 @@ type BeginExternalOperationParams struct {
 	FencingGeneration int64
 }
 
-// ExternalOperationFilter controls pagination/filtering for diagnostics.
+// CompleteExternalOperationParams fences a completion: a stale worker (lost
+// lease/generation), a stale operation version, or an admin resolution cannot
+// silently overwrite the current state.
+type CompleteExternalOperationParams struct {
+	OperationKey      string
+	Status            string
+	ErrorClass        string
+	LeaseOwner        string
+	FencingGeneration int64
+	OperationVersion  int64
+}
+
 type ExternalOperationFilter struct {
 	Status   string
 	Provider string
@@ -73,8 +83,6 @@ type ExternalOperationFilter struct {
 	Cursor   string
 }
 
-// ExternalOperationsPage is the paginated diagnostics contract. Counts are
-// global (not derived from the current page).
 type ExternalOperationsPage struct {
 	Items                    []ExternalOperation `json:"items"`
 	NextCursor               string              `json:"next_cursor,omitempty"`
@@ -84,12 +92,26 @@ type ExternalOperationsPage struct {
 	GeneratedAtMS            int64               `json:"generated_at_ms"`
 }
 
-// BeginExternalOperation durably records the intent (PREPARED) and returns a
-// candidate permit. Only MarkExternalOperationInFlight can turn that into the
-// single allowed remote-call permit; callers must check it immediately before
-// the provider call. A retry is allowed only when the prior attempt is known not
-// to have produced a remote write (FAILED_DEFINITE) or a PREPARED intent never
-// reached IN_FLIGHT.
+const externalOperationColumns = `id, run_id, step_name, operation_key, provider, operation_type,
+	request_fingerprint, status, attempt_count, version, worker_id, lease_generation,
+	COALESCE(last_error_class,''), COALESCE(resolution,''), COALESCE(resolution_reason,''),
+	COALESCE(evidence_reference,''), COALESCE(resolved_by,''), COALESCE(resolved_from_status,''),
+	resolution_version, prepared_at_ms, started_at_ms, resolved_at_ms, created_at_ms, updated_at_ms`
+
+type externalRowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanExternalOperation(sc externalRowScanner) (ExternalOperation, error) {
+	var op ExternalOperation
+	err := sc.Scan(&op.ID, &op.RunID, &op.StepName, &op.OperationKey, &op.Provider, &op.OperationType,
+		&op.Fingerprint, &op.Status, &op.AttemptCount, &op.Version, &op.WorkerID, &op.LeaseGeneration,
+		&op.LastErrorClass, &op.Resolution, &op.ResolutionReason, &op.EvidenceReference,
+		&op.ResolvedBy, &op.ResolvedFromStatus, &op.ResolutionVersion, &op.PreparedAtMS,
+		&op.StartedAtMS, &op.ResolvedAtMS, &op.CreatedAtMS, &op.UpdatedAtMS)
+	return op, err
+}
+
 func (s *Store) BeginExternalOperation(ctx context.Context, p BeginExternalOperationParams) (ExternalOperation, error) {
 	if strings.TrimSpace(p.RunID) == "" || strings.TrimSpace(p.StepName) == "" ||
 		strings.TrimSpace(p.Provider) == "" || strings.TrimSpace(p.OperationType) == "" ||
@@ -125,41 +147,25 @@ func (s *Store) BeginExternalOperation(ctx context.Context, p BeginExternalOpera
 		return ExternalOperation{}, fmt.Errorf("%w: lease expired before external operation", ErrLeaseLost)
 	}
 
-	var existing ExternalOperation
-	err = tx.QueryRowContext(ctx, `SELECT id, run_id, step_name, operation_key, provider, operation_type,
-		request_fingerprint, status, attempt_count, version, COALESCE(last_error_class,''),
-		COALESCE(resolution,''), COALESCE(resolution_reason,''), COALESCE(evidence_reference,''),
-		prepared_at_ms, started_at_ms, resolved_at_ms, created_at_ms, updated_at_ms
-		FROM external_operations WHERE operation_key=?`, opKey).Scan(
-		&existing.ID, &existing.RunID, &existing.StepName, &existing.OperationKey, &existing.Provider,
-		&existing.OperationType, &existing.Fingerprint, &existing.Status, &existing.AttemptCount,
-		&existing.Version, &existing.LastErrorClass, &existing.Resolution, &existing.ResolutionReason,
-		&existing.EvidenceReference, &existing.PreparedAtMS, &existing.StartedAtMS, &existing.ResolvedAtMS,
-		&existing.CreatedAtMS, &existing.UpdatedAtMS)
+	existing, err := scanExternalOperation(tx.QueryRowContext(ctx,
+		`SELECT `+externalOperationColumns+` FROM external_operations WHERE operation_key=?`, opKey))
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		existing = ExternalOperation{
-			ID:            security.NewID(),
-			RunID:         p.RunID,
-			StepName:      p.StepName,
-			OperationKey:  opKey,
-			Provider:      p.Provider,
-			OperationType: p.OperationType,
-			Fingerprint:   p.Fingerprint,
-			Status:        ExternalPrepared,
-			AttemptCount:  1,
-			Version:       1,
-			PreparedAtMS:  now,
-			CreatedAtMS:   now,
-			UpdatedAtMS:   now,
+			ID: security.NewID(), RunID: p.RunID, StepName: p.StepName, OperationKey: opKey,
+			Provider: p.Provider, OperationType: p.OperationType, Fingerprint: p.Fingerprint,
+			Status: ExternalPrepared, AttemptCount: 1, Version: 1, WorkerID: p.LeaseOwner,
+			LeaseGeneration: p.FencingGeneration, PreparedAtMS: now, CreatedAtMS: now, UpdatedAtMS: now,
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO external_operations
 			(id, run_id, step_name, operation_key, provider, operation_type, request_fingerprint,
-			 status, attempt_count, version, prepared_at_ms, started_at_ms, created_at_ms, updated_at_ms)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 status, attempt_count, version, worker_id, lease_generation, prepared_at_ms,
+			 started_at_ms, created_at_ms, updated_at_ms)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?)`,
 			existing.ID, existing.RunID, existing.StepName, existing.OperationKey, existing.Provider,
 			existing.OperationType, existing.Fingerprint, existing.Status, existing.AttemptCount,
-			existing.Version, existing.PreparedAtMS, existing.StartedAtMS, existing.CreatedAtMS, existing.UpdatedAtMS); err != nil {
+			existing.Version, existing.WorkerID, existing.LeaseGeneration, existing.PreparedAtMS,
+			existing.CreatedAtMS, existing.UpdatedAtMS); err != nil {
 			return ExternalOperation{}, err
 		}
 	case err != nil:
@@ -169,10 +175,11 @@ func (s *Store) BeginExternalOperation(ctx context.Context, p BeginExternalOpera
 		return ExternalOperation{}, fmt.Errorf("%w: operation key reused with a different request", ErrConflict)
 	case existing.Status == ExternalFailedDefinite:
 		res, err := tx.ExecContext(ctx, `UPDATE external_operations
-			SET status=?, attempt_count=attempt_count+1, version=version+1, started_at_ms=NULL,
-			    last_error_class=NULL, updated_at_ms=?
+			SET status=?, attempt_count=attempt_count+1, version=version+1, worker_id=?,
+			    lease_generation=?, started_at_ms=NULL, last_error_class=NULL, updated_at_ms=?
 			WHERE id=? AND status=? AND version=?`,
-			ExternalPrepared, now, existing.ID, ExternalFailedDefinite, existing.Version)
+			ExternalPrepared, p.LeaseOwner, p.FencingGeneration, now, existing.ID,
+			ExternalFailedDefinite, existing.Version)
 		if err != nil {
 			return ExternalOperation{}, err
 		}
@@ -183,15 +190,13 @@ func (s *Store) BeginExternalOperation(ctx context.Context, p BeginExternalOpera
 		existing.Status = ExternalPrepared
 		existing.AttemptCount++
 		existing.Version++
+		existing.WorkerID = p.LeaseOwner
+		existing.LeaseGeneration = p.FencingGeneration
 		existing.StartedAtMS = nil
 		existing.UpdatedAtMS = now
 	case existing.Status == ExternalPrepared:
-		// Another worker may already hold this PREPARED permit. Marking
-		// IN_FLIGHT is the atomic single-winner step, so return the permit
-		// without changing the row here.
+		// Candidate permit only; MarkExternalOperationInFlight picks one winner.
 	default:
-		// PREPARED/IN_FLIGHT/CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/
-		// RESOLVED: never issue another remote write automatically.
 		return ExternalOperation{}, fmt.Errorf("%w: status=%s", ErrExternalOperationBlocked, existing.Status)
 	}
 	if err := tx.Commit(); err != nil {
@@ -200,10 +205,8 @@ func (s *Store) BeginExternalOperation(ctx context.Context, p BeginExternalOpera
 	return existing, nil
 }
 
-// MarkExternalOperationInFlight atomically converts a PREPARED intent into the
-// single IN_FLIGHT remote-call permit. Concurrent workers may each hold a
-// PREPARED candidate, but exactly one CAS wins; losers must not call the
-// provider. A stale/expired lease is rejected again here.
+// MarkExternalOperationInFlight is the single PREPARED->IN_FLIGHT CAS. It
+// revalidates the run lease and fencing generation.
 func (s *Store) MarkExternalOperationInFlight(ctx context.Context, operationKey, leaseOwner string, fencingGeneration int64) (ExternalOperation, error) {
 	now := s.nowMS()
 	tx, err := s.writeDB.BeginTx(ctx, nil)
@@ -211,8 +214,7 @@ func (s *Store) MarkExternalOperationInFlight(ctx context.Context, operationKey,
 		return ExternalOperation{}, err
 	}
 	defer tx.Rollback()
-	var runID string
-	var owner string
+	var runID, owner string
 	var gen int64
 	var leaseUntil sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `SELECT e.run_id, COALESCE(r.lease_owner,''), r.fencing_generation, r.lease_until_ms
@@ -227,8 +229,9 @@ func (s *Store) MarkExternalOperationInFlight(ctx context.Context, operationKey,
 		return ExternalOperation{}, fmt.Errorf("%w: lease no longer valid for remote write", ErrLeaseLost)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE external_operations
-		SET status=?, started_at_ms=?, updated_at_ms=?, version=version+1
-		WHERE operation_key=? AND status=?`, ExternalInFlight, now, now, operationKey, ExternalPrepared)
+		SET status=?, worker_id=?, lease_generation=?, started_at_ms=?, updated_at_ms=?, version=version+1
+		WHERE operation_key=? AND status=?`,
+		ExternalInFlight, leaseOwner, fencingGeneration, now, now, operationKey, ExternalPrepared)
 	if err != nil {
 		return ExternalOperation{}, err
 	}
@@ -242,13 +245,16 @@ func (s *Store) MarkExternalOperationInFlight(ctx context.Context, operationKey,
 	return s.GetExternalOperation(ctx, operationKey)
 }
 
-// CompleteExternalOperation transitions IN_FLIGHT to the final/audit state with
-// a compare-and-set on status/version. A concurrent or stale completion fails.
-func (s *Store) CompleteExternalOperation(ctx context.Context, operationKey, status, errorClass string) (ExternalOperation, error) {
-	switch status {
+// CompleteExternalOperation fences completion on run lease/gen, operation
+// version and current state. If the lease is no longer valid (or was superseded
+// by a newer generation) while the operation is IN_FLIGHT, the remote outcome
+// may be successful but cannot be confirmed by this worker: the operation is
+// conservatively moved to RECONCILIATION_REQUIRED and ErrLeaseLost is returned.
+func (s *Store) CompleteExternalOperation(ctx context.Context, p CompleteExternalOperationParams) (ExternalOperation, error) {
+	switch p.Status {
 	case ExternalConfirmed, ExternalOutcomeUnknown, ExternalReconciliationReq, ExternalFailedDefinite:
 	default:
-		return ExternalOperation{}, fmt.Errorf("storage: invalid external completion status %q", status)
+		return ExternalOperation{}, fmt.Errorf("storage: invalid external completion status %q", p.Status)
 	}
 	now := s.nowMS()
 	tx, err := s.writeDB.BeginTx(ctx, nil)
@@ -256,42 +262,74 @@ func (s *Store) CompleteExternalOperation(ctx context.Context, operationKey, sta
 		return ExternalOperation{}, err
 	}
 	defer tx.Rollback()
+	var runID, status, owner string
+	var opVersion, gen int64
+	var leaseUntil sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT e.run_id, e.status, e.version,
+		COALESCE(r.lease_owner,''), r.fencing_generation, r.lease_until_ms
+		FROM external_operations e JOIN runs r ON r.id=e.run_id WHERE e.operation_key=?`, p.OperationKey).
+		Scan(&runID, &status, &opVersion, &owner, &gen, &leaseUntil); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ExternalOperation{}, ErrNotFound
+		}
+		return ExternalOperation{}, err
+	}
+	if status == ExternalResolved {
+		return ExternalOperation{}, fmt.Errorf("%w: operator already resolved the operation", ErrConflict)
+	}
+	if status != ExternalInFlight {
+		return ExternalOperation{}, fmt.Errorf("%w: operation is %s, not IN_FLIGHT", ErrConflict, status)
+	}
+	if p.OperationVersion > 0 && opVersion != p.OperationVersion {
+		return ExternalOperation{}, fmt.Errorf("%w: operation version changed", ErrConflict)
+	}
+	leaseValid := owner == p.LeaseOwner && gen == p.FencingGeneration &&
+		leaseUntil.Valid && leaseUntil.Int64 > now
+	if !leaseValid {
+		// Preserve the possibility of a remote side effect for an operator.
+		res, err := tx.ExecContext(ctx, `UPDATE external_operations
+			SET status=?, last_error_class=?, version=version+1, updated_at_ms=?
+			WHERE operation_key=? AND status=? AND version=?`,
+			ExternalReconciliationReq, "LEASE_LOST_AFTER_REMOTE_CALL_MAYBE_SENT", now,
+			p.OperationKey, ExternalInFlight, opVersion)
+		if err != nil {
+			return ExternalOperation{}, err
+		}
+		n, _ := res.RowsAffected()
+		if n == 1 {
+			if err := tx.Commit(); err != nil {
+				return ExternalOperation{}, err
+			}
+			return ExternalOperation{}, fmt.Errorf("%w: lease lost; operation requires reconciliation", ErrLeaseLost)
+		}
+		return ExternalOperation{}, fmt.Errorf("%w: operation changed during completion", ErrConflict)
+	}
 	res, err := tx.ExecContext(ctx, `UPDATE external_operations
 		SET status=?, last_error_class=?, version=version+1, updated_at_ms=?
-		WHERE operation_key=? AND status=?`,
-		status, errorClass, now, operationKey, ExternalInFlight)
+		WHERE operation_key=? AND status=? AND version=?`,
+		p.Status, p.ErrorClass, now, p.OperationKey, ExternalInFlight, opVersion)
 	if err != nil {
 		return ExternalOperation{}, err
 	}
 	n, _ := res.RowsAffected()
 	if n != 1 {
-		return ExternalOperation{}, fmt.Errorf("%w: completion raced or operation is not IN_FLIGHT", ErrConflict)
+		return ExternalOperation{}, fmt.Errorf("%w: completion raced or operation changed", ErrConflict)
 	}
 	if err := tx.Commit(); err != nil {
 		return ExternalOperation{}, err
 	}
-	return s.GetExternalOperation(ctx, operationKey)
+	return s.GetExternalOperation(ctx, p.OperationKey)
 }
 
-// GetExternalOperation returns one operation by its operation key.
 func (s *Store) GetExternalOperation(ctx context.Context, operationKey string) (ExternalOperation, error) {
-	row := s.readDB.QueryRowContext(ctx, `SELECT id, run_id, step_name, operation_key, provider,
-		operation_type, request_fingerprint, status, attempt_count, version, COALESCE(last_error_class,''),
-		COALESCE(resolution,''), COALESCE(resolution_reason,''), COALESCE(evidence_reference,''),
-		prepared_at_ms, started_at_ms, resolved_at_ms, created_at_ms, updated_at_ms
-		FROM external_operations WHERE operation_key=?`, operationKey)
-	var op ExternalOperation
-	err := row.Scan(&op.ID, &op.RunID, &op.StepName, &op.OperationKey, &op.Provider, &op.OperationType,
-		&op.Fingerprint, &op.Status, &op.AttemptCount, &op.Version, &op.LastErrorClass,
-		&op.Resolution, &op.ResolutionReason, &op.EvidenceReference, &op.PreparedAtMS,
-		&op.StartedAtMS, &op.ResolvedAtMS, &op.CreatedAtMS, &op.UpdatedAtMS)
+	op, err := scanExternalOperation(s.readDB.QueryRowContext(ctx,
+		`SELECT `+externalOperationColumns+` FROM external_operations WHERE operation_key=?`, operationKey))
 	if errors.Is(err, sql.ErrNoRows) {
 		return ExternalOperation{}, ErrNotFound
 	}
 	return op, err
 }
 
-// ListExternalOperations returns a stable, filtered page plus global counts.
 func (s *Store) ListExternalOperations(ctx context.Context, f ExternalOperationFilter) (ExternalOperationsPage, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
@@ -325,32 +363,21 @@ func (s *Store) ListExternalOperations(ctx context.Context, f ExternalOperationF
 		where = append(where, "(created_at_ms < ? OR (created_at_ms = ? AND id < ?))")
 		args = append(args, created, created, id)
 	}
-	q := `SELECT id, run_id, step_name, operation_key, provider, operation_type, request_fingerprint,
-		status, attempt_count, version, COALESCE(last_error_class,''), COALESCE(resolution,''),
-		COALESCE(resolution_reason,''), COALESCE(evidence_reference,''), prepared_at_ms,
-		started_at_ms, resolved_at_ms, created_at_ms, updated_at_ms
-		FROM external_operations WHERE ` + strings.Join(where, " AND ") +
-		` ORDER BY created_at_ms DESC, id DESC LIMIT ?`
+	q := `SELECT ` + externalOperationColumns + ` FROM external_operations WHERE ` +
+		strings.Join(where, " AND ") + ` ORDER BY created_at_ms DESC, id DESC LIMIT ?`
 	args = append(args, f.Limit+1)
 	rows, err := s.readDB.QueryContext(ctx, q, args...)
 	if err != nil {
 		return ExternalOperationsPage{}, err
 	}
 	defer rows.Close()
-	page := ExternalOperationsPage{
-		Items:         []ExternalOperation{},
-		StatusCounts:  map[string]int64{},
+	page := ExternalOperationsPage{Items: []ExternalOperation{}, StatusCounts: map[string]int64{},
 		QueryScope:    map[string]any{"status": status, "provider": f.Provider, "run_id": f.RunID},
-		GeneratedAtMS: s.nowMS(),
-	}
+		GeneratedAtMS: s.nowMS()}
 	var count int
 	for rows.Next() {
-		var op ExternalOperation
-		if err := rows.Scan(&op.ID, &op.RunID, &op.StepName, &op.OperationKey, &op.Provider,
-			&op.OperationType, &op.Fingerprint, &op.Status, &op.AttemptCount, &op.Version,
-			&op.LastErrorClass, &op.Resolution, &op.ResolutionReason, &op.EvidenceReference,
-			&op.PreparedAtMS, &op.StartedAtMS, &op.ResolvedAtMS, &op.CreatedAtMS,
-			&op.UpdatedAtMS); err != nil {
+		op, err := scanExternalOperation(rows)
+		if err != nil {
 			return ExternalOperationsPage{}, err
 		}
 		count++
@@ -364,7 +391,6 @@ func (s *Store) ListExternalOperations(ctx context.Context, f ExternalOperationF
 	if err := rows.Err(); err != nil {
 		return ExternalOperationsPage{}, err
 	}
-	// Global counts, independent of the current page/filter.
 	crows, err := s.readDB.QueryContext(ctx, `SELECT status, COUNT(*) FROM external_operations GROUP BY status`)
 	if err != nil {
 		return ExternalOperationsPage{}, err
@@ -416,17 +442,19 @@ func decodeExternalCursor(cursor string) (int64, string, error) {
 	return c.CreatedAtMS, c.ID, nil
 }
 
-// ExternalResolution is the operator's verified decision.
 type ExternalResolution struct {
 	Resolution        string
 	Reason            string
 	EvidenceReference string
 	ExpectedVersion   int64
+	Actor             string
+	RequestedAtMS     int64
 }
 
-// ResolveExternalOperation closes an ambiguous operation. It does not delete
-// remote resources and never triggers automatic retries; only an audited
-// operator decision may move an operation to RESOLVED.
+// ResolveExternalOperation closes an ambiguous or confirmed operation. IN_FLIGHT
+// is never resolvable directly: the worker lifecycle barrier converts leftover
+// IN_FLIGHT rows to RECONCILIATION_REQUIRED before an operator may decide. The
+// state change and audit row commit atomically.
 func (s *Store) ResolveExternalOperation(ctx context.Context, id string, r ExternalResolution) (ExternalOperation, error) {
 	switch r.Resolution {
 	case "RESOURCE_CONFIRMED", "NO_RESOURCE_CREATED", "MANUAL_COMPENSATION_COMPLETED", "UNRESOLVED":
@@ -436,8 +464,15 @@ func (s *Store) ResolveExternalOperation(ctx context.Context, id string, r Exter
 	if strings.TrimSpace(r.Reason) == "" {
 		return ExternalOperation{}, fmt.Errorf("%w: resolution reason is required", ErrConflict)
 	}
+	if len(r.Reason) > 2000 || len(r.EvidenceReference) > 512 ||
+		strings.ContainsAny(r.Reason, "\x00\r\n") || strings.ContainsAny(r.EvidenceReference, "\x00\r\n") {
+		return ExternalOperation{}, fmt.Errorf("%w: resolution reason/evidence invalid or too long", ErrConflict)
+	}
 	if r.ExpectedVersion <= 0 {
 		return ExternalOperation{}, fmt.Errorf("%w: expected_version is required", ErrConflict)
+	}
+	if strings.TrimSpace(r.Actor) == "" {
+		return ExternalOperation{}, fmt.Errorf("%w: actor is required", ErrConflict)
 	}
 	now := s.nowMS()
 	tx, err := s.writeDB.BeginTx(ctx, nil)
@@ -445,40 +480,34 @@ func (s *Store) ResolveExternalOperation(ctx context.Context, id string, r Exter
 		return ExternalOperation{}, err
 	}
 	defer tx.Rollback()
-	var currentStatus string
-	var leaseUntil sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT e.status, r.lease_until_ms
-		FROM external_operations e JOIN runs r ON r.id=e.run_id WHERE e.id=?`, id).
-		Scan(&currentStatus, &leaseUntil); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ExternalOperation{}, ErrNotFound
-		}
+	op, err := scanExternalOperation(tx.QueryRowContext(ctx,
+		`SELECT `+externalOperationColumns+` FROM external_operations WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExternalOperation{}, ErrNotFound
+	}
+	if err != nil {
 		return ExternalOperation{}, err
 	}
-	switch currentStatus {
+	switch op.Status {
 	case ExternalOutcomeUnknown, ExternalReconciliationReq:
+		// normal operator path
 	case ExternalConfirmed:
-		// A step commit can fail after the remote write was confirmed. This is
-		// the audited recovery path, but only for outcomes that acknowledge the
-		// resource exists; it can never claim "no resource" for a confirmation.
+		// post-commit-failure recovery; must not claim no-resource-created
 		if r.Resolution == "NO_RESOURCE_CREATED" {
 			return ExternalOperation{}, fmt.Errorf("%w: CONFIRMED cannot be resolved as no-resource-created", ErrConflict)
 		}
 	case ExternalInFlight:
-		// A live worker may still be inside the provider call. Only a lease
-		// that has expired (worker stopped) may be manually resolved.
-		if leaseUntil.Valid && leaseUntil.Int64 > now {
-			return ExternalOperation{}, fmt.Errorf("%w: operation is IN_FLIGHT under a live lease", ErrConflict)
-		}
+		return ExternalOperation{}, fmt.Errorf("%w: worker lifecycle barrier has not cleared IN_FLIGHT; resolve after restart/stop recovery", ErrConflict)
 	default:
-		return ExternalOperation{}, fmt.Errorf("%w: operation status %s is not resolvable", ErrConflict, currentStatus)
+		return ExternalOperation{}, fmt.Errorf("%w: operation status %s is not resolvable", ErrConflict, op.Status)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE external_operations
-		SET status=?, resolution=?, resolution_reason=?, evidence_reference=?, resolved_at_ms=?,
-		    version=version+1, updated_at_ms=?
-		WHERE id=? AND version=? AND status IN (?,?,?,?)`,
-		ExternalResolved, r.Resolution, r.Reason, r.EvidenceReference, now, now,
-		id, r.ExpectedVersion, ExternalInFlight, ExternalOutcomeUnknown, ExternalReconciliationReq, ExternalConfirmed)
+		SET status=?, resolution=?, resolution_reason=?, evidence_reference=?, resolved_by=?,
+		    resolved_from_status=?, resolution_version=?, resolved_at_ms=?, version=version+1, updated_at_ms=?
+		WHERE id=? AND version=? AND status IN (?,?,?)`,
+		ExternalResolved, r.Resolution, r.Reason, r.EvidenceReference, r.Actor,
+		op.Status, op.Version, now, now,
+		id, r.ExpectedVersion, ExternalOutcomeUnknown, ExternalReconciliationReq, ExternalConfirmed)
 	if err != nil {
 		return ExternalOperation{}, err
 	}
@@ -486,39 +515,74 @@ func (s *Store) ResolveExternalOperation(ctx context.Context, id string, r Exter
 	if n != 1 {
 		return ExternalOperation{}, fmt.Errorf("%w: version conflict or operation is not resolvable", ErrConflict)
 	}
-	// The operator decision and its audit row commit atomically: if the audit
-	// write fails, the resolution must not appear successful.
 	detail := s.redactor.SanitizeEventPayload(map[string]any{
-		"resolution": r.Resolution, "reason": r.Reason,
-		"evidence_reference": r.EvidenceReference,
+		"operation_id": id, "run_id": op.RunID, "resolution": r.Resolution, "reason": r.Reason,
+		"evidence_reference": r.EvidenceReference, "actor": r.Actor,
+		"from_status": op.Status, "to_status": ExternalResolved,
+		"version_before": op.Version, "version_after": op.Version + 1,
+		"requested_at_ms": r.RequestedAtMS, "resolved_at_ms": now,
+		"provider": op.Provider, "operation_type": op.OperationType,
 	})
 	rawDetail, err := json.Marshal(detail)
 	if err != nil {
 		return ExternalOperation{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (actor, action, run_id, detail_json, created_at_ms)
-		VALUES (?,?,?,?,?)`, "operator", "external_operation.resolve", id, string(rawDetail), now); err != nil {
+		VALUES (?,?,?,?,?)`, r.Actor, "external_operation.resolve", op.RunID, string(rawDetail), now); err != nil {
 		return ExternalOperation{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return ExternalOperation{}, err
 	}
-	row := s.readDB.QueryRowContext(ctx, `SELECT id, run_id, step_name, operation_key, provider,
-		operation_type, request_fingerprint, status, attempt_count, version, COALESCE(last_error_class,''),
-		COALESCE(resolution,''), COALESCE(resolution_reason,''), COALESCE(evidence_reference,''),
-		prepared_at_ms, started_at_ms, resolved_at_ms, created_at_ms, updated_at_ms
-		FROM external_operations WHERE id=?`, id)
-	var op ExternalOperation
-	if err := row.Scan(&op.ID, &op.RunID, &op.StepName, &op.OperationKey, &op.Provider, &op.OperationType,
-		&op.Fingerprint, &op.Status, &op.AttemptCount, &op.Version, &op.LastErrorClass,
-		&op.Resolution, &op.ResolutionReason, &op.EvidenceReference, &op.PreparedAtMS,
-		&op.StartedAtMS, &op.ResolvedAtMS, &op.CreatedAtMS, &op.UpdatedAtMS); err != nil {
-		return ExternalOperation{}, err
-	}
-	return op, nil
+	return s.GetExternalOperation(ctx, op.OperationKey)
 }
 
-// AgeOfOldestNeedsReconciliation supports operational diagnostics.
+// RecoverExternalOperations is the single-process worker lifecycle barrier. It
+// must run after the previous process is known dead (single-writer lock) and
+// before workers start, and again after graceful Stop. PREPARED means the
+// provider call was never started (Mark precedes it), so it can be marked
+// FAILED_DEFINITE. IN_FLIGHT may have reached the provider: it becomes
+// RECONCILIATION_REQUIRED; no automatic retry.
+func (s *Store) RecoverExternalOperations(ctx context.Context, reason string) (int, error) {
+	if strings.TrimSpace(reason) == "" {
+		reason = "WORKER_STOPPED"
+	}
+	now := s.nowMS()
+	tx, err := s.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE external_operations
+		SET status=?, last_error_class=?, version=version+1, updated_at_ms=?
+		WHERE status=?`, ExternalFailedDefinite, reason, now, ExternalPrepared)
+	if err != nil {
+		return 0, err
+	}
+	n1, _ := res.RowsAffected()
+	res, err = tx.ExecContext(ctx, `UPDATE external_operations
+		SET status=?, last_error_class=?, version=version+1, updated_at_ms=?
+		WHERE status=?`, ExternalReconciliationReq, reason, now, ExternalInFlight)
+	if err != nil {
+		return 0, err
+	}
+	n2, _ := res.RowsAffected()
+	if n1+n2 > 0 {
+		detail := s.redactor.SanitizeEventPayload(map[string]any{
+			"reason": reason, "prepared_failed_definite": n1, "inflight_reconciliation": n2,
+		})
+		raw, _ := json.Marshal(detail)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (actor, action, run_id, detail_json, created_at_ms)
+			VALUES (?,?,?,?,?)`, "system:worker-lifecycle", "external_operation.lifecycle_recovery", "", string(raw), now); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return int(n1 + n2), nil
+}
+
 func (s *Store) AgeOfOldestNeedsReconciliation(ctx context.Context, nowMS int64) (int64, error) {
 	var oldest sql.NullInt64
 	err := s.readDB.QueryRowContext(ctx, `SELECT MIN(created_at_ms) FROM external_operations
