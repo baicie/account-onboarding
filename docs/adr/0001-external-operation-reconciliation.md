@@ -67,9 +67,9 @@ material.
 ## Tests
 
 - `TestExternalOperationConfirmedOnSuccess`
-- `TestExternalOperationTimeoutRequiresReconciliation`
-- `TestExternalOperationDuplicateNeedsOperatorReconciliation`
-- `TestExternalOperationReviewIsSticky` (ambiguous history survives later FAILED)
+- `TestExternalTimeoutReconcile`
+- `TestExternalDuplicateReconcile`
+- `TestExternalGateSticky` (ambiguous history survives later FAILED)
 - `TestExternalOperationCancellationIsUnknown` (cancel after PREPARED)
 - `TestExternalOperationDiagnosticsAdminOnly`
 - Provider duplicate fail-closed tests remain in the Cloudflare package.

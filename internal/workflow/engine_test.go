@@ -574,7 +574,7 @@ func TestExternalOperationConfirmedOnSuccess(t *testing.T) {
 	}
 }
 
-func TestExternalOperationTimeoutRequiresReconciliation(t *testing.T) {
+func TestExternalTimeoutReconcile(t *testing.T) {
 	mb := &externalFailingMailbox{
 		MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),
 		err:             errs.New(errs.ClassTimeoutUncertain, "test.mailbox", "timeout after write"),
@@ -596,7 +596,7 @@ func TestExternalOperationTimeoutRequiresReconciliation(t *testing.T) {
 	}
 }
 
-func TestExternalOperationDuplicateNeedsOperatorReconciliation(t *testing.T) {
+func TestExternalDuplicateReconcile(t *testing.T) {
 	h := newHarness(t, func(_ *workflow.Config, reg *provider.Registry) {
 		reg.AddMailbox(&externalFailingMailbox{
 			MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),

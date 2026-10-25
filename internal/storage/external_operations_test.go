@@ -46,7 +46,7 @@ func beginParams(claim Claim) BeginExternalOperationParams {
 	}
 }
 
-func TestExternalOperationGateBlocksAfterAmbiguousOutcome(t *testing.T) {
+func TestExternalGateBlocksUnknown(t *testing.T) {
 	s := newSweepStore(t, filepath.Join(t.TempDir(), "gate.sqlite"))
 	ctx := context.Background()
 	claim := claimedRun(t, s, "gate-1")
