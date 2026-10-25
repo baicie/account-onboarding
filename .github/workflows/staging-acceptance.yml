@@ -31,14 +31,16 @@ jobs:
           R8_EVIDENCE_DIR: ${{ github.workspace }}/staging-evidence
         run: |
           set -euo pipefail
-          bash tests/r8/staging_acceptance.sh 2>&1 | tee "$EVIDENCE_DIR/staging-acceptance.log"
-          grep -qE '^SUMMARY pass=[0-9]+ fail=0' "$EVIDENCE_DIR/staging-acceptance.log"
+          bash tests/r8/staging_acceptance.sh 2>&1 | tee staging.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' staging.log
       - name: Upload staging evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: staging-acceptance-evidence-${{ github.run_id }}
-          path: staging-evidence/
+          path: |
+            staging-evidence/
+            staging.log
           if-no-files-found: warn
 
   container-regression:
