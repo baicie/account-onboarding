@@ -1,0 +1,51 @@
+# Prepared release pipeline. Default is build/verify/scan ONLY; publishing,
+# tagging, signing and deployment are explicit, separately authorized steps and
+# are guarded off by default. This workflow was NOT executed in R8.
+name: release-image
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to GHCR (requires explicit release authorization)"
+        type: boolean
+        default: false
+      tag:
+        description: "Release tag (required when publish=true)"
+        type: string
+        required: false
+        default: ""
+permissions:
+  contents: read
+  packages: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build (no publish)
+        run: |
+          set -euo pipefail
+          docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$(git rev-parse HEAD)" -t account-onboarding:release .
+          docker image inspect account-onboarding:release > image-inspect.json
+      - name: SCAN / SBOM gates
+        run: bash scripts/supply_chain.sh account-onboarding:release release-evidence
+      - name: Publish guard
+        if: ${{ inputs.publish }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$TAG" || { echo "refusing publish without tag"; exit 1; }
+          echo "Publishing is not implemented in R8; this is an explicit release-owner action."
+          exit 1
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ github.run_id }}
+          path: release-evidence/
+          if-no-files-found: warn

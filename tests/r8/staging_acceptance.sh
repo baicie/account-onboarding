@@ -60,8 +60,12 @@ if [ "$(id -u)" = "0" ]; then OWN=""; else OWN="sudo -n"; fi
 $OWN chown 10001:10001 "$WORK/data" "$WORK/secrets/master.key" "$WORK/secrets/admin.token"
 $OWN chmod 750 "$WORK/data"
 $OWN chmod 400 "$WORK/secrets/master.key" "$WORK/secrets/admin.token"
-$OWN chown -R 10001:10001 "$WORK/certs"
+# The ingress needs the server cert/key; the host test client needs the CA.
+# Do not chown the CA to 10001 or the runner can no longer read it for curl.
+chmod 755 "$WORK/certs"
+$OWN chown 10001:10001 "$WORK/certs/server.pem" "$WORK/certs/server-key.pem"
 $OWN chmod 400 "$WORK/certs/server-key.pem"
+chmod 644 "$WORK/certs/ca.pem" "$WORK/certs/server.pem"
 
 echo "=== compose up ==="
 compose config >/dev/null && ok "staging compose config valid" || bad "compose config"

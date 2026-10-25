@@ -10,9 +10,14 @@ ok()   { PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf 'FAIL %s\n' "$1"; }
 warn() { WARN=$((WARN+1)); printf 'WARN %s\n' "$1"; }
 
-grep -q '^FROM golang:' "$DF" && grep -q '^FROM debian:' "$DF" \
-  && ok "multi-stage build (golang builder -> debian runtime)" || bad "multi-stage build"
+grep -q '^ARG GOLANG_IMAGE=golang:1.25-bookworm$' "$DF" \
+  && grep -q '^ARG RUNTIME_IMAGE=debian:bookworm-slim$' "$DF" \
+  && grep -q '^FROM ${GOLANG_IMAGE} AS build$' "$DF" \
+  && grep -q '^FROM ${RUNTIME_IMAGE} AS runtime$' "$DF" \
+  && ok "multi-stage build with version-governed base-image ARGs" || bad "multi-stage/base ARGs"
 grep -qE '^FROM [^ ]+:latest([[:space:]]|$)' "$DF" && bad "base image uses :latest" || ok "no :latest base image"
+grep -q '^ARG GOLANG_IMAGE=.*@sha256:' "$DF" && ok "Go base image digest-pinned" \
+  || warn "Go base image tag-pinned (digest pinning policy in deploy/BASE_IMAGES.md)"
 grep -q '^USER 10001:10001$' "$DF" && ok "runtime USER is 10001:10001" || bad "runtime USER"
 grep -q '^HEALTHCHECK --interval=.*--start-period=' "$DF" && ok "HEALTHCHECK with start-period" || bad "HEALTHCHECK missing start-period"
 grep -q 'CMD \["/app/onboardd", "healthcheck"\]' "$DF" && ok "HEALTHCHECK uses onboardd healthcheck (readyz-based)" || bad "HEALTHCHECK command"
