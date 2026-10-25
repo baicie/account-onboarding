@@ -20,6 +20,7 @@ live-platform success.
 | [R5.1-B.md](R5.1-B.md) | R5.1-B | Docker runtime closure attempt: daemon unavailable, container/image **NOT_RUN**, readiness fixes (JSON keyring, readyz healthcheck) | **DEPLOYMENT_BLOCKED**; `CONTAINER_RC_READY` not claimed |
 | [AUTONOMOUS-SPRINT-20261025.md](AUTONOMOUS-SPRINT-20261025.md) | R6 | Autonomous sprint progress: P0-B offline container audit, P1 hardening/tests, P2 Cloudflare dry-run, P3 deploy/supply-chain docs | 进行中/最终证据见文件 |
 | [REVIEW-R6.md](REVIEW-R6.md) | R6 | 独立审查：PASS（范围限定），P0=0/P1=0，P2 已修复 | see report |
+| [R6.1.md](R6.1.md) | R6.1 | Container runtime closure attempt: Docker daemon unavailable, all runtime gates **NOT_RUN** | **DEPLOYMENT_BLOCKED**; no image/ID/digest |
 | [FINAL-REPORT.md](FINAL-REPORT.md) | — | Consolidated delivery report: phase verdicts, acceptance matrix, deviations, residual risks | see report |
 
 Supporting artifacts:

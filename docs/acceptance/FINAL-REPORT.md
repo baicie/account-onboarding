@@ -34,6 +34,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
+| **R6.1** container runtime closure | **NOT_RUN / DEPLOYMENT_BLOCKED** (2026-10-25) | Docker client 29.7.2 present but daemon/VM not running (`docker info`/`version` exit 1, socket `_ping` 000, `docker desktop status` exit 1); no authorized alternate Docker env. Build/run/health/persistence/migration/SIGTERM/SIGKILL/single-writer/backup/security gates **NOT_RUN**; **no image, no Image ID/digest**; no code changes — [`R6.1.md`](R6.1.md), evidence `R6.1-docker-probe.log` |
 | **Independent review** | **PASS (scoped)** after fixes | first pass PARTIAL (P0=0, P1=3, P2=11); two code-level P1s fixed and independently re-verified, TLS ingress reclassified as deployment `NOT_RUN`; see [`REVIEW.md`](REVIEW.md) §8 |
 
 **Machine-checkable gates (actually run):**
@@ -288,6 +289,27 @@ evidence [`evidence/R2-lead-rerun-final.log`](evidence/R2-lead-rerun-final.log))
 Docker build/run, GHCR, TLS ingress and real-platform live tests remain
 `NOT_RUN`; this PASS must not be read as "internet-ready" or "live platforms
 verified".
+
+## 15. R6.1 container runtime closure attempt (2026-10-25)
+
+This round's only executable scope was the Docker gate; the daemon is still
+unavailable, so it stopped early instead of repeating offline tests.
+
+| Item | Result |
+|---|---|
+| Docker client / compose | 29.7.2 / v5.5.0 (client only) |
+| Docker engine | **unavailable**: `docker version`/`docker info`/`ServerVersion` exit 1; socket stale (`_ping` 000); `docker desktop status` exit 1 |
+| Authorized alternate Docker env | none (`DOCKER_HOST` unset; only local contexts; no remote authorization) |
+| Build / Image ID / Digest | **NOT_RUN / N/A** (no image built, nothing pushed) |
+| Container run, health, non-root, read-only, cap_drop, SQLite init/upgrade/WAL perms, volume persistence, SIGTERM/SIGKILL, lease/lock, single-writer, revocation persistence, encrypted backup/restore, fail-closed configs | **NOT_RUN** |
+| Code changes | none (no runtime failure observed) |
+| Resources created | none; nothing to clean up |
+| Final | **DEPLOYMENT_BLOCKED**; `CONTAINER_RC_READY` not met; `LIVE_READY` out of scope |
+
+Exact operator unblock steps are in [`R6.1.md`](R6.1.md) §6: start Docker
+Desktop/daemon, verify `docker info` exit 0, then rerun `make verify`,
+`docker compose config`, `tests/r51/docker_acceptance.sh` and record the image
+ID/platform for review.
 
 ## 14. R6 autonomous sprint (2026-10-25)
 

@@ -1,0 +1,86 @@
+# R6.1 Docker environment probe — 2026-10-25T02:40:31Z (2026-10-25T10:40:31+0800)
+
+## host
+Darwin liuzhiweideMacBook-Pro.local 24.6.0 Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103 arm64
+cpus=8 memory_bytes=8589934592
+/dev/disk3s1s1   228Gi    10Gi    16Gi    40%    427k  167M    0%   /
+
+## git
+HEAD=6258e57384d17f10461ea9997d37010dc74109b5
+status_lines=1
+
+## docker version
+DOCKER_VERSION_EXIT=1
+Client:
+ Version:           29.7.2
+ API version:       1.55
+ Go version:        go1.26.5
+ Git commit:        a7dcaa6
+ Built:             Wed Aug  5 18:27:50 2026
+ OS/Arch:           darwin/arm64
+ Context:           desktop-linux
+Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
+
+## docker info (server probe)
+DOCKER_INFO_EXIT=1
+Client:
+ Version:    29.7.2
+ Context:    desktop-linux
+ Debug Mode: false
+ Plugins:
+  agent: Docker AI Agent Runner (Docker Inc.)
+    Version:  v1.127.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-agent
+  ai: Docker AI Agent - Ask Gordon (Docker Inc.)
+    Version:  v1.30.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-ai
+  buildx: Docker Buildx (Docker Inc.)
+    Version:  v0.36.1-desktop.1
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-buildx
+  compose: Docker Compose (Docker Inc.)
+    Version:  v5.5.0
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-compose
+  debug: Get a shell into any image or container (Docker Inc.)
+    Version:  0.0.47
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-debug
+  desktop: Docker Desktop commands (Docker Inc.)
+    Version:  v0.4.3
+    Path:     /Users/liuzhiwei/.docker/cli-plugins/docker-desktop
+  dhi: CLI for managing Docker Hardened Images (Docker Inc.)
+    Version:  v0.0.7
+
+## docker daemon server version
+DOCKER_SERVER_VERSION_EXIT=1 output=
+Cannot connect to the Docker daemon at unix:///Users/liuzhiwei/.docker/run/docker.sock. Is the docker daemon running?
+
+## compose
+Docker Compose version v5.5.0
+COMPOSE_EXIT=0
+
+## socket
+srwxr-xr-x@ 1 liuzhiwei  staff    0 Oct 21 23:33 /Users/liuzhiwei/.docker/run/docker.sock
+lrwxr-xr-x@ 1 root       daemon  40 Oct 19 15:36 /var/run/docker.sock -> /Users/liuzhiwei/.docker/run/docker.sock
+unix-socket _ping HTTP: 000
+
+## contexts
+NAME              DESCRIPTION                               DOCKER ENDPOINT                                   ERROR
+default           Current DOCKER_HOST based configuration   unix:///var/run/docker.sock                       
+desktop-linux *   Docker Desktop                            unix:///Users/liuzhiwei/.docker/run/docker.sock   
+
+## DOCKER_HOST=<unset>
+
+## Docker Desktop processes (read-only)
+226 /Library/PrivilegedHelperTools/com.docker.vmnetd
+5515 /Applications/Docker.app/Contents/MacOS/com.docker.backend
+
+## docker desktop status (read-only)
+DOCKER_DESKTOP_STATUS_EXIT=1
+Could not retrieve status. Is Docker Desktop running?
+You can start Docker Desktop by running 'docker desktop start'.
+
+## alternative runtimes installed (none started)
+(none)
+
+## conclusion
+DOCKER_RUNTIME_UNAVAILABLE: client 29.7.2 present, daemon/VM not running (socket stale, _ping 000, no ServerVersion).
+No install/start of Docker Desktop or host service was attempted; no settings changed.
