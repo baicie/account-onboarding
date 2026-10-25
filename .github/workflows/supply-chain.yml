@@ -54,10 +54,13 @@ jobs:
         run: |
           set -euo pipefail
           V=0.76.1
-          curl -sSfL -o /tmp/trivy.tgz "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_Linux-64bit.tar.gz"
-          curl -sSfL -o /tmp/trivy.sha256 "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_checksums.txt"
-          grep "trivy_${V}_Linux-64bit.tar.gz" /tmp/trivy.sha256 | sha256sum -c -
-          tar -xzf /tmp/trivy.tgz -C /usr/local/bin trivy
+          ART="trivy_${V}_Linux-64bit.tar.gz"
+          mkdir -p /tmp/trivy-install
+          cd /tmp/trivy-install
+          curl -sSfL -o "$ART" "https://github.com/aquasecurity/trivy/releases/download/v${V}/${ART}"
+          curl -sSfL -o checksums.txt "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_checksums.txt"
+          grep " ${ART}$" checksums.txt | sha256sum -c -
+          tar -xzf "$ART" -C /usr/local/bin trivy
           trivy --version > "$EVIDENCE/trivy-version.txt"
       - name: Trivy image scan (CRITICAL blocks; HIGH reported)
         run: |
