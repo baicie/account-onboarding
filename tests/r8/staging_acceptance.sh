@@ -181,4 +181,9 @@ if [ -n "${R8_EVIDENCE_DIR:-}" ]; then
     echo "project=$PROJECT"; echo "https_port=$HTTPS_PORT"; echo "http_port=$HTTP_PORT"; }     > "$R8_EVIDENCE_DIR/staging-identity.txt"
 fi
 echo "SUMMARY pass=$PASS fail=$FAIL project=$PROJECT image=$APP_ID ingress=$ING_ID"
+# Run cleanup explicitly and detach the trap so a cleanup-command status can
+# never rewrite the script's result after a completed PASS/FAIL summary.
+trap - EXIT
+cleanup || true
 [ "$FAIL" = "0" ]
+exit $?

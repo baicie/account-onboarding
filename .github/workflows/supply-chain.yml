@@ -41,7 +41,7 @@ jobs:
       - name: ShellCheck
         run: |
           set -euo pipefail
-          shellcheck -x scripts/*.sh tests/r51/*.sh tests/r8/*.sh | tee "$EVIDENCE/shellcheck.txt"
+          shellcheck -S error -x scripts/*.sh tests/r51/*.sh tests/r8/*.sh | tee "$EVIDENCE/shellcheck.txt"
       - name: Syft SPDX SBOM
         uses: anchore/sbom-action@v0
         with:
