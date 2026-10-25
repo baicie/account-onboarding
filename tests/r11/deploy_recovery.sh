@@ -3,34 +3,60 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 if ! docker info >/dev/null 2>&1; then echo "NOT_RUN: Docker unavailable"; exit 3; fi
-ID="r11-deploy-$(date +%s)-$$"; WORK="$ROOT/.sandbox/r11/deploy-$ID"
+ID="r12-deploy-$(date +%s)-$$"; WORK="$ROOT/.sandbox/r12/deploy-$ID"
 PASS=0; FAIL=0
-ok(){ PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
-bad(){ FAIL=$((FAIL+1)); printf 'FAIL %s\n' "$1"; }
+SECVOL=""; EMPTYVOL=""; IMAGE=""
+ok(){ PASS=$((PASS+1)); printf 'PASS %s\\n' "$1"; }
+bad(){ FAIL=$((FAIL+1)); printf 'FAIL %s\\n' "$1"; }
 free_port(){ python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
-cleanup(){ docker rm -f "$ID-app" "$ID-app2" "$ID-nosecret" "$ID-ro" "$ID-corrupt" "$ID-partial" >/dev/null 2>&1 || true; rm -rf "$WORK"; return 0; }
+cleanup(){
+  docker rm -f "$ID-app" "$ID-app2" "$ID-nosecret" "$ID-ro" "$ID-corrupt" "$ID-partial" >/dev/null 2>&1 || true
+  [ -z "$SECVOL" ] || docker volume rm "$SECVOL" >/dev/null 2>&1 || true
+  [ -z "$EMPTYVOL" ] || docker volume rm "$EMPTYVOL" >/dev/null 2>&1 || true
+  [ -z "$IMAGE" ] || docker image rm "$IMAGE" >/dev/null 2>&1 || true
+  rm -rf "$WORK"
+  return 0
+}
 trap cleanup EXIT
-rm -rf "$WORK"; mkdir -p "$WORK"/{data,data2,empty,nosecret,secrets}
 umask 077
+mkdir -p "$WORK"/{data,data2,empty,nosecret,secrets}
+chgrp "$(id -g)" "$WORK/data" "$WORK/data2" "$WORK/empty" "$WORK/nosecret"
+chmod 770 "$WORK/data" "$WORK/data2" "$WORK/empty" "$WORK/nosecret"
 head -c 32 /dev/urandom > "$WORK/secrets/master.key"
 head -c 32 /dev/urandom | base64 > "$WORK/secrets/admin.token"
 chmod 600 "$WORK/secrets/"*
-chmod 777 "$WORK/data" "$WORK/data2" "$WORK/empty" "$WORK/nosecret"
 GIT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
-IMAGE="onboarding-r11-deploy:$ID"
+IMAGE="onboarding-r12-deploy:$ID"
 docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$GIT_SHA" -t "$IMAGE" "$ROOT" >/dev/null
 ok "image built"
-SECVOL="$ID-secrets"; docker volume create "$SECVOL" >/dev/null
+SECVOL="$ID-secrets"; EMPTYVOL="$ID-empty-secrets"
+docker volume create "$SECVOL" >/dev/null
+docker volume create "$EMPTYVOL" >/dev/null
 docker run --rm --user 0:0 --entrypoint sh -v "$WORK/secrets:/src:ro" -v "$SECVOL:/dst" "$IMAGE" -c \
   'cp /src/master.key /dst/onboarding_master_key; cp /src/admin.token /dst/onboard_admin_token; chown 10001:10001 /dst/*; chmod 400 /dst/*'
 PORT="$(free_port)"
-start(){ docker run -d --name "$1" --user 10001:10001 --read-only --cap-drop ALL \
+start(){ docker run -d --name "$1" --user 10001:10001 --group-add "$(id -g)" --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,size=16m -p "127.0.0.1:$2:8788" \
   -v "$3:/app/data" --mount type=volume,src="${4:-$SECVOL}",dst=/run/secrets,readonly \
   -e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1 -e ONBOARD_DB_PATH=/app/data/state.sqlite \
   -e ONBOARD_FAKE_PROVIDERS=true -e ONBOARD_DOMAINS=moonbyte.test \
   -e ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key \
   -e ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/onboard_admin_token "$IMAGE" >/dev/null; }
+assert_expected_failure(){
+  local name="$1" port="$2" pattern="$3" label="$4" running exitcode code logs
+  if ! docker inspect "$name" >/dev/null 2>&1; then bad "$label container was not created"; return; fi
+  running="$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo unknown)"
+  code="$(curl -sS -m 2 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$port/readyz" 2>/dev/null || true)"
+  logs="$(docker logs "$name" 2>&1 || true)"
+  if [ "$running" = "false" ]; then
+    exitcode="$(docker inspect -f '{{.State.ExitCode}}' "$name" 2>/dev/null || echo -1)"
+    if [ "$exitcode" -ne 0 ] && printf '%s' "$logs" | grep -Eiq "$pattern"; then ok "$label fail-closed"; else bad "$label exited without matching expected failure evidence"; fi
+  elif [ "$code" != "200" ] && printf '%s' "$logs" | grep -Eiq "$pattern"; then
+    ok "$label not ready with expected failure evidence"
+  else
+    bad "$label did not prove the expected fail-closed behavior"
+  fi
+}
 wait_ready(){ for _ in $(seq 1 60); do
   c="$(curl -sS -m 1 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$1/readyz" 2>/dev/null || true)"
   [ "$c" = "200" ] && return 0; sleep 0.5; done; return 1; }
@@ -49,25 +75,33 @@ if wait_ready "$PORT"; then ok "SIGKILL + container recreate recovers"; else bad
 curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT/v1/runs/$RUN" | grep -q "$RUN" && ok "data survives recreate" || bad "data lost"
 docker rm -f "$ID-app2" >/dev/null
 echo "=== failure modes ==="
-start "$ID-nosecret" "$PORT" "$WORK/nosecret" "$ID-emptyvol"
+start "$ID-nosecret" "$PORT" "$WORK/nosecret" "$EMPTYVOL"
 sleep 4
-if docker inspect -f '{{.State.Running}}' "$ID-nosecret" 2>/dev/null | grep -q false; then ok "missing secret fails closed"; else
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)" != "200" ] && ok "missing secret not ready" || bad "missing secret served ready"
-fi
+assert_expected_failure "$ID-nosecret" "$PORT" 'secret|master key|admin token|credential' "missing secret"
 docker rm -f "$ID-nosecret" >/dev/null 2>&1 || true
-chmod 555 "$WORK/data"; start "$ID-ro" "$PORT" "$WORK/data" || true
+
+chmod 550 "$WORK/data"
+if docker run --rm --user 10001:10001 --group-add "$(id -g)" -v "$WORK/data:/probe" --entrypoint sh "$IMAGE" -c 'touch /probe/.r12-write-probe' >/dev/null 2>&1; then
+  bad "read-only fault injection failed: UID 10001 could write"
+else
+  ok "read-only fault injection verified for UID 10001"
+fi
+PORT_RO="$(free_port)"
+start "$ID-ro" "$PORT_RO" "$WORK/data"
 sleep 4
-if [ "$(curl -sS -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)" != "200" ]; then ok "read-only DB dir fails closed"; else bad "read-only DB dir served"; fi
-chmod 777 "$WORK/data"; docker rm -f "$ID-ro" >/dev/null 2>&1 || true
+assert_expected_failure "$ID-ro" "$PORT_RO" 'permission denied|read-only|readonly|unable to open database' "read-only DB directory"
+chmod 770 "$WORK/data"
+docker rm -f "$ID-ro" >/dev/null 2>&1 || true
+
 if ! cp -a "$WORK/data/." "$WORK/data2/" 2>/dev/null; then
   sudo -n cp -a "$WORK/data/." "$WORK/data2/"
   sudo -n chown -R "$(id -u):$(id -g)" "$WORK/data2"
 fi
 printf 'not-a-sqlite-db' > "$WORK/data2/state.sqlite"
-start "$ID-corrupt" "$PORT" "$WORK/data2" || true; sleep 4
-if docker inspect -f '{{.State.Running}}' "$ID-corrupt" 2>/dev/null | grep -q false; then ok "corrupt DB fails closed"; else
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)" != "200" ] && ok "corrupt DB not ready" || bad "corrupt DB served"
-fi
+PORT_CORRUPT="$(free_port)"
+start "$ID-corrupt" "$PORT_CORRUPT" "$WORK/data2"
+sleep 4
+assert_expected_failure "$ID-corrupt" "$PORT_CORRUPT" 'malformed|not a database|corrupt|database disk image|sqlite' "corrupt DB"
 docker rm -f "$ID-corrupt" >/dev/null 2>&1 || true
 echo "=== partial schema upgrade ==="
 mkdir -p "$WORK/partial"; python3 - "$ROOT/internal/storage/migrations" "$WORK/partial/state.sqlite" <<'PY'
@@ -77,19 +111,18 @@ for f in sorted(glob.glob(sys.argv[1]+'/000[1-3]_*.sql')):
     db.executescript(open(f).read())
 db.commit(); db.close()
 PY
-chmod 777 "$WORK/partial"
+chgrp "$(id -g)" "$WORK/partial"; chmod 770 "$WORK/partial"
 if ! chown 10001:10001 "$WORK/partial/state.sqlite" 2>/dev/null; then
   sudo -n chown 10001:10001 "$WORK/partial/state.sqlite"
   sudo -n chmod 600 "$WORK/partial/state.sqlite"
 else
   chmod 600 "$WORK/partial/state.sqlite"
 fi
-start "$ID-partial" "$PORT" "$WORK/partial"
+start "$ID-partial" "$(free_port)" "$WORK/partial"
 if wait_ready "$PORT"; then ok "partial schema 3 upgrades to 5"; else bad "partial schema upgrade"; docker logs "$ID-partial" 2>&1 | tail -20; fi
 SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT/v1/meta" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("schema_version",0))' 2>/dev/null || echo 0)"
 [ "$SCHEMA" = "5" ] && ok "partial schema reports 5" || bad "partial schema $SCHEMA"
 echo "SUMMARY pass=$PASS fail=$FAIL"
 trap - EXIT
 cleanup || true
-[ "$FAIL" = "0" ]
-exit $?
+if [ "$FAIL" -eq 0 ]; then exit 0; else exit 1; fi
