@@ -4,7 +4,7 @@
 	admin off
 }
 
-https://localhost:8443 {
+:8443 {
 	tls /certs/server.pem /certs/server-key.pem
 
 	header {
@@ -15,23 +15,24 @@ https://localhost:8443 {
 	}
 
 	@bad not host localhost
-	respond @bad "unknown host" 421
-
-	request_body {
-		max_size 1MB
-	}
-
-	reverse_proxy app:8788 {
-		header_up Host {host}
-		header_up X-Forwarded-Proto https
-		header_up X-Forwarded-Port 443
-		transport http {
-			dial_timeout 5s
-			response_header_timeout 10s
+	@good host localhost
+	handle @good {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy app:8788 {
+			header_up Host {host}
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Port 443
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 10s
+			}
 		}
 	}
+	respond @bad "unknown host" 421
 }
 
-http://localhost:8080 {
+:8080 {
 	redir https://localhost:8443{uri} 308
 }

@@ -42,7 +42,7 @@ docker volume create "$SECRET_VOL" >/dev/null
 docker run --rm --user 0:0 --entrypoint sh -v "$WORK/secrets:/src:ro" -v "$SECRET_VOL:/dst" "$APP" -c \
   'set -e; cp /src/master.key /dst/onboarding_master_key; cp /src/admin.token /dst/onboard_admin_token; chown 10001:10001 /dst/*; chmod 400 /dst/*'
 chmod 777 "$WORK/data"
-docker run -d --name "$ID-app" --network "$NET" --read-only --cap-drop ALL \
+docker run -d --name "$ID-app" --network "$NET" --network-alias app --read-only --cap-drop ALL \
   --security-opt no-new-privileges --user 10001:10001 --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   -v "$WORK/data:/app/data" --mount type=volume,src="$SECRET_VOL",dst=/run/secrets,readonly \
   -e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1 \
