@@ -480,9 +480,14 @@ PY
     'chown 10001:10001 /data/state.sqlite && chmod 600 /data/state.sqlite'
   run_app "$PROJECT-restored" "$PORT_RESTORED" "$WORK/restored"
   wait_http "$PORT_RESTORED" /readyz 200 60 && ok "restored DB instance /readyz 200" || bad "restored DB instance readyz"
-  request_json GET "/v1/runs/$RUN1" "" ""
-  [ "$HTTP_CODE" = "200" ] && [ "$(json_field "$RESP_FILE" id)" = "$RUN1" ] \
-    && ok "restored DB instance serves the original run" || bad "restored DB run lookup HTTP $HTTP_CODE"
+  RESTORED_BODY="$WORK/restored-run.json"
+  RESTORED_CODE="$(curl -sS -m 10 -o "$RESTORED_BODY" -w '%{http_code}' "${AUTH[@]}" \
+    "http://127.0.0.1:$PORT_RESTORED/v1/runs/$RUN1" 2>/dev/null || echo 000)"
+  if [ "$RESTORED_CODE" = "200" ] && [ "$(json_field "$RESTORED_BODY" id)" = "$RUN1" ]; then
+    ok "restored DB instance serves the original run"
+  else
+    bad "restored DB run lookup HTTP $RESTORED_CODE"
+  fi
   docker rm -f "$PROJECT-restored" >/dev/null 2>&1 || true
   # Wrong key must fail closed and must not write the target.
   mkdir -p "$WORK/restored-bad"
@@ -556,9 +561,13 @@ COMPOSE_STRICT=0
 if [ "$(id -u)" = "0" ]; then
   chown 10001:10001 "$COMPOSE_SECRETS"/* && chmod 400 "$COMPOSE_SECRETS"/* && COMPOSE_STRICT=1
 elif sudo -n true >/dev/null 2>&1; then
-  sudo -n chown 10001:10001 "$COMPOSE_SECRETS"/* && chmod 400 "$COMPOSE_SECRETS"/* && COMPOSE_STRICT=1
+  if sudo -n chown 10001:10001 "$COMPOSE_SECRETS"/* && sudo -n chmod 400 "$COMPOSE_SECRETS"/*; then
+    COMPOSE_STRICT=1
+  else
+    chmod 0444 "$COMPOSE_SECRETS"/* 2>/dev/null || true
+  fi
 else
-  chmod 0444 "$COMPOSE_SECRETS"/*
+  chmod 0444 "$COMPOSE_SECRETS"/* 2>/dev/null || true
 fi
 R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$COMPOSE_SECRETS/master.key" \
   R51_ADMIN_TOKEN="$COMPOSE_SECRETS/admin.token" R51_PORT="$PORT" \

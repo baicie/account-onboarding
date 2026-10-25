@@ -28,13 +28,12 @@
 //	cross-origin 3xx -> PROVIDER_BUG            credentials are never forwarded
 //	non-JSON / schema-> PROVIDER_BUG
 //
-// Idempotent create: the admin API has no lookup-by-key endpoint, so an address
-// cannot be re-read after a collision. On a duplicate response (HTTP 409, or
-// 400/422 whose JSON error says the address already exists) CreateAddress
-// performs exactly one recovery attempt with enablePrefix=true, which yields a
-// fresh address instead of a hard failure. A second collision is reported as
-// CONFLICT. Engine-level idempotency keys remain the primary duplicate guard;
-// this bounded retry only prevents a lost run.
+// Duplicate handling is fail-closed: the admin API has no lookup-by-name
+// endpoint, so a retry with a random prefix would create an orphan mailbox that
+// this service can neither reuse nor safely delete. A duplicate response (HTTP
+// 409, or 400/422 whose JSON error says the address already exists) is reported
+// as CONFLICT and requires operator reconciliation; no second address is
+// created. Engine-level idempotency keys remain the primary duplicate guard.
 //
 // GetMessage tries the detail endpoint first and falls back to scanning
 // /api/parsed_mails when the deployment reports 404/405 for the detail path.
