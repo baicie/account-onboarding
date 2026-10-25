@@ -15,7 +15,9 @@ cleanup(){
   [ -z "$EMPTYVOL" ] || docker volume rm "$EMPTYVOL" >/dev/null 2>&1 || true
   [ -z "$BADVOL" ] || docker volume rm "$BADVOL" >/dev/null 2>&1 || true
   [ -z "$IMAGE" ] || docker image rm "$IMAGE" >/dev/null 2>&1 || true
-  rm -rf "$WORK"
+  if ! rm -rf "$WORK" 2>/dev/null; then
+    sudo -n rm -rf "$WORK" 2>/dev/null || true
+  fi
   return 0
 }
 trap cleanup EXIT
