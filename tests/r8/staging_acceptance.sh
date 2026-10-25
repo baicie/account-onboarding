@@ -80,7 +80,16 @@ for _ in $(seq 1 60); do
   code="$("${CURL[@]}" -o /dev/null -w '%{http_code}' "$BASE/healthz" 2>/dev/null || true)"
   [ "$code" = "200" ] && break; sleep 1
 done
-[ "$code" = "200" ] && ok "HTTPS /healthz 200 (test CA)" || bad "HTTPS healthz=$code"
+if [ "$code" != "200" ]; then
+  bad "HTTPS healthz=$code"
+  echo "--- staging diagnostics ---" >&2
+  compose ps -a 2>&1 >&2 || true
+  compose logs --no-color --tail 80 app ingress 2>&1 >&2 || true
+  ING_CID="$(compose ps -a -q ingress 2>/dev/null || true)"
+  if [ -n "$ING_CID" ]; then docker inspect --format 'ingress state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' "$ING_CID" 2>&1 >&2 || true; fi
+else
+  ok "HTTPS /healthz 200 (test CA)"
+fi
 
 echo "=== TLS boundary ==="
 "${CURL[@]}" -o /dev/null -w '' "$BASE/healthz" 2>/dev/null && ok "CA-verified TLS handshake" || bad "CA-verified TLS"

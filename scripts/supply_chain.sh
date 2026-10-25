@@ -18,11 +18,12 @@ IMAGE_ID_HEX="${IMAGE_ID#sha256:}"
 SIZE="$(docker image inspect --format '{{.Size}}' "$IMAGE")"
 ARCH="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$IMAGE")"
 USER_CFG="$(docker image inspect --format '{{.Config.User}}' "$IMAGE")"
-BINARY_SHA="$(docker run --rm --entrypoint cat "$IMAGE" /app/onboardd | shasum -a 256 | awk '{print $1}')"
+BINARY_SHA="$(docker run --rm --entrypoint cat "$IMAGE" /app/onboardd \
+  | if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi \
+  | awk '{print $1}')"
 BASE_DIGESTS="$(docker image inspect --format '{{.RepoTags}} {{.RepoDigests}}' golang:1.25-bookworm debian:bookworm-slim 2>/dev/null || true)"
 go mod verify > "$OUT/go-mod-verify.txt"
 go list -m -json all > "$OUT/go-modules.jsonl" 2>/dev/null
-go version -m "$(command -v go >/dev/null && echo /dev/null)" >/dev/null 2>&1 || true
 python3 - "$OUT" "$COMMIT" "$GO_VERSION" "$IMAGE_ID_HEX" "$SIZE" "$ARCH" "$USER_CFG" "$BINARY_SHA" "$BASE_DIGESTS" <<'PY'
 import datetime, hashlib, json, os, sys
 out, commit, go_version, image_id, size, arch, user, binary_sha, base = sys.argv[1:10]

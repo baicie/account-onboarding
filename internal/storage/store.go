@@ -41,6 +41,11 @@ var ErrNotFound = errors.New("not found")
 // different request body.
 var ErrIdempotencyConflict = errors.New("idempotency key reused with a different request")
 
+// ErrSchemaTooNew means the database was migrated by a newer build. Refusing to
+// start is the rollback safety rule: an older binary must not run against a
+// schema it does not know and potentially corrupt newer data.
+var ErrSchemaTooNew = errors.New("database schema is newer than this binary supports")
+
 // Options configures the store.
 type Options struct {
 	Path string
@@ -256,6 +261,15 @@ func (s *Store) Migrate(ctx context.Context) error {
 	var applied int
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&applied); err != nil {
 		return fmt.Errorf("storage: read schema version: %w", err)
+	}
+	maxKnown := 0
+	for _, m := range list {
+		if m.version > maxKnown {
+			maxKnown = m.version
+		}
+	}
+	if applied > maxKnown {
+		return fmt.Errorf("%w: database version %d > binary supports %d", ErrSchemaTooNew, applied, maxKnown)
 	}
 	for _, m := range list {
 		if m.version <= applied {
