@@ -42,10 +42,13 @@ PORT2="$(free_port)"
 PORT_UPGRADE="$(free_port)"
 PORT_DEGRADED="$(free_port)"
 PORT_RO="$(free_port)"
+PORT_RESTORED="$(free_port)"
 while [ "$PORT2" = "$PORT" ] || [ "$PORT_UPGRADE" = "$PORT" ] || [ "$PORT_UPGRADE" = "$PORT2" ] || \
       [ "$PORT_DEGRADED" = "$PORT" ] || [ "$PORT_DEGRADED" = "$PORT2" ] || [ "$PORT_DEGRADED" = "$PORT_UPGRADE" ] || \
-      [ "$PORT_RO" = "$PORT" ] || [ "$PORT_RO" = "$PORT2" ] || [ "$PORT_RO" = "$PORT_UPGRADE" ] || [ "$PORT_RO" = "$PORT_DEGRADED" ]; do
-  PORT2="$(free_port)"; PORT_UPGRADE="$(free_port)"; PORT_DEGRADED="$(free_port)"; PORT_RO="$(free_port)"
+      [ "$PORT_RO" = "$PORT" ] || [ "$PORT_RO" = "$PORT2" ] || [ "$PORT_RO" = "$PORT_UPGRADE" ] || [ "$PORT_RO" = "$PORT_DEGRADED" ] || \
+      [ "$PORT_RESTORED" = "$PORT" ] || [ "$PORT_RESTORED" = "$PORT2" ] || [ "$PORT_RESTORED" = "$PORT_UPGRADE" ] || \
+      [ "$PORT_RESTORED" = "$PORT_DEGRADED" ] || [ "$PORT_RESTORED" = "$PORT_RO" ]; do
+  PORT2="$(free_port)"; PORT_UPGRADE="$(free_port)"; PORT_DEGRADED="$(free_port)"; PORT_RO="$(free_port)"; PORT_RESTORED="$(free_port)"
 done
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf 'PASS %s\n' "$1"; }
@@ -56,7 +59,7 @@ cleanup() {
     return 0
   fi
   for name in "$PROJECT-app" "$PROJECT-app2" "$PROJECT-upgrade" "$PROJECT-degraded" \
-              "$PROJECT-badkey" "$PROJECT-badkeydata" "$PROJECT-ro"; do
+              "$PROJECT-badkey" "$PROJECT-badkeydata" "$PROJECT-ro" "$PROJECT-restored"; do
     docker rm -f "$name" >/dev/null 2>&1 || true
   done
   R51_IMAGE="$IMAGE" R51_DATA="$WORK/data" R51_MASTER_KEY="$WORK/secrets/master.key" \
@@ -79,7 +82,7 @@ AUTH=(-H "Authorization: Bearer $TOKEN")
 JSON=(-H "Content-Type: application/json")
 ENVS=(-e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1
       -e ONBOARD_DB_PATH=/app/data/state.sqlite -e ONBOARD_FAKE_PROVIDERS=true
-      -e ONBOARD_DOMAINS=moonbyte.test -e ONBOARD_SENDER_ALLOWLIST=moonbyte.test
+      -e ONBOARD_DOMAINS=moonbyte.test -e ONBOARD_SENDER_ALLOWLIST=no-reply,idp.fake.test,moonbyte.test
       -e ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key
       -e ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/onboard_admin_token
       -e ONBOARD_LOG_LEVEL=warn -e ONBOARD_SESSION_TTL=1h)
@@ -120,6 +123,13 @@ wait_health() { # $1 container, $2 timeout seconds
     sleep 1
   done
   return 1
+}
+db_copy_out() { # $1 container, $2 destination directory
+  local container="$1" dest="$2"
+  mkdir -p "$dest"
+  for f in state.sqlite state.sqlite-wal state.sqlite-shm; do
+    docker cp "$container:/app/data/$f" "$dest/$f" >/dev/null 2>&1 || true
+  done
 }
 meta_schema() { curl -sS -m 5 "${AUTH[@]}" "http://127.0.0.1:$1/v1/meta" | python3 -c 'import json,sys;print(json.load(sys.stdin)["schema_version"])'; }
 
@@ -205,6 +215,8 @@ class Handler(BaseHTTPRequestHandler):
         key = self.headers.get("Idempotency-Key", "")
         if not key:
             return self._send(400, {"error": {"class": "VALIDATION", "message": "Idempotency-Key header is required"}})
+        if not 8 <= len(key) <= 128:
+            return self._send(400, {"error": {"class": "VALIDATION", "message": "Idempotency-Key must be 8..128 characters"}})
         if key in state:
             old_body, run_id = state[key]
             if old_body != body:
@@ -233,14 +245,14 @@ PY
   request_json POST /v1/runs "" "$BODY"
   assert_http 400 "self-test: missing Idempotency-Key rejected"
   [ "$(json_field "$RESP_FILE" error.class)" = "VALIDATION" ] && ok "self-test: VALIDATION class" || bad "self-test: VALIDATION class"
-  create_run self-1 "self-test: create run-1" || true
+  create_run self-test-key-1 "self-test: create run-1" || true
   R1="$CREATED_ID"
-  create_run self-2 "self-test: create run-2" || true
+  create_run self-test-key-2 "self-test: create run-2" || true
   R2="$CREATED_ID"
   [ -n "$R1" ] && [ -n "$R2" ] && [ "$R1" != "$R2" ] && ok "self-test: distinct keys -> distinct ids" || bad "self-test: distinct ids"
-  create_run self-1 "self-test: replay run-1" || true
+  create_run self-test-key-1 "self-test: replay run-1" || true
   [ -n "$R1" ] && [ "$CREATED_ID" = "$R1" ] && ok "self-test: replay -> same id" || bad "self-test: replay id"
-  request_json POST /v1/runs self-1 '{"template":"different"}'
+  request_json POST /v1/runs self-test-key-1 '{"template":"different"}'
   assert_http 409 "self-test: reused key + different body -> 409"
   [ "$(json_field "$RESP_FILE" error.class)" = "CONFLICT" ] && ok "self-test: CONFLICT class" || bad "self-test: CONFLICT class"
   request_json GET "/v1/runs/$R1" "" ""
@@ -339,7 +351,12 @@ ver = db.execute("select max(version) from schema_migrations").fetchone()[0]
 assert ver == 2, ver
 db.close()
 PY
-chmod 666 "$WORK/v2data/state.sqlite" # created by host python under umask 077
+# The v2 DB was created by host python (host UID). Give it the production
+# ownership (10001:10001/0600) via a one-shot root container; a world-writable
+# file would not let the service enforce its 0600 invariant (and would test the
+# wrong contract).
+docker run --rm --user 0:0 -v "$WORK/v2data:/data" --entrypoint sh "$IMAGE" -c \
+  'chown 10001:10001 /data/state.sqlite && chmod 600 /data/state.sqlite'
 run_app "$PROJECT-upgrade" "$PORT_UPGRADE" "$WORK/v2data"
 if wait_http "$PORT_UPGRADE" /readyz 200 60; then
   ok "v2 database upgraded and /readyz 200"
@@ -356,7 +373,7 @@ docker rm -f "$PROJECT-upgrade" >/dev/null 2>&1 || true
 
 echo "=== runs + idempotency contract ==="
 BODY='{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox"}'
-BODY_ALT='{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox","idempotency_key":"r51b-different-body"}'
+BODY_ALT='{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox","credential_provider":"fake-credential"}'
 # Missing Idempotency-Key must be rejected by the real API contract (no id read).
 request_json POST /v1/runs "" "$BODY"
 assert_http 400 "POST /v1/runs without Idempotency-Key rejected"
@@ -395,12 +412,18 @@ curl -sS -b "$WORK/jar" -o "$WORK/dash.html" "$BASE/ui/"
 CSRF="$(grep -o 'name="csrf" value="[^"]*"' "$WORK/dash.html" | head -1 | sed 's/.*value="//;s/"//')"
 [ -n "$COOKIE" ] && [ -n "$CSRF" ] && ok "session cookie + CSRF acquired" || bad "session/CSRF"
 curl -sS -b "$WORK/jar" -o /dev/null -X POST "$BASE/ui/logout" -H "Origin: $BASE" --data-urlencode "csrf=$CSRF"
-ROWS="$(python3 - "$WORK/data/state.sqlite" <<'PY'
+# Stop the app so the WAL is checkpointed before copying the DB out for host
+# inspection; then restart it for the replay check.
+docker stop --time 10 "$PROJECT-app" >/dev/null
+db_copy_out "$PROJECT-app" "$WORK/inspect"
+ROWS="$(python3 - "$WORK/inspect/state.sqlite" <<'PY'
 import sqlite3,sys
 print(sqlite3.connect(sys.argv[1]).execute("select count(*) from session_revocations").fetchone()[0])
 PY
 )"
 [ "$ROWS" -ge 1 ] && ok "revocation row persisted in SQLite ($ROWS)" || bad "no revocation row"
+docker start "$PROJECT-app" >/dev/null
+wait_http "$PORT" /readyz 200 60 || bad "restart after revocation inspection"
 docker stop --time 10 "$PROJECT-app" >/dev/null
 EXIT_CODE="$(docker inspect --format '{{.State.ExitCode}}' "$PROJECT-app")"
 [ "$EXIT_CODE" = "0" ] && ok "SIGTERM graceful stop exit code 0" || bad "SIGTERM exit=$EXIT_CODE"
@@ -426,8 +449,10 @@ fi
 docker rm -f "$PROJECT-app2" >/dev/null 2>&1 || true
 
 echo "=== encrypted backup / restore ==="
+docker stop --time 10 "$PROJECT-app" >/dev/null
+db_copy_out "$PROJECT-app" "$WORK/backup-src"
 ONBOARD_BACKUP_ENCRYPT=1 ONBOARD_KEYRING="$WORK/secrets/master.key" \
-  bash "$ROOT/scripts/backup.sh" --db "$WORK/data/state.sqlite" --out-dir "$WORK/backup" \
+  bash "$ROOT/scripts/backup.sh" --db "$WORK/backup-src/state.sqlite" --out-dir "$WORK/backup" \
   --encrypt --keyring "$WORK/secrets/master.key" >/dev/null 2>&1 \
   && ok "encrypted snapshot of container DB" || bad "encrypted backup"
 ENC="$(ls "$WORK"/backup/*.sqlite.enc 2>/dev/null | head -1 || true)"
@@ -436,7 +461,7 @@ if [ -n "$ENC" ] && bash "$ROOT/scripts/verify_backup.sh" "$ENC" --keyring "$WOR
 else
   bad "verify snapshot"
 fi
-mkdir -p "$WORK/restored"
+mkdir -p "$WORK/restored"; chmod 777 "$WORK/restored"
 if CONFIRM_RESTORE=1 bash "$ROOT/scripts/restore.sh" --snapshot "$ENC" \
      --target "$WORK/restored/state.sqlite" --keyring "$WORK/secrets/master.key" --force >/dev/null 2>&1; then
   ok "restore encrypted snapshot"
@@ -448,18 +473,40 @@ PY
 )"
   RUNS_R="$(echo "$COUNTS" | awk '{print $1}')"; REV_R="$(echo "$COUNTS" | awk '{print $2}')"
   [ "$RUNS_R" -ge 2 ] && [ "$REV_R" -ge 1 ] && ok "restored DB keeps runs=$RUNS_R revocations=$REV_R" || bad "restored counts: $COUNTS"
+  ENC_MODE="$(stat -c '%a' "$ENC" 2>/dev/null || stat -f '%Lp' "$ENC" 2>/dev/null || echo '?')"
+  [ "$ENC_MODE" = "600" ] && ok "encrypted snapshot file is 0600" || bad "snapshot mode=$ENC_MODE"
+  # Start a real instance on the restored database and verify readiness + data.
+  docker run --rm --user 0:0 -v "$WORK/restored:/data" --entrypoint sh "$IMAGE" -c \
+    'chown 10001:10001 /data/state.sqlite && chmod 600 /data/state.sqlite'
+  run_app "$PROJECT-restored" "$PORT_RESTORED" "$WORK/restored"
+  wait_http "$PORT_RESTORED" /readyz 200 60 && ok "restored DB instance /readyz 200" || bad "restored DB instance readyz"
+  request_json GET "/v1/runs/$RUN1" "" ""
+  [ "$HTTP_CODE" = "200" ] && [ "$(json_field "$RESP_FILE" id)" = "$RUN1" ] \
+    && ok "restored DB instance serves the original run" || bad "restored DB run lookup HTTP $HTTP_CODE"
+  docker rm -f "$PROJECT-restored" >/dev/null 2>&1 || true
+  # Wrong key must fail closed and must not write the target.
+  mkdir -p "$WORK/restored-bad"
+  if CONFIRM_RESTORE=1 bash "$ROOT/scripts/restore.sh" --snapshot "$ENC" \
+       --target "$WORK/restored-bad/state.sqlite" --keyring "$WORK/secrets/badkey" --force >/dev/null 2>&1; then
+    bad "restore with wrong key unexpectedly succeeded"
+  else
+    ok "restore with wrong key fails closed"
+  fi
+  [ ! -e "$WORK/restored-bad/state.sqlite" ] && ok "wrong-key restore left the target untouched" \
+    || bad "wrong-key restore created a target file"
 else
   bad "restore snapshot"
 fi
 
 echo "=== degraded DB: /readyz 503 + healthcheck red ==="
-docker stop --time 10 "$PROJECT-app" >/dev/null
-cp "$WORK/data/state.sqlite" "$WORK/degraded/state.sqlite"
+cp "$WORK/backup-src/state.sqlite" "$WORK/degraded/state.sqlite"
+chmod 666 "$WORK/degraded/state.sqlite"
 python3 - "$WORK/degraded/state.sqlite" <<'PY'
 import sqlite3,sys
 db=sqlite3.connect(sys.argv[1]); db.execute("DROP TABLE session_revocations"); db.commit(); db.close()
 PY
-chmod 666 "$WORK/degraded/state.sqlite"
+docker run --rm --user 0:0 -v "$WORK/degraded:/data" --entrypoint sh "$IMAGE" -c \
+  'chown 10001:10001 /data/state.sqlite && chmod 600 /data/state.sqlite'
 run_app "$PROJECT-degraded" "$PORT_DEGRADED" "$WORK/degraded"
 wait_http "$PORT_DEGRADED" /healthz 200 30 || bad "degraded healthz"
 wait_http "$PORT_DEGRADED" /readyz 503 30 && ok "degraded DB -> /readyz 503" || bad "degraded readyz"
