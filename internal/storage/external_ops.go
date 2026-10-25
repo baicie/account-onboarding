@@ -3,14 +3,16 @@ package storage
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 )
 
 // ExternalOperationEventPrefix marks audit events for remote side effects. We
 // deliberately reuse the durable event log instead of adding a second mutable
 // state table: events are append-only, transactional with the run, already
 // redacted, and retained with the run. The latest event per operation_key is
-// the current reconciliation status (see docs/adr/0001).
+// the current status; any OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED in the history
+// keeps needs_reconciliation sticky until an operator resolves it (a later
+// deterministic FAILED must not erase the possibility that the remote write
+// landed). See docs/adr/0001.
 const ExternalOperationEventPrefix = "EXTERNAL_OPERATION_"
 
 // ExternalOperation is a read-only projection used by diagnostics/reconciliation.
@@ -29,20 +31,61 @@ type ExternalOperation struct {
 	ReviewReason  string `json:"review_reason,omitempty"`
 }
 
-// ListExternalOperations returns the latest event per operation key, newest
-// first. It is bounded (default 200) and never returns secret material.
+// ListExternalOperations returns the latest event per run/step (operation key),
+// newest first, bounded by limit. Sticky review flags are computed from the full
+// per-operation history; the query no longer applies a global LIMIT before
+// deduplicating, so a pending operation cannot be silently dropped in favor of a
+// newer unrelated run.
 func (s *Store) ListExternalOperations(ctx context.Context, limit int) ([]ExternalOperation, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	rows, err := s.readDB.QueryContext(ctx, `SELECT run_id, COALESCE(step_name,''), event_type,
-		public_payload_json, created_at_ms FROM events
-		WHERE event_type LIKE 'EXTERNAL_OPERATION_%' ORDER BY id DESC LIMIT ?`, limit)
+	rows, err := s.readDB.QueryContext(ctx, `SELECT e.run_id, COALESCE(e.step_name,''),
+		e.event_type, e.public_payload_json, e.created_at_ms
+		FROM events e
+		WHERE e.event_type LIKE 'EXTERNAL_OPERATION_%'
+		  AND e.id = (
+			SELECT MAX(x.id) FROM events x
+			WHERE x.run_id = e.run_id
+			  AND COALESCE(x.step_name,'') = COALESCE(e.step_name,'')
+			  AND x.event_type LIKE 'EXTERNAL_OPERATION_%'
+		  )
+		ORDER BY e.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	seen := map[string]bool{}
+
+	// sticky[run|step] is true if any event in the operation history was
+	// ambiguous. This is history, not the latest event, so a later deterministic
+	// failure cannot clear the reconciliation requirement.
+	stickyRows, err := s.readDB.QueryContext(ctx, `SELECT run_id, COALESCE(step_name,''),
+		MAX(CASE WHEN event_type IN ('EXTERNAL_OPERATION_OUTCOME_UNKNOWN',
+		                             'EXTERNAL_OPERATION_RECONCILIATION_REQUIRED')
+		         THEN 1 ELSE 0 END)
+		FROM events WHERE event_type LIKE 'EXTERNAL_OPERATION_%'
+		GROUP BY run_id, COALESCE(step_name,'')`)
+	if err != nil {
+		return nil, err
+	}
+	sticky := map[string]bool{}
+	for stickyRows.Next() {
+		var runID, step string
+		var flag int
+		if err := stickyRows.Scan(&runID, &step, &flag); err != nil {
+			stickyRows.Close()
+			return nil, err
+		}
+		if flag == 1 {
+			sticky[runID+"\x00"+step] = true
+		}
+	}
+	if err := stickyRows.Err(); err != nil {
+		stickyRows.Close()
+		return nil, err
+	}
+	stickyRows.Close()
+
 	var out []ExternalOperation
 	for rows.Next() {
 		var op ExternalOperation
@@ -55,13 +98,6 @@ func (s *Store) ListExternalOperations(ctx context.Context, limit int) ([]Extern
 			continue
 		}
 		op.OperationKey = stringField(payload, "operation_key")
-		if op.OperationKey == "" {
-			op.OperationKey = fmt.Sprintf("%s:%s", op.RunID, op.StepName)
-		}
-		if seen[op.OperationKey] {
-			continue
-		}
-		seen[op.OperationKey] = true
 		op.Provider = stringField(payload, "provider")
 		op.OperationType = stringField(payload, "operation_type")
 		op.Fingerprint = stringField(payload, "request_fingerprint")
@@ -71,6 +107,15 @@ func (s *Store) ListExternalOperations(ctx context.Context, limit int) ([]Extern
 		case "PREPARED", "OUTCOME_UNKNOWN", "RECONCILIATION_REQUIRED":
 			op.NeedsReview = true
 			op.ReviewReason = op.Status
+		}
+		// A CONFIRMED step commit resolves the operation; an ambiguous attempt
+		// before it is no longer actionable. Otherwise the review requirement is
+		// sticky across retries/failures.
+		if op.Status != "CONFIRMED" && sticky[op.RunID+"\x00"+op.StepName] {
+			op.NeedsReview = true
+			if op.ReviewReason == "" {
+				op.ReviewReason = "history_outcome_unknown"
+			}
 		}
 		out = append(out, op)
 	}

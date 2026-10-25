@@ -63,6 +63,8 @@ services:
       - "localhost,127.0.0.1"
       - "-public-https-port"
       - "${R8_HTTPS_PORT:?}"
+      - "-forwarded-port"
+      - "${R8_HTTPS_PORT:?}"
     ports:
       - "127.0.0.1:${R8_HTTPS_PORT:?}:8443"
       - "127.0.0.1:${R8_HTTP_PORT:?}:8080"

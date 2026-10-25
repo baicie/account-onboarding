@@ -36,6 +36,7 @@ type options struct {
 	allowNonLoopbackUpstream bool
 	allowedHosts             string
 	publicHTTPSPort          string
+	forwardedPort            string
 }
 
 func main() {
@@ -49,6 +50,7 @@ func main() {
 	flag.BoolVar(&opt.allowNonLoopbackUpstream, "allow-non-loopback-upstream", false, "staging-only: allow a non-loopback upstream service name")
 	flag.StringVar(&opt.allowedHosts, "allowed-host", "", "staging-only: comma-separated HTTPS Host allowlist (empty = allow any, loopback fixture behavior)")
 	flag.StringVar(&opt.publicHTTPSPort, "public-https-port", "", "staging-only: externally published HTTPS port used in HTTP->HTTPS redirects")
+	flag.StringVar(&opt.forwardedPort, "forwarded-port", "443", "X-Forwarded-Port value sent to the upstream")
 	flag.Parse()
 	if err := run(opt); err != nil {
 		fmt.Fprintln(os.Stderr, "ingress:", err)
@@ -78,7 +80,7 @@ func run(opt options) error {
 		return fmt.Errorf("load certificate: %w", err)
 	}
 
-	proxyHandler := newProxyHandler(upstream)
+	proxyHandler := newProxyHandler(upstream, opt.forwardedPort)
 	if opt.allowedHosts != "" {
 		proxyHandler = requireAllowedHost(proxyHandler, strings.Split(opt.allowedHosts, ","))
 	}
@@ -154,7 +156,11 @@ func requireAllowedHost(next http.Handler, allowed []string) http.Handler {
 }
 
 // newProxyHandler returns a handler that overwrites all forwarding headers.
-func newProxyHandler(upstream *url.URL) http.Handler {
+func newProxyHandler(upstream *url.URL, forwardedPort ...string) http.Handler {
+	xfpPort := "443"
+	if len(forwardedPort) > 0 && strings.TrimSpace(forwardedPort[0]) != "" {
+		xfpPort = strings.TrimSpace(forwardedPort[0])
+	}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(upstream)
@@ -169,7 +175,7 @@ func newProxyHandler(upstream *url.URL) http.Handler {
 			}
 			pr.Out.Header.Set("X-Forwarded-Proto", "https")
 			pr.Out.Header.Set("X-Forwarded-Host", pr.In.Host)
-			pr.Out.Header.Set("X-Forwarded-Port", "443")
+			pr.Out.Header.Set("X-Forwarded-Port", xfpPort)
 			if ip, _, err := net.SplitHostPort(pr.In.RemoteAddr); err == nil {
 				pr.Out.Header.Set("X-Forwarded-For", ip)
 				pr.Out.Header.Set("X-Real-Ip", ip)

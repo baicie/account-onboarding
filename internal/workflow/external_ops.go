@@ -44,7 +44,10 @@ func ExternalFailureStatus(err error) string {
 	switch errs.ClassOf(err) {
 	case errs.ClassConflict:
 		return "RECONCILIATION_REQUIRED"
-	case errs.ClassTimeoutUncertain, errs.ClassUpstreamTransient, errs.ClassInternal, errs.ClassProviderBug:
+	case errs.ClassTimeoutUncertain, errs.ClassUpstreamTransient, errs.ClassInternal,
+		errs.ClassProviderBug, errs.ClassCancelled:
+		// A cancellation after PREPARED may interrupt the POST after the remote
+		// side effect landed; it is never a definite "not created".
 		return "OUTCOME_UNKNOWN"
 	default:
 		return "FAILED"

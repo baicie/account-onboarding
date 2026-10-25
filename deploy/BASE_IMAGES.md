@@ -12,7 +12,7 @@ can pin digests without editing the Dockerfile:
 
 ```bash
 docker build \
-  --build-arg GOLANG_IMAGE='golang:1.25-bookworm@sha256:<digest>' \
+  --build-arg GOLANG_IMAGE='golang:1.26.10-bookworm@sha256:<digest>' \
   --build-arg RUNTIME_IMAGE='debian:bookworm-slim@sha256:<digest>' \
   --build-arg VERSION=0.1.0 --build-arg COMMIT="$(git rev-parse HEAD)" \
   -t account-onboarding:r8 .

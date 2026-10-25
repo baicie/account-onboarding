@@ -55,6 +55,11 @@ docker build -f "$ROOT/deploy/staging/Dockerfile.ingress" -t "$INGRESS_IMAGE" "$
 APP_ID="$(docker image inspect --format '{{.Id}}' "$APP_IMAGE")"
 ING_ID="$(docker image inspect --format '{{.Id}}' "$INGRESS_IMAGE")"
 ok "images built: app=$APP_ID ingress=$ING_ID commit=$GIT_SHA"
+APP_VERSION="$(docker run --rm "$APP_IMAGE" version 2>&1 || true)"
+case "$APP_VERSION" in
+  *"commit $GIT_SHA"*) ok "staging app binary reports injected commit" ;;
+  *) bad "staging app binary commit mismatch: $(echo "$APP_VERSION" | tail -1)" ;;
+esac
 
 # Host ownership contract for bind mounts/secrets.
 if [ "$(id -u)" = "0" ]; then OWN=""; else OWN="sudo -n"; fi

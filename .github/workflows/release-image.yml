@@ -14,9 +14,11 @@ on:
         type: string
         required: false
         default: ""
+# Default workflow only builds/scans; it must not hold package-write permission.
+# A future publish job must request packages: write only after explicit release
+# authorization.
 permissions:
   contents: read
-  packages: write
 jobs:
   release:
     runs-on: ubuntu-latest

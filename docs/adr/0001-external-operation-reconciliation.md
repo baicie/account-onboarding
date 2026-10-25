@@ -18,7 +18,7 @@ Reuse the existing append-only `events` table instead of adding a second mutable
 | `EXTERNAL_OPERATION_CONFIRMED` | as an event committed atomically with the successful step (`Outcome.Events`) | provider returned success and the local step commit succeeded |
 | `EXTERNAL_OPERATION_OUTCOME_UNKNOWN` | timeout / 5xx / transport error after the write started | remote side effect may or may not exist; operator reconciliation required |
 | `EXTERNAL_OPERATION_RECONCILIATION_REQUIRED` | duplicate/conflict or other ambiguous provider outcome | do not create a second address; reconcile manually |
-| `EXTERNAL_OPERATION_FAILED` | deterministic pre-write/validation/auth failures | no remote side effect expected |
+| `EXTERNAL_OPERATION_FAILED` | deterministic pre-write/validation/auth failures | no remote side effect expected (a cancel after PREPARED is treated as OUTCOME_UNKNOWN, not FAILED) |
 
 Each event payload contains the non-secret fields `operation_key`
 (`run:step:v1`), `provider`, `operation_type`, a truncated SHA-256 request
@@ -26,6 +26,13 @@ fingerprint, `status`, `attempt` and (on failure) `error_class`. The event paylo
 allowlist in `internal/security/redact.go` permits exactly these fields; values
 are redacted and length-bounded. No tokens, JWTs, passwords, addresses or full
 provider responses are stored.
+
+The latest event per operation key is the displayed status, but review is
+**sticky**: any historical OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED keeps
+`needs_reconciliation=true` until an operator resolves it, even if a later retry
+ends in FAILED. A later CONFIRMED (successful step commit) resolves the
+operation. A cancellation after the pre-call PREPARED audit is mapped to
+OUTCOME_UNKNOWN because the POST may have reached the provider.
 
 The latest event per `operation_key` is the reconciliation state
 (`Store.ListExternalOperations`). `GET /v1/ops/external` is admin-only and shows
@@ -62,5 +69,7 @@ material.
 - `TestExternalOperationConfirmedOnSuccess`
 - `TestExternalOperationTimeoutRequiresReconciliation`
 - `TestExternalOperationDuplicateNeedsOperatorReconciliation`
+- `TestExternalOperationReviewIsSticky` (ambiguous history survives later FAILED)
+- `TestExternalOperationCancellationIsUnknown` (cancel after PREPARED)
 - `TestExternalOperationDiagnosticsAdminOnly`
 - Provider duplicate fail-closed tests remain in the Cloudflare package.

@@ -606,3 +606,21 @@ func TestExternalOperationDuplicateNeedsOperatorReconciliation(t *testing.T) {
 		t.Fatalf("external conflict ops = %+v", ops)
 	}
 }
+
+func TestExternalOperationCancellationIsUnknown(t *testing.T) {
+	h := newHarness(t, func(_ *workflow.Config, reg *provider.Registry) {
+		reg.AddMailbox(externalFailingMailbox{
+			MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),
+			err:             errs.New(errs.ClassCancelled, "test.mailbox", "cancelled after request start"),
+		})
+	})
+	run := h.create(t, sandboxRequest("external-cancel-1"))
+	_ = h.waitTerminal(t, run.ID, 700)
+	ops, err := h.store.ListExternalOperations(context.Background(), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ops) != 1 || ops[0].Status != "OUTCOME_UNKNOWN" || !ops[0].NeedsReview {
+		t.Fatalf("cancel-after-PREPARED must be reconciliation-required: %+v", ops)
+	}
+}

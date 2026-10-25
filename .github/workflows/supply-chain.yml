@@ -78,7 +78,7 @@ jobs:
           {
             echo "govulncheck: pinned v1.1.4 via go run"
             echo "syft: v1.20.0 via anchore/sbom-action"
-            echo "trivy: action 0.28.0 (CRITICAL blocking, HIGH report-only)"
+            echo "trivy: v0.76.1 binary (checksum verified); CRITICAL blocking, HIGH report-only; --ignore-unfixed used for both"
             echo "shellcheck: $(shellcheck --version | head -2 | tr '\n' ' ')"
             echo "scanner failure => job failure; absence => NOT_RUN, never PASS"
           } > "$EVIDENCE/scanner-policy.txt"
