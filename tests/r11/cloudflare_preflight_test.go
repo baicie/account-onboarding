@@ -149,7 +149,6 @@ func TestCloudflareMockLiveStopsOn429AndRedirect(t *testing.T) {
 	}
 }
 
-
 func TestCloudflareMockRejectsNonLoopbackTarget(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("non-loopback rejection must happen before network I/O")

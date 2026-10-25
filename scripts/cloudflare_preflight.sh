@@ -275,7 +275,7 @@ if any(not (isinstance(item, (dict, str)) or item is None) for item in items):
     print("ITEM_TYPE_INVALID"); sys.exit(2)
 print("PASS")
 PY
-        ); then
+        )"; then
           READ_RESULT=PASS
           AUTH_RESULT=ACCEPTED
           STOP=COMPLETED

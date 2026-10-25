@@ -81,6 +81,13 @@ assert_expected_failure "$ID-nosecret" "$PORT" 'secret|master key|admin token|cr
 docker rm -f "$ID-nosecret" >/dev/null 2>&1 || true
 
 chmod 550 "$WORK/data"
+# Existing SQLite files remain writable by their owner even when the directory
+# lacks write permission. Make the data files read-only too, so the app's write
+# probe genuinely fails instead of serving with an unchanged WAL.
+for f in "$WORK/data"/*; do
+  [ -e "$f" ] || continue
+  chmod a-w "$f" 2>/dev/null || sudo -n chmod a-w "$f"
+done
 if docker run --rm --user 10001:10001 --group-add "$(id -g)" -v "$WORK/data:/probe" --entrypoint sh "$IMAGE" -c 'touch /probe/.r12-write-probe' >/dev/null 2>&1; then
   bad "read-only fault injection failed: UID 10001 could write"
 else
@@ -89,8 +96,12 @@ fi
 PORT_RO="$(free_port)"
 start "$ID-ro" "$PORT_RO" "$WORK/data"
 sleep 4
-assert_expected_failure "$ID-ro" "$PORT_RO" 'permission denied|read-only|readonly|unable to open database' "read-only DB directory"
+assert_expected_failure "$ID-ro" "$PORT_RO" 'permission denied|read-only|readonly|unable to open database|attempt to write|database is locked' "read-only DB directory"
 chmod 770 "$WORK/data"
+for f in "$WORK/data"/*; do
+  [ -e "$f" ] || continue
+  chmod u+w "$f" 2>/dev/null || sudo -n chmod u+w "$f"
+done
 docker rm -f "$ID-ro" >/dev/null 2>&1 || true
 
 if ! cp -a "$WORK/data/." "$WORK/data2/" 2>/dev/null; then
