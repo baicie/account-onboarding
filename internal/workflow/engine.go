@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/baicie/account-onboarding/internal/errs"
@@ -46,11 +45,29 @@ type Engine struct {
 	templates map[string]*Template
 	now       func() time.Time
 
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	started  atomic.Bool
+	lifecycleMu sync.Mutex
+	lifecycle   engineLifecycle
+	stopCh      chan struct{}
+	stopDone    chan struct{}
+	stopErr     error
+	wg          sync.WaitGroup
 }
+
+type engineLifecycle uint8
+
+const (
+	engineNew engineLifecycle = iota
+	engineStarting
+	engineRunning
+	engineStopping
+	engineStopped
+	engineStartFailed
+)
+
+var (
+	ErrEngineAlreadyStarted = errors.New("workflow: engine already started")
+	ErrEngineStopped        = errors.New("workflow: engine cannot be restarted after stop")
+)
 
 // claimableStatuses are the run states a worker may claim. Waiting states are
 // only claimable when next_run_at has been set (resume or poll schedule).
@@ -106,6 +123,7 @@ func New(store *storage.Store, registry *provider.Registry, sec *secrets.Service
 		templates: map[string]*Template{},
 		now:       time.Now,
 		stopCh:    make(chan struct{}),
+		stopDone:  make(chan struct{}),
 	}
 	for _, t := range e.buildTemplates() {
 		e.templates[t.Name] = t
@@ -145,27 +163,35 @@ func (e *Engine) Template(name string) (*Template, bool) {
 	return t, ok
 }
 
-// Start launches the worker pool and deadline sweeper.
-var ErrEngineAlreadyStarted = errors.New("workflow: engine already started")
-
-// Start performs the mandatory external-operation lifecycle recovery before any
-// worker can claim a step. If recovery fails, Start returns an error and no
-// worker is started, so the service cannot become ready/execute remote writes.
+// Start performs mandatory external-operation recovery before any worker can
+// claim a step. Lifecycle transitions are serialized so Stop cannot race the
+// recovery barrier or close stopCh before the workers have been registered.
 func (e *Engine) Start(ctx context.Context) error {
-	if !e.started.CompareAndSwap(false, true) {
-		return ErrEngineAlreadyStarted
+	e.lifecycleMu.Lock()
+	if e.lifecycle != engineNew {
+		state := e.lifecycle
+		e.lifecycleMu.Unlock()
+		if state == engineRunning || state == engineStarting || state == engineStopping {
+			return ErrEngineAlreadyStarted
+		}
+		return ErrEngineStopped
 	}
-	// Single-writer lifecycle barrier: the previous process is known dead when
-	// the instance lock was acquired. Any PREPARED intent never reached the
-	// provider (Mark precedes the call); any IN_FLIGHT row may have reached it
-	// and must stay in manual reconciliation.
-	if n, err := e.store.RecoverExternalOperations(ctx, "STARTUP_PREVIOUS_PROCESS"); err != nil {
-		e.started.Store(false)
+	e.lifecycle = engineStarting
+
+	// The previous process is known dead after the instance lock is acquired.
+	// PREPARED never reached the provider; IN_FLIGHT may have and must remain
+	// pending reconciliation.
+	n, err := e.store.RecoverExternalOperations(ctx, "STARTUP_PREVIOUS_PROCESS")
+	if err != nil {
+		e.lifecycle = engineStartFailed
+		e.lifecycleMu.Unlock()
 		e.log.ErrorContext(ctx, "external operation startup recovery failed", "error", err)
 		return fmt.Errorf("workflow: external operation startup recovery: %w", err)
-	} else if n > 0 {
+	}
+	if n > 0 {
 		e.log.WarnContext(ctx, "recovered leftover external operations", "count", n)
 	}
+
 	for i := 0; i < e.cfg.MaxConcurrency; i++ {
 		e.wg.Add(1)
 		go func(worker int) {
@@ -196,31 +222,68 @@ func (e *Engine) Start(ctx context.Context) error {
 			}
 		}
 	}()
+	e.lifecycle = engineRunning
+	e.lifecycleMu.Unlock()
 	return nil
 }
 
-// Stop stops claiming and waits for in-flight steps, then performs the
-// second lifecycle barrier. A recovery error is returned so the caller can
-// surface a non-zero exit/diagnostic; Stop remains idempotent.
+// Stop stops claiming work, drains workers, then performs the lifecycle recovery
+// barrier. Concurrent/repeated callers observe the same terminal result; a
+// stopped Engine is intentionally not restartable because its stopCh is closed.
 func (e *Engine) Stop() error {
-	e.stopOnce.Do(func() { close(e.stopCh) })
-	e.wg.Wait()
-	if !e.started.Load() {
+	e.lifecycleMu.Lock()
+	switch e.lifecycle {
+	case engineNew, engineStartFailed:
+		e.lifecycle = engineStopped
+		close(e.stopCh)
+		close(e.stopDone)
+		e.lifecycleMu.Unlock()
 		return nil
+	case engineStopped:
+		err := e.stopErr
+		e.lifecycleMu.Unlock()
+		return err
+	case engineStopping:
+		done := e.stopDone
+		e.lifecycleMu.Unlock()
+		<-done
+		e.lifecycleMu.Lock()
+		err := e.stopErr
+		e.lifecycleMu.Unlock()
+		return err
+	case engineRunning:
+		e.lifecycle = engineStopping
+		close(e.stopCh)
+	default:
+		// STARTING is protected by lifecycleMu during recovery and worker
+		// registration, so a caller cannot observe it here.
+		e.lifecycleMu.Unlock()
+		return ErrEngineAlreadyStarted
 	}
-	e.started.Store(false)
-	// Workers are drained. Any remaining IN_FLIGHT operation could still have
-	// reached the provider, so record a reconciliation requirement rather than
-	// inferring that no remote write occurred.
+	e.lifecycleMu.Unlock()
+
+	e.wg.Wait()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if n, err := e.store.RecoverExternalOperations(ctx, "GRACEFUL_STOP"); err != nil {
 		e.log.Error("external operation stop recovery failed", "error", err)
-		return fmt.Errorf("workflow: external operation stop recovery: %w", err)
+		e.lifecycleMu.Lock()
+		e.stopErr = fmt.Errorf("workflow: external operation stop recovery: %w", err)
+		e.lifecycle = engineStopped
+		close(e.stopDone)
+		result := e.stopErr
+		e.lifecycleMu.Unlock()
+		return result
 	} else if n > 0 {
 		e.log.Warn("recovered external operations on stop", "count", n)
 	}
-	return nil
+
+	e.lifecycleMu.Lock()
+	e.lifecycle = engineStopped
+	close(e.stopDone)
+	result := e.stopErr
+	e.lifecycleMu.Unlock()
+	return result
 }
 
 func (e *Engine) workerLoop(ctx context.Context, worker int) {
