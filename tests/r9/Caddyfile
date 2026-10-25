@@ -1,0 +1,37 @@
+# R9 production-shaped reverse-proxy test (Caddy). No real domain/ACME.
+{
+	auto_https off
+	admin off
+}
+
+https://localhost:8443 {
+	tls /certs/server.pem /certs/server-key.pem
+
+	header {
+		Strict-Transport-Security "max-age=300"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	@bad not host localhost
+	respond @bad "unknown host" 421
+
+	request_body {
+		max_size 1MB
+	}
+
+	reverse_proxy app:8788 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Port 443
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 10s
+		}
+	}
+}
+
+http://localhost:8080 {
+	redir https://localhost:8443{uri} 308
+}
