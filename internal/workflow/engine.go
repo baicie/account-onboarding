@@ -3,9 +3,11 @@ package workflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/baicie/account-onboarding/internal/errs"
@@ -47,6 +49,7 @@ type Engine struct {
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
+	started  atomic.Bool
 }
 
 // claimableStatuses are the run states a worker may claim. Waiting states are
@@ -143,13 +146,23 @@ func (e *Engine) Template(name string) (*Template, bool) {
 }
 
 // Start launches the worker pool and deadline sweeper.
-func (e *Engine) Start(ctx context.Context) {
+var ErrEngineAlreadyStarted = errors.New("workflow: engine already started")
+
+// Start performs the mandatory external-operation lifecycle recovery before any
+// worker can claim a step. If recovery fails, Start returns an error and no
+// worker is started, so the service cannot become ready/execute remote writes.
+func (e *Engine) Start(ctx context.Context) error {
+	if !e.started.CompareAndSwap(false, true) {
+		return ErrEngineAlreadyStarted
+	}
 	// Single-writer lifecycle barrier: the previous process is known dead when
 	// the instance lock was acquired. Any PREPARED intent never reached the
 	// provider (Mark precedes the call); any IN_FLIGHT row may have reached it
 	// and must stay in manual reconciliation.
 	if n, err := e.store.RecoverExternalOperations(ctx, "STARTUP_PREVIOUS_PROCESS"); err != nil {
+		e.started.Store(false)
 		e.log.ErrorContext(ctx, "external operation startup recovery failed", "error", err)
+		return fmt.Errorf("workflow: external operation startup recovery: %w", err)
 	} else if n > 0 {
 		e.log.WarnContext(ctx, "recovered leftover external operations", "count", n)
 	}
@@ -183,12 +196,19 @@ func (e *Engine) Start(ctx context.Context) {
 			}
 		}
 	}()
+	return nil
 }
 
-// Stop stops claiming and waits for in-flight steps.
-func (e *Engine) Stop() {
+// Stop stops claiming and waits for in-flight steps, then performs the
+// second lifecycle barrier. A recovery error is returned so the caller can
+// surface a non-zero exit/diagnostic; Stop remains idempotent.
+func (e *Engine) Stop() error {
 	e.stopOnce.Do(func() { close(e.stopCh) })
 	e.wg.Wait()
+	if !e.started.Load() {
+		return nil
+	}
+	e.started.Store(false)
 	// Workers are drained. Any remaining IN_FLIGHT operation could still have
 	// reached the provider, so record a reconciliation requirement rather than
 	// inferring that no remote write occurred.
@@ -196,9 +216,11 @@ func (e *Engine) Stop() {
 	defer cancel()
 	if n, err := e.store.RecoverExternalOperations(ctx, "GRACEFUL_STOP"); err != nil {
 		e.log.Error("external operation stop recovery failed", "error", err)
+		return fmt.Errorf("workflow: external operation stop recovery: %w", err)
 	} else if n > 0 {
 		e.log.Warn("recovered external operations on stop", "count", n)
 	}
+	return nil
 }
 
 func (e *Engine) workerLoop(ctx context.Context, worker int) {

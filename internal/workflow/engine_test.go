@@ -631,3 +631,32 @@ func TestExternalOperationCancellationIsUnknown(t *testing.T) {
 		t.Fatalf("cancel-after-gate must be reconciliation-required: %+v", page.Items)
 	}
 }
+
+func TestEngineStartFailsClosedWhenRecoveryFails(t *testing.T) {
+	h := newHarness(t, nil)
+	// Closing the store makes lifecycle recovery fail; no worker may start.
+	_ = h.store.Close()
+	err := h.engine.Start(context.Background())
+	if err == nil {
+		t.Fatal("Start succeeded despite lifecycle recovery failure")
+	}
+	// Stop after a failed Start must be a safe no-op (no workers were started).
+	if stopErr := h.engine.Stop(); stopErr != nil {
+		t.Fatalf("Stop after failed Start = %v", stopErr)
+	}
+}
+
+func TestEngineStartRejectsSecondStart(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := h.engine.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.Start(ctx); !errors.Is(err, workflow.ErrEngineAlreadyStarted) {
+		t.Fatalf("second Start = %v, want ErrEngineAlreadyStarted", err)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}
