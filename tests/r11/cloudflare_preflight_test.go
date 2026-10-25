@@ -171,7 +171,7 @@ func TestCloudflareMockRejectsPermissiveTokenFile(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Store(true)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(\`{"messages":[]}\`))
+		_, _ = w.Write([]byte(`{"messages":[]}`))
 	}))
 	defer srv.Close()
 	ca, token := writeTLSFixture(t, srv)
