@@ -1,5 +1,5 @@
 govulncheck: pinned v1.1.4 via go run
 syft: v1.20.0 via anchore/sbom-action
-trivy: action 0.28.0 (CRITICAL blocking, HIGH report-only)
+trivy: v0.76.1 binary (checksum verified); CRITICAL blocking, HIGH report-only; --ignore-unfixed used for both
 shellcheck: ShellCheck - shell script analysis tool version: 0.9.0 
 scanner failure => job failure; absence => NOT_RUN, never PASS
