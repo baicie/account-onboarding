@@ -65,6 +65,10 @@ if [ -z "$TOKEN_FILE" ] || [ ! -r "$TOKEN_FILE" ]; then echo "ERROR: --token-fil
 TOKEN="$(tr -d '\r\n' < "$TOKEN_FILE")"; [ -n "$TOKEN" ] || { echo "ERROR: token file empty" >&2; exit 2; }
 TARGET="$MOCK_URL"; [ "$MODE" = "live" ] && TARGET="$BASE_URL"
 case "$TARGET" in https://*) ;; *) echo "ERROR: TLS target must be https" >&2; exit 2 ;; esac
+if [ "$MODE" = "mock" ]; then
+  MOCK_HOST="$(python3 -c 'import urllib.parse,sys;print(urllib.parse.urlparse(sys.argv[1]).hostname or "")' "$TARGET")"
+  case "$MOCK_HOST" in 127.0.0.1|localhost|::1) ;; *) echo "ERROR: mock-live target must be loopback" >&2; exit 2 ;; esac
+fi
 if [ "$MODE" = "live" ]; then
   AUTHZ="${ONBOARD_CF_LIVE_AUTHORIZATION:-}"
   [ -n "$AUTHZ" ] && [ -r "$AUTHZ" ] || { echo "ERROR: live requires ONBOARD_CF_LIVE_AUTHORIZATION file" >&2; exit 2; }
@@ -92,6 +96,7 @@ done
 write_report authorized_scope="$([ "$MODE" = mock ] && echo MOCK_LIVE || echo AUTHORIZED_READ_ONLY_LIVE)" \
   request_budget="$MAX_REQUESTS" requests_used="$USED" target_host="$TARGET" \
   tls_result=PASS auth_result="$AUTH_RESULT" readonly_contract_result="$READ_RESULT" \
-  stop_reason="$STOP" cleanup_result=NOT_REQUIRED verification_status="$([ "$STOP" = COMPLETED ] && echo PASS || echo NOT_RUN)"
+  redaction_result=NOT_RUN stop_reason="$STOP" cleanup_result=NOT_REQUIRED \
+  verification_status="$([ "$STOP" = COMPLETED ] && echo PASS || echo NOT_RUN)"
 echo "SUMMARY mode=$MODE requests=$USED stop=$STOP auth=$AUTH_RESULT read=$READ_RESULT"
 [ "$STOP" = "COMPLETED" ] || exit 1

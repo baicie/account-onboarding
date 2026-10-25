@@ -34,15 +34,16 @@ def main():
         subjects = st.get("subject") or []
         if not isinstance(subjects, list) or not subjects:
             fail("missing subject")
-        digests = []
-        for s in subjects:
-            d = (s or {}).get("digest") or {}
-            sha = d.get("sha256")
-            if sha:
-                digests.append(sha)
-        if len(digests) != 1:
-            fail("expected exactly one subject digest")
-        if "sha256:" + digests[0] != want_digest:
+        if len(subjects) != 1:
+            fail("expected exactly one subject (got %d)" % len(subjects))
+        subj = subjects[0] if isinstance(subjects[0], dict) else {}
+        digest = subj.get("digest")
+        if not isinstance(digest, dict) or len(digest) != 1:
+            fail("subject.digest must contain exactly one algorithm/digest")
+        sha = digest.get("sha256")
+        if not isinstance(sha, str) or not sha:
+            fail("subject digest is not sha256")
+        if "sha256:" + sha != want_digest:
             fail("subject digest mismatch")
         pred = st.get("predicate")
         if not isinstance(pred, dict):

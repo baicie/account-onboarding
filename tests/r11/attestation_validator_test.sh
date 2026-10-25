@@ -24,6 +24,7 @@ x=st(predicate={'annotations':{'commit':c}}); x['annotations']={'commit':c}; jso
 json.dump(env({"_type":"https://in-toto.io/Statement/v0.1","predicateType":"https://cosign.sigstore.dev/attestation/v1","subject":[{"digest":{"sha256":sha}}]}),open(os.path.join(w,'missing-predicate.json'),'w'))
 json.dump([{"payloadType":"application/vnd.in-toto+json","payload":"not-base64!!"}],open(os.path.join(w,'invalid-payload.json'),'w'))
 x=st(); x['subject'].append({"digest":{"sha256":sha}}); json.dump(env(x),open(os.path.join(w,'duplicate-subject.json'),'w'))
+x=st(); x['subject'].append({"name":"extra-subject-without-digest"}); json.dump(env(x),open(os.path.join(w,'extra-subject-no-digest.json'),'w'))
 json.dump(env(st(predicateType="https://example.com/wrong")),open(os.path.join(w,'wrong-type.json'),'w'))
 PY
 PASS=0; FAIL=0
@@ -38,6 +39,7 @@ expect_fail "$WORK/commit-annotation-only.json" "commit only in annotations reje
 expect_fail "$WORK/missing-predicate.json" "missing predicate rejected"
 expect_fail "$WORK/invalid-payload.json" "invalid payload rejected"
 expect_fail "$WORK/duplicate-subject.json" "duplicate subject rejected"
+expect_fail "$WORK/extra-subject-no-digest.json" "extra subject without digest rejected"
 expect_fail "$WORK/wrong-type.json" "wrong predicate type rejected"
 echo "SUMMARY pass=$PASS fail=$FAIL"
 [ "$FAIL" = "0" ]
