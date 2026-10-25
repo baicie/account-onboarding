@@ -4,7 +4,7 @@
 #   B mock-live: real HTTPS requests to a local/mock endpoint (CI only).
 #   C authorized read-only live: requires an explicit authorization file AND a
 #     separate address-token file; only GET /api/parsed_mails; no create/send/
-#     delete/DNS/Worker/D1 changes. R11 did NOT run mode C.
+#     delete/DNS/Worker/D1 changes. R12 has NOT run mode C.
 set -euo pipefail
 umask 077
 MODE=dry TEST_ADDRESS="" BASE_URL="" MOCK_URL="" CA_FILE="" TOKEN_FILE="" REPORT=""
@@ -53,6 +53,8 @@ then
   echo "ERROR: test address is invalid or not allowlisted" >&2
   exit 2
 fi
+case "$MAX_REQUESTS" in ''|*[!0-9]*) echo "ERROR: request budget must be an integer" >&2; exit 2 ;; esac
+case "$MAX_SECONDS" in ''|*[!0-9]*) echo "ERROR: time budget must be an integer" >&2; exit 2 ;; esac
 [ "$MAX_REQUESTS" -ge 1 ] && [ "$MAX_REQUESTS" -le 50 ] || { echo "ERROR: request budget 1..50" >&2; exit 2; }
 [ "$MAX_SECONDS" -ge 10 ] && [ "$MAX_SECONDS" -le 900 ] || { echo "ERROR: time budget 10..900" >&2; exit 2; }
 readonly_paths=("/api/parsed_mails")
@@ -189,14 +191,16 @@ PY
   then echo "ERROR: authorization file is invalid, out of window, or does not match the exact live scope/budget" >&2; exit 2; fi
 fi
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cf-preflight.XXXXXX")"
+cleanup_temp() { if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi; TMP_DIR=""; }
+trap cleanup_temp EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 chmod 700 "$TMP_DIR"
 HEADER_FILE="$TMP_DIR/headers"
 BODY_FILE="$TMP_DIR/body"
 printf 'Authorization: Bearer %s\n' "$TOKEN" > "$HEADER_FILE"
 chmod 600 "$HEADER_FILE"
 unset TOKEN
-cleanup_temp() { if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi; TMP_DIR=""; }
-trap cleanup_temp EXIT
 CURL=(curl -sS --connect-timeout 10 --max-redirs 0 --proto '=https' --max-time "$MAX_SECONDS" --max-filesize 1048576 --header "@$HEADER_FILE" -H 'Accept: application/json')
 if [ -n "$CA_FILE" ] && [ "$MODE" = "mock" ]; then CURL+=(--cacert "$CA_FILE"); fi
 USED=0 STOP="" AUTH_RESULT=NOT_VERIFIED READ_RESULT=NOT_RUN TLS_RESULT=NOT_VERIFIED SCHEMA_RESULT=NOT_RUN
