@@ -55,6 +55,11 @@ func TestCloudflareMockLiveReadOnly(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
+		if r.URL.Query().Get("limit") != "1" || r.URL.Query().Get("offset") != "0" {
+			http.Error(w, "unexpected query", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"messages":[]}`))
 	}))
@@ -69,8 +74,14 @@ func TestCloudflareMockLiveReadOnly(t *testing.T) {
 		t.Fatal("mock did not receive bearer auth")
 	}
 	raw, err := os.ReadFile(report)
-	if err != nil || !strings.Contains(string(raw), `"stop_reason": "COMPLETED"`) {
-		t.Fatalf("report = %s err=%v", raw, err)
+	if err != nil || !strings.Contains(string(raw), `"stop_reason": "COMPLETED"`) ||
+		!strings.Contains(string(raw), `"verification_status": "MOCK_PASS"`) ||
+		!strings.Contains(string(raw), `"response_schema_valid": "PASS"`) ||
+		!strings.Contains(string(raw), `"tls_result": "PASS"`) {
+		t.Fatalf("report does not contain truthful contract/TLS evidence: %s err=%v", raw, err)
+	}
+	if strings.Contains(out, "test-address-jwt") || strings.Contains(string(raw), "test-address-jwt") {
+		t.Fatal("bearer token leaked into output or report")
 	}
 }
 
@@ -81,6 +92,30 @@ func TestCloudflareMockLiveStopsOn429AndRedirect(t *testing.T) {
 		want string
 	}{
 		{"rate-limit", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTooManyRequests) }, "RATE_LIMITED"},
+		{"html-200", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<html>ok</html>"))
+		}, "RESPONSE_CONTENT_TYPE_INVALID"},
+		{"invalid-json", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{invalid"))
+		}, "RESPONSE_INVALID_JSON"},
+		{"wrong-schema", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		}, "RESPONSE_SCHEMA_INVALID"},
+		{"wrong-item-type", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"messages":[42]}`))
+		}, "RESPONSE_ITEM_TYPE_INVALID"},
+		{"empty-204", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNoContent)
+		}, "RESPONSE_EMPTY_BODY"},
 		{"redirect", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "https://evil.example/", http.StatusFound)
 		}, "REDIRECT_REFUSED"},
