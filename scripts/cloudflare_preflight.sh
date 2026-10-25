@@ -190,7 +190,8 @@ sys.exit(0)
 PY
   then echo "ERROR: authorization file is invalid, out of window, or does not match the exact live scope/budget" >&2; exit 2; fi
 fi
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cf-preflight.XXXXXX")"
+TMP_PARENT="${TMPDIR:-/tmp}"
+TMP_DIR="$(mktemp -d "$TMP_PARENT/cf-preflight.XXXXXX")"
 cleanup_temp() { if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi; TMP_DIR=""; }
 trap cleanup_temp EXIT
 trap 'exit 130' INT
