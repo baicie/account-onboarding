@@ -1,7 +1,7 @@
 [
     {
-        "Id": "52001d5723c1c291e10a0c25aaa9b4f3d433fa2485c4c4acbd5019c8f88008da",
-        "Created": "2026-10-25T07:47:56.65401389Z",
+        "Id": "d44a57ed024d71355303bf4dbfb4265370885b0bac168dfd1adf9357e55cf3ed",
+        "Created": "2026-10-25T08:23:39.574390333Z",
         "Path": "/app/onboardd",
         "Args": [],
         "State": {
@@ -11,30 +11,30 @@
             "Restarting": false,
             "OOMKilled": false,
             "Dead": false,
-            "Pid": 18226,
+            "Pid": 17558,
             "ExitCode": 0,
             "Error": "",
-            "StartedAt": "2026-10-25T07:47:56.683155994Z",
+            "StartedAt": "2026-10-25T08:23:39.598465063Z",
             "FinishedAt": "0001-01-01T00:00:00Z",
             "Health": {
                 "Status": "healthy",
                 "FailingStreak": 0,
                 "Log": [
                     {
-                        "Start": "2026-10-25T07:48:01.777909505Z",
-                        "End": "2026-10-25T07:48:01.813753807Z",
+                        "Start": "2026-10-25T08:23:44.700998122Z",
+                        "End": "2026-10-25T08:23:44.736983306Z",
                         "ExitCode": 0,
                         "Output": ""
                     }
                 ]
             }
         },
-        "Image": "sha256:3a5821da330834e1882112bf53b287e138b051fbb45058fd647ef63a4579e9d2",
-        "ResolvConfPath": "/var/lib/docker/containers/52001d5723c1c291e10a0c25aaa9b4f3d433fa2485c4c4acbd5019c8f88008da/resolv.conf",
-        "HostnamePath": "/var/lib/docker/containers/52001d5723c1c291e10a0c25aaa9b4f3d433fa2485c4c4acbd5019c8f88008da/hostname",
-        "HostsPath": "/var/lib/docker/containers/52001d5723c1c291e10a0c25aaa9b4f3d433fa2485c4c4acbd5019c8f88008da/hosts",
-        "LogPath": "/var/lib/docker/containers/52001d5723c1c291e10a0c25aaa9b4f3d433fa2485c4c4acbd5019c8f88008da/52001d5723c1c291e10a0c25aaa9b4f3d433fa2485c4c4acbd5019c8f88008da-json.log",
-        "Name": "/onboarding-r8-r8-1792914385-10587-app-1",
+        "Image": "sha256:b7429410674d0c99de298645ebed5221b61d23675fa6db8ea707609bcdbf218f",
+        "ResolvConfPath": "/var/lib/docker/containers/d44a57ed024d71355303bf4dbfb4265370885b0bac168dfd1adf9357e55cf3ed/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/d44a57ed024d71355303bf4dbfb4265370885b0bac168dfd1adf9357e55cf3ed/hostname",
+        "HostsPath": "/var/lib/docker/containers/d44a57ed024d71355303bf4dbfb4265370885b0bac168dfd1adf9357e55cf3ed/hosts",
+        "LogPath": "/var/lib/docker/containers/d44a57ed024d71355303bf4dbfb4265370885b0bac168dfd1adf9357e55cf3ed/d44a57ed024d71355303bf4dbfb4265370885b0bac168dfd1adf9357e55cf3ed-json.log",
+        "Name": "/onboarding-r8-r8-1792916529-9940-app-1",
         "RestartCount": 0,
         "Driver": "overlay2",
         "Platform": "linux",
@@ -44,14 +44,14 @@
         "ExecIDs": null,
         "HostConfig": {
             "Binds": [
-                "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792914385-10587/data:/app/data:rw"
+                "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792916529-9940/data:/app/data:rw"
             ],
             "ContainerIDFile": "",
             "LogConfig": {
                 "Type": "json-file",
                 "Config": {}
             },
-            "NetworkMode": "onboarding-r8-r8-1792914385-10587_staging-internal",
+            "NetworkMode": "onboarding-r8-r8-1792916529-9940_staging-internal",
             "PortBindings": {},
             "RestartPolicy": {
                 "Name": "no",
@@ -125,15 +125,15 @@
             "Mounts": [
                 {
                     "Type": "bind",
-                    "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792914385-10587/secrets/master.key",
-                    "Target": "/run/secrets/onboarding_master_key",
+                    "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792916529-9940/secrets/admin.token",
+                    "Target": "/run/secrets/onboard_admin_token",
                     "ReadOnly": true,
                     "BindOptions": {}
                 },
                 {
                     "Type": "bind",
-                    "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792914385-10587/secrets/admin.token",
-                    "Target": "/run/secrets/onboard_admin_token",
+                    "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792916529-9940/secrets/master.key",
+                    "Target": "/run/secrets/onboarding_master_key",
                     "ReadOnly": true,
                     "BindOptions": {}
                 }
@@ -162,26 +162,18 @@
         },
         "GraphDriver": {
             "Data": {
-                "ID": "52001d5723c1c291e10a0c25aaa9b4f3d433fa2485c4c4acbd5019c8f88008da",
-                "LowerDir": "/var/lib/docker/overlay2/d56c3df6b984edf650d8dabac07237e553c83874669dec9600fb2e1d61101bcf-init/diff:/var/lib/docker/overlay2/4brf21wwospfb3e7hc2771t6r/diff:/var/lib/docker/overlay2/tys4566dre1jdf3zr70mhtcjf/diff:/var/lib/docker/overlay2/wj09lxwe76plmid0bzpswiyd8/diff:/var/lib/docker/overlay2/aeb3720295a800ac6645b934288b7fb08f58f7126f04edc547d47feeff8f0c27/diff",
-                "MergedDir": "/var/lib/docker/overlay2/d56c3df6b984edf650d8dabac07237e553c83874669dec9600fb2e1d61101bcf/merged",
-                "UpperDir": "/var/lib/docker/overlay2/d56c3df6b984edf650d8dabac07237e553c83874669dec9600fb2e1d61101bcf/diff",
-                "WorkDir": "/var/lib/docker/overlay2/d56c3df6b984edf650d8dabac07237e553c83874669dec9600fb2e1d61101bcf/work"
+                "ID": "d44a57ed024d71355303bf4dbfb4265370885b0bac168dfd1adf9357e55cf3ed",
+                "LowerDir": "/var/lib/docker/overlay2/b3483c6ab1b69a433960d6ee01b5224f1d7da3e77c797ad31d58ee3b92b2e7a9-init/diff:/var/lib/docker/overlay2/cd1mj9g1b3bicd029b8vaeikd/diff:/var/lib/docker/overlay2/212qb61g8c0oog1kotu58iko1/diff:/var/lib/docker/overlay2/bqq54dcp68scbhyvuuoktebt1/diff:/var/lib/docker/overlay2/0531dd6ad93e0c3e4ca55fdb44ac0340e4d42d9a050476fc429b660bbab01f43/diff",
+                "MergedDir": "/var/lib/docker/overlay2/b3483c6ab1b69a433960d6ee01b5224f1d7da3e77c797ad31d58ee3b92b2e7a9/merged",
+                "UpperDir": "/var/lib/docker/overlay2/b3483c6ab1b69a433960d6ee01b5224f1d7da3e77c797ad31d58ee3b92b2e7a9/diff",
+                "WorkDir": "/var/lib/docker/overlay2/b3483c6ab1b69a433960d6ee01b5224f1d7da3e77c797ad31d58ee3b92b2e7a9/work"
             },
             "Name": "overlay2"
         },
         "Mounts": [
             {
                 "Type": "bind",
-                "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792914385-10587/data",
-                "Destination": "/app/data",
-                "Mode": "rw",
-                "RW": true,
-                "Propagation": "rprivate"
-            },
-            {
-                "Type": "bind",
-                "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792914385-10587/secrets/master.key",
+                "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792916529-9940/secrets/master.key",
                 "Destination": "/run/secrets/onboarding_master_key",
                 "Mode": "",
                 "RW": false,
@@ -189,7 +181,15 @@
             },
             {
                 "Type": "bind",
-                "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792914385-10587/secrets/admin.token",
+                "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792916529-9940/data",
+                "Destination": "/app/data",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/r8/staging-r8-1792916529-9940/secrets/admin.token",
                 "Destination": "/run/secrets/onboard_admin_token",
                 "Mode": "",
                 "RW": false,
@@ -197,7 +197,7 @@
             }
         ],
         "Config": {
-            "Hostname": "52001d5723c1",
+            "Hostname": "d44a57ed024d",
             "Domainname": "",
             "User": "10001:10001",
             "AttachStdin": false,
@@ -210,18 +210,18 @@
             "OpenStdin": false,
             "StdinOnce": false,
             "Env": [
-                "ONBOARD_ALLOW_PUBLIC_LISTEN=1",
-                "ONBOARD_SENDER_ALLOWLIST=no-reply,idp.fake.test,moonbyte.test",
-                "ONBOARD_DB_PATH=/app/data/state.sqlite",
-                "ONBOARD_FAKE_PROVIDERS=true",
-                "ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key",
                 "ONBOARD_DOMAINS=moonbyte.test",
-                "ONBOARD_LOG_LEVEL=info",
-                "ONBOARD_LISTEN=0.0.0.0:8788",
-                "ONBOARD_SESSION_TTL=1h",
-                "ONBOARD_TRUST_PROXY_HEADERS=1",
-                "ONBOARD_MODE=sandbox",
+                "ONBOARD_DB_PATH=/app/data/state.sqlite",
+                "ONBOARD_ALLOW_PUBLIC_LISTEN=1",
                 "ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/onboard_admin_token",
+                "ONBOARD_LOG_LEVEL=info",
+                "ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key",
+                "ONBOARD_SENDER_ALLOWLIST=no-reply,idp.fake.test,moonbyte.test",
+                "ONBOARD_FAKE_PROVIDERS=true",
+                "ONBOARD_TRUST_PROXY_HEADERS=1",
+                "ONBOARD_SESSION_TTL=1h",
+                "ONBOARD_LISTEN=0.0.0.0:8788",
+                "ONBOARD_MODE=sandbox",
                 "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             ],
             "Cmd": null,
@@ -236,7 +236,7 @@
                 "StartPeriod": 10000000000,
                 "Retries": 20
             },
-            "Image": "account-onboarding:r8-1792914385-10587",
+            "Image": "account-onboarding:r8-1792916529-9940",
             "Volumes": {
                 "/app/data": {}
             },
@@ -246,12 +246,12 @@
             ],
             "OnBuild": null,
             "Labels": {
-                "com.docker.compose.config-hash": "e07383af8466133602d87fbeb3138eb61dc4ca8de383b09e506c8ba2181402f6",
+                "com.docker.compose.config-hash": "cdfcee1de68bff8d544e66743343c597d42ea33320a908f49f0115917ba35081",
                 "com.docker.compose.container-number": "1",
                 "com.docker.compose.depends_on": "",
-                "com.docker.compose.image": "sha256:3a5821da330834e1882112bf53b287e138b051fbb45058fd647ef63a4579e9d2",
+                "com.docker.compose.image": "sha256:b7429410674d0c99de298645ebed5221b61d23675fa6db8ea707609bcdbf218f",
                 "com.docker.compose.oneoff": "False",
-                "com.docker.compose.project": "onboarding-r8-r8-1792914385-10587",
+                "com.docker.compose.project": "onboarding-r8-r8-1792916529-9940",
                 "com.docker.compose.project.config_files": "/home/runner/work/account-onboarding/account-onboarding/deploy/staging/compose.yaml",
                 "com.docker.compose.project.working_dir": "/home/runner/work/account-onboarding/account-onboarding/deploy/staging",
                 "com.docker.compose.service": "app",
@@ -260,8 +260,8 @@
         },
         "NetworkSettings": {
             "Bridge": "",
-            "SandboxID": "bf3937662083ee9e4db21169ccc7eb5c3f67d88a37ba24dfba3ae09385ab6560",
-            "SandboxKey": "/var/run/docker/netns/bf3937662083",
+            "SandboxID": "8b759406894e216b81450e0bdf449dfbb09a37926f025ee42f424a9fbe9adbe9",
+            "SandboxKey": "/var/run/docker/netns/8b759406894e",
             "Ports": {},
             "HairpinMode": false,
             "LinkLocalIPv6Address": "",
@@ -277,28 +277,28 @@
             "IPv6Gateway": "",
             "MacAddress": "",
             "Networks": {
-                "onboarding-r8-r8-1792914385-10587_staging-internal": {
+                "onboarding-r8-r8-1792916529-9940_staging-internal": {
                     "IPAMConfig": null,
                     "Links": null,
                     "Aliases": [
-                        "onboarding-r8-r8-1792914385-10587-app-1",
+                        "onboarding-r8-r8-1792916529-9940-app-1",
                         "app"
                     ],
-                    "MacAddress": "d2:8e:87:06:d5:2a",
+                    "MacAddress": "66:da:9f:f1:16:a8",
                     "DriverOpts": null,
                     "GwPriority": 0,
-                    "NetworkID": "c934c15e20eb01285718d86b224232bd75172afb749c26da08b51e46c1594e02",
-                    "EndpointID": "c52cf9daabd5f048c69dd04e78d81e27bd42b9c690a4a465ebb93d926bb021da",
+                    "NetworkID": "bf782c983daf938c315ff75c20802397dcb3e0668a18404a23e5675b1d2f466d",
+                    "EndpointID": "f57ad7438c941faaa4a4bb580bacbe75ab4d232e58af0ad49643b8eef55693a3",
                     "Gateway": "",
-                    "IPAddress": "172.19.0.2",
+                    "IPAddress": "172.18.0.2",
                     "IPPrefixLen": 16,
                     "IPv6Gateway": "",
                     "GlobalIPv6Address": "",
                     "GlobalIPv6PrefixLen": 0,
                     "DNSNames": [
-                        "onboarding-r8-r8-1792914385-10587-app-1",
+                        "onboarding-r8-r8-1792916529-9940-app-1",
                         "app",
-                        "52001d5723c1"
+                        "d44a57ed024d"
                     ]
                 }
             }

@@ -39,7 +39,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 | **R5.1-B** Docker runtime closure | **NOT_RUN** (2026-10-25) | Docker daemon still unavailable (`docker info`/`docker build`/`docker images`/`docker ps` exit 1): no image, no digest, no container ever started; readiness fixes found by the audit — documented JSON keyring now actually accepted, Docker `HEALTHCHECK` switched to authenticated `/readyz` (DB/schema/revocation table/master key) — tested locally 6/6; hardened isolated `tests/r51/docker_acceptance.sh` (migration v2→v3, SIGTERM/SIGKILL, same-volume single-writer, backup/restore, degraded DB, fail-closed configs) remains **NOT_RUN** — [`R5.1-B.md`](R5.1-B.md) |
 | **R5.1** container & TLS reliability | **DEPLOYMENT_BLOCKED** (2026-10-24) | isolated local HTTPS ingress **PASS 26/26** (test CA, hostname/TLS floor, HTTP→HTTPS, Secure/HttpOnly/SameSite, CSRF/Origin, SIGKILL+restart revocation, forged-header defense, loopback-only); single-writer instance lock added+tested; Docker build/run and container-level fault injection **NOT_RUN** (daemon unavailable) — [`R5.1.md`](R5.1.md) |
 | **R6** autonomous sprint | **PARTIAL / DEPLOYMENT_BLOCKED** (2026-10-25) | P0-B offline container audit complete (Docker runtime **NOT_RUN**); P1 fixed SQLite/WAL/SHM 0644→0600 and added fault/concurrency/goroutine/restore-revocation tests; P2 Cloudflare dry-run + refusal gate; P3 reproducible-build provenance + deployment/TLS/backup/rollback/checklist docs; P4 review pending — see [`AUTONOMOUS-SPRINT-20261025.md`](AUTONOMOUS-SPRINT-20261025.md) |
-| **R9** external consistency + release hardening | **RELEASE_CANDIDATE_READY (pending review)** (2026-10-25) | Durable migration-0004 external-write gate (PREPARED/IN_FLIGHT/CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/FAILED_DEFINITE/RESOLVED) with lease-fenced CAS, sticky no-retry after unknown, paginated global reconciliation counts, audited admin resolve API/CLI, old-image schema-3→4 rollback **20/20**, real Caddy TLS proxy **17/17**, candidate release pipeline (publish skipped). Final CI 40173893796/40173893822/40173893779/40173893716; no GHCR push/live platform — [`R9.md`](R9.md) |
+| **R9** external consistency + release hardening | **RELEASE_CANDIDATE_READY (pending re-review)** (2026-10-25) | Durable migration-0004 external-write gate (PREPARED/IN_FLIGHT/CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/FAILED_DEFINITE/RESOLVED) with lease-fenced CAS, sticky no-retry after unknown, paginated global reconciliation counts, audited admin resolve API/CLI, old-image schema-3→4 rollback **20/20**, real Caddy TLS proxy **17/17**, candidate release pipeline (publish skipped). Final CI 40176187395/40176187340/40176187307/40176187349; no GHCR push/live platform — [`R9.md`](R9.md) |
 | **R8** staging release readiness | **STAGING_RC_READY** (2026-10-25) | Real CI: isolated test-CA HTTPS staging **27/27**, R8 container regression **63/63**, supply chain **PASS** (govulncheck 0, Trivy CRITICAL/HIGH 0, ShellCheck errors 0, CycloneDX+SPDX SBOM); external-operation reconciliation audit/API/ADR; future-schema rollback guard. No GHCR push/digest, no production TLS/live platforms — [`R8.md`](R8.md) |
 | **R7** source-review closure + container CI | **CONTAINER_RC_READY** (2026-10-25) | All container gates executed on GitHub Actions run 40161727232 (Docker Engine 28.0.4, linux/amd64): image build + injected commit, Image ID `sha256:352b85ec…9763`, non-root/read-only/cap_drop, health/readiness, schema 3, v2 upgrade, WAL/SHM 0600, secret 0400 + UID 10002 denial, idempotency contract, revocation, SIGTERM/SIGKILL, single-writer, encrypted backup/restore + restored instance, fail-closed configs, compose parity: **63 PASS / 0 FAIL**. P0 fixes: idempotency test contract, deadline/cancel sweep race. `REVIEW-R7.md` PASS (P0=0/P1=0; P2 image-inspect evidence fixed and verified) — see [`R7.md`](R7.md) |
 | **R6.1** container runtime closure | **NOT_RUN / DEPLOYMENT_BLOCKED** (2026-10-25) | Docker client 29.7.2 present but daemon/VM not running (`docker info`/`version` exit 1, socket `_ping` 000, `docker desktop status` exit 1); no authorized alternate Docker env. Build/run/health/persistence/migration/SIGTERM/SIGKILL/single-writer/backup/security gates **NOT_RUN**; **no image, no Image ID/digest**; no code changes — [`R6.1.md`](R6.1.md), evidence `R6.1-docker-probe.log` |
@@ -48,7 +48,7 @@ create third-party accounts, automate consent, or bypass platform controls.
 **Machine-checkable gates (actually run):**
 
 - `make verify` (gofmt + `go vet ./...` + `go test ./... -race -count=1` + build) → **exit 0**
-- `go test ./... -count=1` → **29 packages (14 with test files), 350 top-level tests (345 PASS + 5 opt-in SKIP) / 662 passes including subtests, 0 FAIL** (after R8 sprint fixes)
+- `go test ./... -count=1` → **29 packages (14 with test files), 353 top-level tests (348 PASS + 5 opt-in SKIP) / 665 passes including subtests, 0 FAIL** (after R8 sprint fixes)
 - `ONBOARD_SANDBOX_E2E=1 go test ./tests/e2e -v -count=1` → **exit 0, 4/4 PASS**
   (5/5 identities, crash/restart, idempotency, cancel) — independent Lead reruns in
   [`evidence/R2-lead-rerun.log`](evidence/R2-lead-rerun.log) (pre-review) and
@@ -377,7 +377,7 @@ Branch `feat/r8-staging-readiness` (code/evidence HEAD `74d2c4e`), base
 | Supply chain | **PASS**: govulncheck no vulnerabilities; Trivy CRITICAL=0/HIGH=0; ShellCheck errors=0; Syft SPDX-2.3 (97 pkgs) + CycloneDX; Go 1.26.10 | actions run 40168648195; `evidence/r8-supply/` |
 | External operation reconciliation | event-log audit PREPARED/CONFIRMED/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/FAILED + admin diagnostics; ADR 0001 | `internal/workflow`, `internal/storage`, `REVIEW-R8.md` |
 | Rollback safety | future-schema `ErrSchemaTooNew` refuses old binary; backup restore to new volume; old-image rollback itself **NOT_RUN** | storage test + container regression |
-| Local gates | `make verify` 0; race 0; 340 top-level (335 PASS+5 SKIP)/649; Docker unavailable locally | — |
+| Local gates | `make verify` 0; race 0; 353 top-level (348 PASS+5 SKIP)/665; Docker unavailable locally | — |
 
 Images are local IDs only (staging app `sha256:924ddb…`, container regression
 `sha256:49f3e0…`, supply image `sha256:c4e0b8…`); **no registry image digest**
@@ -394,11 +394,11 @@ Branch `feat/r9-release-hardening` (code/CI HEAD `5f13d78`, base R8
 
 | Gate | Result | Evidence |
 |---|---|---|
-| staging + container regression | **27/27** + **63/63** | run 40173893796 |
-| supply chain | govulncheck 0, Trivy CRITICAL/HIGH 0, ShellCheck 0, SPDX+CycloneDX | run 40173893822 |
-| old-image upgrade/rollback/restore | **20/20 PASS** | run 40173893779, `evidence/r9-rollback/` |
-| real Caddy reverse proxy + TLS | **17/17 PASS** (1 WARN oversize body) | run 40173893779, `evidence/r9-caddy/` |
-| release candidate | Candidate PASS, Publish **skipped** | run 40173893716 |
+| staging + container regression | **27/27** + **63/63** | run 40176187395 |
+| supply chain | govulncheck 0, Trivy CRITICAL/HIGH 0, ShellCheck 0, SPDX+CycloneDX | run 40176187340 |
+| old-image upgrade/rollback/restore | **20/20 PASS** | run 40176187307, `evidence/r9-rollback/` |
+| real Caddy reverse proxy + TLS | **17/17 PASS** (1 WARN oversize body) | run 40176187307, `evidence/r9-caddy/` |
+| release candidate | Candidate PASS (real scans), Publish **skipped** | run 40176187349 |
 | local | make verify 0; race 0; **350 top-level (345 PASS+5 SKIP)/662**, 0 FAIL | — |
 
 Key changes: migration 0004 durable external_operations gate (the event log is
