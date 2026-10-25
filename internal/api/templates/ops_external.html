@@ -1,0 +1,56 @@
+{{define "content"}}
+<h1>External operations &amp; reconciliation</h1>
+<p class="muted">Admin-only. Tokens, JWTs, OAuth state, addresses and secret references are never displayed. Resolving records an audited operator decision; it does not delete remote resources or trigger retries.</p>
+<section class="cards">
+  <div class="card stat"><div class="stat-label">Needs reconciliation</div><div class="stat-value">{{.TotalNeeds}}</div></div>
+  {{range $status, $count := .StatusCount}}<div class="card stat"><div class="stat-label state-{{stateClass $status}}">{{$status}}</div><div class="stat-value">{{$count}}</div></div>{{end}}
+</section>
+<form method="get" action="/ui/ops/external" class="stack card">
+  <label for="status">Filter status</label>
+  <input id="status" name="status" value="{{.Status}}" placeholder="OUTCOME_UNKNOWN">
+  <label for="provider">Filter provider</label>
+  <input id="provider" name="provider" value="{{.Provider}}" placeholder="cloudflare">
+  <button type="submit">Apply</button>
+</form>
+<section class="card">
+<h2>Operations</h2>
+<table>
+<thead><tr><th>Created</th><th>Run</th><th>Provider</th><th>Status</th><th>Version</th><th>Resolution</th><th>Resolve</th></tr></thead>
+<tbody>
+{{range .Items}}
+<tr class="{{if .NeedsReview}}needs-review{{end}}">
+  <td>{{fmtUnix .CreatedAtMS}}</td>
+  <td><a href="/ui/runs/{{.RunID}}">{{short .RunID}}</a></td>
+  <td>{{.Provider}} / {{.OperationType}}</td>
+  <td><span class="pill {{if .NeedsReview}}warning{{else}}ok{{end}}">{{.Status}}</span></td>
+  <td>{{.Version}}</td>
+  <td>{{if .Resolution}}{{.Resolution}} — {{.ResolutionReason}}{{if .ResolvedBy}} ({{.ResolvedBy}}){{end}}{{else}}—{{end}}</td>
+  <td>
+    {{if .NeedsReview}}
+    <form method="post" action="/ui/ops/external/{{.ID}}/resolve" class="stack">
+      <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="expected_version" value="{{.Version}}">
+      <label>Resolution</label>
+      <select name="resolution">
+        <option value="RESOURCE_CONFIRMED">RESOURCE_CONFIRMED</option>
+        <option value="NO_RESOURCE_CREATED">NO_RESOURCE_CREATED</option>
+        <option value="MANUAL_COMPENSATION_COMPLETED">MANUAL_COMPENSATION_COMPLETED</option>
+        <option value="UNRESOLVED">UNRESOLVED</option>
+      </select>
+      <label>Reason (required)</label>
+      <input name="reason" required maxlength="2000">
+      <label>Evidence reference</label>
+      <input name="evidence_reference" maxlength="512">
+      <button type="submit">Record resolution</button>
+    </form>
+    {{else}}—{{end}}
+  </td>
+</tr>
+{{else}}
+<tr><td colspan="7" class="muted">No operations match this filter.</td></tr>
+{{end}}
+</tbody>
+</table>
+{{if .NextCursor}}<a href="/ui/ops/external?status={{.Status}}&provider={{.Provider}}&cursor={{.NextCursor}}">Next page</a>{{end}}
+</section>
+{{end}}

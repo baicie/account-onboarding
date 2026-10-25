@@ -42,7 +42,7 @@ DIGEST="${DIGEST_REF##*@}"
 # Registry API must agree with the Docker-reported digest.
 API_DIGEST="$(curl -fsSI "http://$REG/v2/onboarding-dry/manifests/$DIGEST" -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}')"
 [ "$API_DIGEST" = "$DIGEST" ] && ok "registry Digest header agrees" || bad "digest mismatch API=$API_DIGEST"
-IMMUTABLE="$(curl -fsS -o /dev/null -w '%{http_code}' -X PUT "http://$REG/v2/onboarding-dry/manifests/$DIGEST" -H 'Content-Type: application/vnd.docker.distribution.manifest.v2+json' -d '{}' 2>/dev/null || echo 000)"
+IMMUTABLE="$(curl --http1.1 -sS -o /dev/null -w '%{http_code}' -X PUT "http://$REG/v2/onboarding-dry/manifests/$DIGEST" -H 'Content-Type: application/vnd.docker.distribution.manifest.v2+json' -d '{}' 2>/dev/null || true)"
 case "$IMMUTABLE" in 400|405) ok "digest immutable (write refused $IMMUTABLE)" ;; *) bad "registry accepted digest overwrite ($IMMUTABLE)" ;; esac
 # Pull by digest into a clean local image name; verify binary/commit again.
 docker image rm "$IMAGE_LOCAL" >/dev/null 2>&1 || true
@@ -61,8 +61,8 @@ COSIGN="$WORK/cosign/cosign-linux-amd64"
 "$COSIGN" version | tee "$WORK/cosign-version.txt" >/dev/null
 ok "cosign v$V downloaded and SHA-256 verified"
 ( cd "$WORK" && COSIGN_PASSWORD=test-only-password "$COSIGN" generate-key-pair >/dev/null 2>&1 )
-"$COSIGN" sign --key "$WORK/cosign.key" --yes --tlog-upload=false --allow-insecure-registry "$DIGEST_REF" >/dev/null 2>&1 \
-  && ok "signed test image by digest" || bad "cosign sign failed"
+COSIGN_PASSWORD=test-only-password "$COSIGN" sign --key "$WORK/cosign.key" --yes --tlog-upload=false --allow-insecure-registry "$DIGEST_REF" >"$WORK/cosign-sign.out" 2>"$WORK/cosign-sign.err" \
+  && ok "signed test image by digest" || { bad "cosign sign failed"; tail -5 "$WORK/cosign-sign.err"; }
 "$COSIGN" verify --key "$WORK/cosign.pub" --insecure-ignore-tlog --allow-insecure-registry "$DIGEST_REF" >/dev/null 2>&1 \
   && ok "cosign verify passed" || bad "cosign verify failed"
 python3 - "$GIT_SHA" "$IMAGE_ID" "$DIGEST" "$WORK/provenance.json" <<'PY'
@@ -72,9 +72,9 @@ json.dump({"commit":commit,"image_id":image_id,"registry_digest":digest,
            "purpose":"R10 isolated release dry run; NOT a production publish"},
           open(out,"w"),indent=2)
 PY
-"$COSIGN" attest --key "$WORK/cosign.key" --yes --tlog-upload=false --allow-insecure-registry \
-  --predicate "$WORK/provenance.json" --type custom "$DIGEST_REF" >/dev/null 2>&1 \
-  && ok "attestation pushed" || bad "attestation failed"
+COSIGN_PASSWORD=test-only-password "$COSIGN" attest --key "$WORK/cosign.key" --yes --tlog-upload=false --allow-insecure-registry \
+  --predicate "$WORK/provenance.json" --type custom "$DIGEST_REF" >"$WORK/cosign-attest.out" 2>"$WORK/cosign-attest.err" \
+  && ok "attestation pushed" || { bad "attestation failed"; tail -5 "$WORK/cosign-attest.err"; }
 "$COSIGN" verify-attestation --key "$WORK/cosign.pub" --insecure-ignore-tlog --allow-insecure-registry \
   --type custom "$DIGEST_REF" > "$WORK/attestation.json" 2>/dev/null \
   && ok "attestation verified" || bad "attestation verification failed"

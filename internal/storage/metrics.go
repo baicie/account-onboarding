@@ -16,7 +16,12 @@ type OperationalMetrics struct {
 	ExternalStatusCounts     map[string]int64 `json:"external_status_counts"`
 	OldestExternalNeedsAgeMS int64            `json:"oldest_needs_reconciliation_age_ms"`
 	ProviderErrorClasses     map[string]int64 `json:"provider_error_classes"`
+	EngineErrorClasses       map[string]int64 `json:"engine_error_classes"`
 	ExternalUnknownRatio     *float64         `json:"external_unknown_ratio"`
+	ExternalInFlight         int64            `json:"external_in_flight_count"`
+	ExternalInFlightOverdue  int64            `json:"external_in_flight_overdue_count"`
+	SQLiteBusyTimeoutMS      int64            `json:"sqlite_busy_timeout_ms"`
+	SQLiteBusyInstrumented   bool             `json:"sqlite_busy_retry_instrumented"`
 	SessionRevocations       int64            `json:"session_revocations"`
 	SchemaVersion            int              `json:"schema_version"`
 	LastVerifiedBackupMS     *int64           `json:"last_verified_backup_at_ms"`
@@ -27,9 +32,12 @@ type OperationalMetrics struct {
 // no unbounded memory aggregation).
 func (s *Store) OperationalMetrics(ctx context.Context) (OperationalMetrics, error) {
 	m := OperationalMetrics{
-		RunsByStatus:         map[string]int64{},
-		ExternalStatusCounts: map[string]int64{},
-		ProviderErrorClasses: map[string]int64{},
+		RunsByStatus:           map[string]int64{},
+		ExternalStatusCounts:   map[string]int64{},
+		ProviderErrorClasses:   map[string]int64{},
+		EngineErrorClasses:     map[string]int64{},
+		SQLiteBusyTimeoutMS:    5000,
+		SQLiteBusyInstrumented: false, // no retry counter is exposed; never report a fake zero
 	}
 	if err := s.readDB.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&m.SchemaVersion); err != nil {
 		return m, err
@@ -79,12 +87,28 @@ func (s *Store) OperationalMetrics(ctx context.Context) (OperationalMetrics, err
 		ratio := float64(unknown) / float64(total)
 		m.ExternalUnknownRatio = &ratio
 	}
-	m.OldestExternalNeedsAgeMS, _ = s.AgeOfOldestNeedsReconciliation(ctx, s.nowMS())
+	m.OldestExternalNeedsAgeMS, err = s.AgeOfOldestNeedsReconciliation(ctx, s.nowMS())
+	if err != nil {
+		return m, err
+	}
+	if err := s.readDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM external_operations WHERE status=?`, ExternalInFlight).Scan(&m.ExternalInFlight); err != nil {
+		return m, err
+	}
+	if err := s.readDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM external_operations
+		WHERE status IN (?,?) AND created_at_ms < ?`, ExternalPrepared, ExternalInFlight,
+		s.nowMS()-5*60*1000).Scan(&m.ExternalInFlightOverdue); err != nil {
+		return m, err
+	}
 
 	rows, err = s.readDB.QueryContext(ctx, `SELECT error_class, COUNT(*) FROM steps
 		WHERE error_class IS NOT NULL AND error_class <> '' GROUP BY error_class`)
 	if err != nil {
 		return m, err
+	}
+	providerClasses := map[string]bool{
+		"UPSTREAM_TRANSIENT": true, "RATE_LIMITED": true, "TIMEOUT_UNCERTAIN": true,
+		"CONFLICT": true, "AUTH_REQUIRED": true, "AUTH_EXPIRED": true,
+		"NOT_FOUND": true, "PROVIDER_BUG": true, "NOT_AUTHORIZED": false,
 	}
 	for rows.Next() {
 		var class string
@@ -93,7 +117,11 @@ func (s *Store) OperationalMetrics(ctx context.Context) (OperationalMetrics, err
 			rows.Close()
 			return m, err
 		}
-		m.ProviderErrorClasses[class] = n
+		if isProvider, ok := providerClasses[class]; ok && isProvider {
+			m.ProviderErrorClasses[class] = n
+		} else {
+			m.EngineErrorClasses[class] = n
+		}
 	}
 	rows.Close()
 

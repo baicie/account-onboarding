@@ -113,8 +113,12 @@ APP_PORTS="$(docker port "$ID-app" 2>/dev/null || true)"
 INSPECT="$(docker inspect --format '{{json .NetworkSettings.Networks}}' "$ID-caddy")"
 echo "$INSPECT" | grep -q "$NET" && ok "Caddy attached to staging network" || bad "Caddy network"
 BODY="$(python3 -c 'print("x"*1200000)')"
-OVERSIZE="$(curl -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1" -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/runs" -H 'Content-Type: application/json' -d "$BODY" 2>/dev/null || echo 000)"
-[ "$OVERSIZE" = "413" ] && ok "proxy request body limit enforced (413)" || echo "WARN oversize response=$OVERSIZE (expected 413; recorded)"
+OVERSIZE="$(curl --http1.1 -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1" -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/runs" -H 'Content-Type: application/json' -d "$BODY" 2>/dev/null || echo 000)"
+case "$OVERSIZE" in
+  413) ok "proxy request body limit enforced (HTTP 413)" ;;
+  000) bad "proxy request body limit: connection failed without 413 (verify Caddy max_size behavior)" ;;
+  *) bad "proxy request body limit unexpected status=$OVERSIZE" ;;
+esac
 # Backend restart: predictable proxy failure then recovery.
 docker stop --time 5 "$ID-app" >/dev/null
 DOWN="$(curl -sS --cacert "$CA" --resolve "localhost:$HTTPS_PORT:127.0.0.1" -o /dev/null -w '%{http_code}' "$BASE/healthz" 2>/dev/null || echo 000)"

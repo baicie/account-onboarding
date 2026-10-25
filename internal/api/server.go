@@ -111,6 +111,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ui/logout", s.uiAuth(s.handleLogout))
 	mux.HandleFunc("GET /ui/", s.uiAuth(s.handleDashboard))
 	mux.HandleFunc("GET /ui/runs/{id}", s.uiAuth(s.handleRunPage))
+	mux.HandleFunc("GET /ui/ops/external", s.uiAuth(s.handleOpsExternalPage))
+	mux.HandleFunc("POST /ui/ops/external/{id}/resolve", s.uiAuth(s.handleOpsExternalResolveUI))
 	mux.HandleFunc("POST /ui/runs", s.uiAuth(s.handleCreateRunUI))
 	mux.HandleFunc("POST /ui/runs/{id}/resume", s.uiAuth(s.handleResumeUI))
 	mux.HandleFunc("POST /ui/runs/{id}/cancel", s.uiAuth(s.handleCancelUI))
