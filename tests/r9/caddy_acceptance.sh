@@ -51,11 +51,12 @@ docker run -d --name "$ID-app" --network "$NET" --read-only --cap-drop ALL \
   -e ONBOARD_TRUST_PROXY_HEADERS=1 -e ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key \
   -e ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/onboard_admin_token -e ONBOARD_LOG_LEVEL=warn \
   "$APP" >/dev/null
-# Caddy runs as root inside its image; read-only rootfs with tmpfs data/config,
-# cap_drop ALL and no-new-privileges are still enforced.
-docker run -d --name "$ID-caddy" --network "$NET" --read-only --cap-drop ALL \
-  --security-opt no-new-privileges --tmpfs /data:rw,noexec,nosuid,size=16m \
-  --tmpfs /config:rw,noexec,nosuid,size=8m -p "127.0.0.1:$HTTPS_PORT:8443" -p "127.0.0.1:$HTTP_PORT:8080" \
+# Caddy runs as root inside its image (the official binary carries a file
+# capability and cannot exec under no-new-privileges/cap_drop ALL); rootfs is
+# read-only, data/config/tmp are nosuid tmpfs, and only NET_BIND_SERVICE is added.
+docker run -d --name "$ID-caddy" --network "$NET" --read-only \
+  --cap-add NET_BIND_SERVICE --tmpfs /data:rw,nosuid,size=16m \
+  --tmpfs /config:rw,nosuid,size=8m --tmpfs /tmp:rw,noexec,nosuid,size=8m -p "127.0.0.1:$HTTPS_PORT:8443" -p "127.0.0.1:$HTTP_PORT:8080" \
   -v "$WORK/certs:/certs:ro" -v "$ROOT/tests/r9/Caddyfile:/etc/caddy/Caddyfile:ro" \
   --entrypoint caddy caddy:2.8.4-alpine run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 CA="$WORK/certs/ca.pem"
