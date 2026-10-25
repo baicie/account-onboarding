@@ -82,7 +82,7 @@ jobs:
           PY
       - name: Candidate vulnerability / lint gates
         env:
-          EVIDENCE: candidate/supply
+          EVIDENCE: ${{ github.workspace }}/candidate/supply
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE"
