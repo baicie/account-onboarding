@@ -83,6 +83,10 @@ var (
 	// SCREAMING_SNAKE_CASE identifiers are environment variable names or docs
 	// labels (e.g. ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE, R51_IMAGE/R51_DATA).
 	scanEnvIdent = regexp.MustCompile(`\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}\b`)
+	// Generated container/network/project identifiers are kebab-case
+	// (onboarding-r51-r51-1792901234-11967-onboarding-1); mask multi-segment
+	// lowercase identifiers for the heuristic long_token rule.
+	scanKebabIdent = regexp.MustCompile(`\b[a-z0-9]+(?:-[a-z0-9]+){3,}\b`)
 )
 
 // pathLikeSpans returns the byte ranges of path-like substrings. Long-token
@@ -109,6 +113,9 @@ func pathLikeSpans(line string) []span {
 		out = append(out, span{m[0], m[1]})
 	}
 	for _, m := range scanEnvIdent.FindAllStringIndex(line, -1) {
+		out = append(out, span{m[0], m[1]})
+	}
+	for _, m := range scanKebabIdent.FindAllStringIndex(line, -1) {
 		out = append(out, span{m[0], m[1]})
 	}
 	return out

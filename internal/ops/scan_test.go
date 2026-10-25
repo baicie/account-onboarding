@@ -198,6 +198,7 @@ func TestScanCleanBuildMetadataShapes(t *testing.T) {
 		"ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE=/run/secrets/admin-pass",
 		"ONBOARD_CLOUDFLARE_SITE_PASSWORD_FILE=/run/secrets/site-pass",
 		"docker inspect --format '{{json .HostConfig.CapDrop}}' app",
+		" Container onboarding-r51-r51-1792901234-11967-onboarding-1  Creating",
 	}, "\n")
 	rep, err := ScanReader("metadata.log", strings.NewReader(clean), ScanOptions{})
 	if err != nil {

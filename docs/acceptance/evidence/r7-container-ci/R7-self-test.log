@@ -1,0 +1,13 @@
+=== script self-test: API contract (no Docker required) ===
+PASS self-test: missing Idempotency-Key rejected (HTTP 400)
+PASS self-test: VALIDATION class
+PASS self-test: create run-1: HTTP 202 id=run-1
+PASS self-test: create run-2: HTTP 202 id=run-2
+PASS self-test: distinct keys -> distinct ids
+PASS self-test: replay run-1: HTTP 202 id=run-1
+PASS self-test: replay -> same id
+PASS self-test: reused key + different body -> 409 (HTTP 409)
+PASS self-test: CONFLICT class
+PASS self-test: GET run (HTTP 200)
+PASS self-test: GET id
+SUMMARY pass=11 fail=0 mode=self-test
