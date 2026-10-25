@@ -46,9 +46,7 @@ inspect = subprocess.run(['docker','image','inspect','--format','{{.Id}}','accou
 if inspect.returncode != 0:
     raise SystemExit('FAIL docker inspect after load failed: '+inspect.stderr[-300:])
 actual = inspect.stdout.strip()
-if actual != 'sha256:'+sha(tar).hexdigest() and actual != imgid:
-    # Docker image ID is the config digest, not the tar hash; require agreement
-    # with the recorded image ID and independently run the version binary.
+if actual != imgid:
     raise SystemExit(f'FAIL loaded image ID {actual} != recorded {imgid}')
 version = subprocess.run(['docker','run','--rm','account-onboarding:candidate','version'], capture_output=True, text=True)
 if version.returncode != 0 or ('commit '+commit) not in version.stdout:
