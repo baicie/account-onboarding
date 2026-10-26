@@ -126,6 +126,11 @@ func (s *Store) ClaimAlertOutbox(ctx context.Context, owner string, limit int, l
 		return nil, nil, err
 	}
 	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE alert_deliveries SET status=?, finished_at_ms=?, error=?
+		WHERE status=? AND alert_id IN (SELECT id FROM alert_outbox WHERE status=? AND lease_expires_ms>0 AND lease_expires_ms<=?)`,
+		AlertOutboxRetryPending, nowMS, "lease expired", AlertOutboxInFlight, AlertOutboxInFlight, nowMS); err != nil {
+		return nil, nil, err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
 		WHERE status=? AND lease_expires_ms>0 AND lease_expires_ms<=?`,
 		AlertOutboxRetryPending, nowMS, AlertOutboxInFlight, nowMS); err != nil {
@@ -244,13 +249,28 @@ func (s *Store) ResolveAlertOutbox(ctx context.Context, rule string, nowMS int64
 	if rule == "" {
 		return 0, errors.New("storage: alert rule required")
 	}
-	res, err := s.writeDB.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
+	tx, err := s.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE alert_deliveries SET status=?, finished_at_ms=?, error=?
+		WHERE status=? AND alert_id IN (SELECT id FROM alert_outbox WHERE rule=? AND status IN (?,?,?))`,
+		AlertOutboxResolved, nowMS, "resolved while in flight", AlertOutboxInFlight, rule,
+		AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
 		WHERE rule=? AND status IN (?,?,?)`, AlertOutboxResolved, nowMS, rule,
 		AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	n, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // ResolveAlertOutboxMissing marks active rows whose rule is absent from the
@@ -269,13 +289,26 @@ func (s *Store) ResolveAlertOutboxMissing(ctx context.Context, currentRules []st
 		if it.Status == AlertOutboxDelivered || it.Status == AlertOutboxResolved || it.Status == AlertOutboxDeadLetter || current[it.Rule] {
 			continue
 		}
-		res, err := s.writeDB.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
-			WHERE id=? AND status IN (?,?,?)`, AlertOutboxResolved, nowMS, it.ID,
-			AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
+		tx, err := s.writeDB.BeginTx(ctx, nil)
 		if err != nil {
 			return n, err
 		}
+		if _, err := tx.ExecContext(ctx, `UPDATE alert_deliveries SET status=?, finished_at_ms=?, error=?
+			WHERE alert_id=? AND status=?`, AlertOutboxResolved, nowMS, "resolved by reconcile", it.ID, AlertOutboxInFlight); err != nil {
+			tx.Rollback()
+			return n, err
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
+			WHERE id=? AND status IN (?,?,?)`, AlertOutboxResolved, nowMS, it.ID,
+			AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
+		if err != nil {
+			tx.Rollback()
+			return n, err
+		}
 		c, _ := res.RowsAffected()
+		if err := tx.Commit(); err != nil {
+			return n, err
+		}
 		n += c
 	}
 	return n, nil

@@ -101,6 +101,10 @@ func TestAlertOutboxResolveAndExpiredLeaseRecovery(t *testing.T) {
 	if st.Resolved != 1 || st.InFlight != 0 || st.Delivered != 0 {
 		t.Fatalf("resolved status = %+v", st)
 	}
+	var deliveryStatus string
+	if err := s.readDB.QueryRowContext(ctx, `SELECT status FROM alert_deliveries WHERE id=?`, items[0].DeliveryID).Scan(&deliveryStatus); err != nil || deliveryStatus != AlertOutboxResolved {
+		t.Fatalf("in-flight delivery history = %q err=%v, want RESOLVED", deliveryStatus, err)
+	}
 	if items, _, _ := s.ClaimAlertOutbox(ctx, "owner", 1, time.Minute, now+10000); len(items) != 0 {
 		t.Fatalf("resolved alert reclaimed: %d", len(items))
 	}

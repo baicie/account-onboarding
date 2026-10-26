@@ -2,7 +2,10 @@ package alerts
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -31,8 +34,10 @@ func webhookFixture(t *testing.T, h http.HandlerFunc, secret string) (*WebhookNo
 func TestWebhookNotifierSignsAndBounds(t *testing.T) {
 	var got webhookPayload
 	var sig string
+	var signedBody []byte
 	n, _ := webhookFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		signedBody = body
 		sig = r.Header.Get("X-Onboard-Signature")
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Errorf("payload: %v", err)
@@ -45,9 +50,12 @@ func TestWebhookNotifierSignsAndBounds(t *testing.T) {
 	if len(got.Alerts) != 1 || got.IdempotencyKey == "" || !strings.HasPrefix(sig, "sha256=") {
 		t.Fatalf("payload/signature missing: %+v %s", got, sig)
 	}
-	// Independently verify the HMAC over the JSON body is impossible here
-	// because the body was re-marshaled; signature presence plus server receipt
-	// is asserted; production uses a shared secret verifier.
+	mac := hmac.New(sha256.New, []byte("top-secret"))
+	_, _ = mac.Write(signedBody)
+	want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sig), []byte(want)) {
+		t.Fatalf("signature mismatch: got %q want %q", sig, want)
+	}
 }
 
 func TestWebhookNotifierRejectsDisallowedHostAndRedirect(t *testing.T) {
