@@ -265,22 +265,44 @@ func (s *Server) handleAlertOutboxDispatch(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, map[string]any{"claimed": 0, "sent": 0})
 		return
 	}
-	batch := make([]alerts.Alert, 0, len(items))
+	byDelivery := make(map[string]storage.AlertOutboxItem, len(items))
 	for _, it := range items {
-		batch = append(batch, alerts.Alert{Rule: it.Rule, Severity: it.Severity, Message: it.Message})
+		byDelivery[it.DeliveryID] = it
 	}
-	deliverErr := alerts.DeliverBatch(r.Context(), s.AlertOutboxNotifier, batch)
 	sent := 0
+	var firstErr error
 	for _, d := range deliveries {
-		ok := deliverErr == nil
+		it, ok := byDelivery[d.ID]
+		if !ok {
+			continue
+		}
+		one := []alerts.Alert{{Rule: it.Rule, Severity: it.Severity, Message: it.Message}}
+		var deliverErr error
+		if dn, ok := s.AlertOutboxNotifier.(alerts.DeliveryNotifier); ok {
+			deliverErr = dn.NotifyDelivery(r.Context(), alerts.DeliveryEnvelope{
+				DeliveryID: d.ID, AlertID: it.ID, Alerts: one,
+			})
+		} else {
+			deliverErr = alerts.DeliverBatch(r.Context(), s.AlertOutboxNotifier, one)
+		}
+		ok = deliverErr == nil
 		if ok {
 			sent++
+		} else if firstErr == nil {
+			firstErr = deliverErr
 		}
-		if err := s.Store.CompleteAlertOutbox(r.Context(), d.ID, d.LeaseOwner, ok, now, 60000, 0, errString(deliverErr), 10); err != nil {
+		maxAttempts := 10
+		if alerts.IsPermanentDeliveryError(deliverErr) {
+			maxAttempts = 1
+		}
+		// Completion uses the actual post-HTTP time; the claim time is not
+		// authority for a lease that may have expired during a slow send.
+		if err := s.Store.CompleteAlertOutbox(r.Context(), d.ID, d.LeaseOwner, ok, time.Now().UTC().UnixMilli(), 60000, 0, errString(deliverErr), maxAttempts); err != nil {
 			writeError(w, r, err)
 			return
 		}
 	}
+	deliverErr := firstErr
 	if deliverErr != nil {
 		writeError(w, r, errs.New(errs.ClassUpstreamTransient, "ops.alerts", "alert delivery failed; retry scheduled"))
 		return

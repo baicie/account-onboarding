@@ -211,12 +211,16 @@ func (s *Store) CompleteAlertOutbox(ctx context.Context, deliveryID, owner strin
 		return fmt.Errorf("%w: stale alert delivery", ErrLeaseLost)
 	}
 	var currentOwner, currentStatus string
-	if err := tx.QueryRowContext(ctx, `SELECT lease_owner,status FROM alert_outbox WHERE id=?`, alertID).
-		Scan(&currentOwner, &currentStatus); err != nil {
+	var leaseExpires int64
+	if err := tx.QueryRowContext(ctx, `SELECT lease_owner,status,lease_expires_ms FROM alert_outbox WHERE id=?`, alertID).
+		Scan(&currentOwner, &currentStatus, &leaseExpires); err != nil {
 		return err
 	}
 	if currentOwner != owner || currentStatus != AlertOutboxInFlight {
 		return fmt.Errorf("%w: alert lease changed", ErrLeaseLost)
+	}
+	if leaseExpires > 0 && leaseExpires <= nowMS {
+		return fmt.Errorf("%w: alert lease expired", ErrLeaseLost)
 	}
 	deliveryStatus := AlertOutboxRetryPending
 	alertStatus := AlertOutboxRetryPending
@@ -271,43 +275,49 @@ func (s *Store) ResolveAlertOutbox(ctx context.Context, rule string, nowMS int64
 	return n, nil
 }
 
-// ResolveAlertOutboxMissing marks active rows whose rule is absent from the
-// current evaluated rule set as RESOLVED, so recovered alerts stop retrying.
+// ResolveAlertOutboxMissing resolves every active row whose rule is absent from
+// the current evaluated set in one bounded SQLite transaction. It does not scan
+// a history page and cannot miss old active rows behind >500 resolved/delivered
+// history. DELIVERED/DEAD_LETTER semantics are unchanged; they remain until an
+// explicit Resolve. Delivery rows for the affected in-flight attempts are
+// closed atomically with the outbox transition.
 func (s *Store) ResolveAlertOutboxMissing(ctx context.Context, currentRules []string, nowMS int64) (int64, error) {
-	active, err := s.ListAlertOutbox(ctx, 500)
+	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
-	current := map[string]bool{}
-	for _, r := range currentRules {
-		current[r] = true
+	defer tx.Rollback()
+	// A temp set avoids SQLite's bound-parameter limit for large rule sets while
+	// keeping every rule parameterized. writeDB has a single connection, and the
+	// set is rebuilt in this transaction.
+	if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE IF NOT EXISTS r151_current_rules(rule TEXT PRIMARY KEY)`); err != nil {
+		return 0, err
 	}
-	var n int64
-	for _, it := range active {
-		if it.Status == AlertOutboxResolved || current[it.Rule] {
-			continue
+	if _, err := tx.ExecContext(ctx, `DELETE FROM r151_current_rules`); err != nil {
+		return 0, err
+	}
+	for _, rule := range currentRules {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO r151_current_rules(rule) VALUES(?)`, rule); err != nil {
+			return 0, err
 		}
-		tx, err := s.writeDB.BeginTx(ctx, nil)
-		if err != nil {
-			return n, err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE alert_deliveries SET status=?, finished_at_ms=?, error=?
-			WHERE alert_id=? AND status=?`, AlertOutboxResolved, nowMS, "resolved by reconcile", it.ID, AlertOutboxInFlight); err != nil {
-			tx.Rollback()
-			return n, err
-		}
-		res, err := tx.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
-			WHERE id=? AND status IN (?,?,?)`, AlertOutboxResolved, nowMS, it.ID,
-			AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
-		if err != nil {
-			tx.Rollback()
-			return n, err
-		}
-		c, _ := res.RowsAffected()
-		if err := tx.Commit(); err != nil {
-			return n, err
-		}
-		n += c
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE alert_deliveries SET status=?, finished_at_ms=?, error=?
+		WHERE status=? AND alert_id IN (
+			SELECT id FROM alert_outbox
+			WHERE status IN (?,?,?) AND rule NOT IN (SELECT rule FROM r151_current_rules)
+		)`, AlertOutboxResolved, nowMS, "resolved by reconcile", AlertOutboxInFlight,
+		AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
+		WHERE status IN (?,?,?) AND rule NOT IN (SELECT rule FROM r151_current_rules)`,
+		AlertOutboxResolved, nowMS, AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, err
 	}
 	return n, nil
 }

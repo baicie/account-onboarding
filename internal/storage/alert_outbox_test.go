@@ -162,3 +162,24 @@ func TestAlertOutboxConcurrentClaimSingleWinner(t *testing.T) {
 		t.Fatalf("concurrent claims = %d, want 1", total)
 	}
 }
+
+func TestAlertOutboxExpiredLeaseCannotComplete(t *testing.T) {
+	s := outboxStore(t)
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	_, _ = s.EnqueueAlertOutbox(ctx, []AlertOutboxInput{{Fingerprint: "fp-lease", Rule: "lease", Severity: "warning", Message: "m"}}, now)
+	items, _, err := s.ClaimAlertOutbox(ctx, "old-owner", 1, 100*time.Millisecond, now)
+	if err != nil || len(items) != 1 {
+		t.Fatal(err)
+	}
+	if err := s.CompleteAlertOutbox(ctx, items[0].DeliveryID, "old-owner", true, now+200, 0, 200, "", 3); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("expired owner completion err=%v, want lease lost", err)
+	}
+	newItems, _, err := s.ClaimAlertOutbox(ctx, "new-owner", 1, time.Minute, now+200)
+	if err != nil || len(newItems) != 1 {
+		t.Fatalf("new owner claim = %d %v", len(newItems), err)
+	}
+	if err := s.CompleteAlertOutbox(ctx, items[0].DeliveryID, "old-owner", true, now+300, 0, 200, "", 3); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("old owner after reclaim err=%v", err)
+	}
+}
