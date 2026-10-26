@@ -144,3 +144,16 @@ func TestAlertResolveAPIRequiresActiveRule(t *testing.T) {
 		t.Fatalf("missing alert rule status=%d", status)
 	}
 }
+
+func TestAlertReconcileEndpointIsExplicitAdminControl(t *testing.T) {
+	e := newEnv(t, nil)
+	if status, _ := e.request(t, http.MethodPost, "/v1/ops/alerts/reconcile", nil, adminToken, nil); status != http.StatusOK {
+		t.Fatalf("reconcile status=%d", status)
+	}
+	if status, _ := e.request(t, http.MethodGet, "/v1/ops/alerts", nil, adminToken, nil); status != http.StatusOK {
+		t.Fatalf("alerts status=%d", status)
+	}
+	if status, _ := e.request(t, http.MethodGet, "/v1/ops/alerts/queue", nil, adminToken, nil); status != http.StatusOK {
+		t.Fatalf("queue status=%d", status)
+	}
+}

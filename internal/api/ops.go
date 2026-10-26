@@ -181,6 +181,31 @@ func (s *Server) handleOpsAlertDrain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sent": sent, "status": s.AlertQueue.Status()})
 }
 
+// handleOpsAlertReconcile is the explicit state-changing control path. GET
+// /v1/ops/alerts is intentionally side-effect free.
+func (s *Server) handleOpsAlertReconcile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	m, err := s.Store.OperationalMetrics(ctx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	health, err := s.Store.Health(ctx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	current := alerts.EvaluateAlerts(alerts.AlertInput{
+		Metrics: m, Ready: health.Writable && health.SchemaVersion >= 5 &&
+			health.SessionRevocationsReady && health.ExternalOperationsReady,
+		ExpectedSchema: 5, NowMS: time.Now().UTC().UnixMilli(),
+		BackupMaxAgeMS:          (7 * 24 * time.Hour).Milliseconds(),
+		ReconciliationThreshold: 10, ProviderErrorThreshold: 20,
+	})
+	s.AlertQueue.Reconcile(current)
+	writeJSON(w, http.StatusOK, map[string]any{"evaluated": len(current), "status": s.AlertQueue.Status()})
+}
+
 func (s *Server) handleOpsAlertQueue(w http.ResponseWriter, r *http.Request) {
 	if s.AlertQueue == nil {
 		writeError(w, r, errs.New(errs.ClassInternal, "ops.alerts", "alert queue unavailable"))
@@ -207,6 +232,5 @@ func (s *Server) handleOpsAlerts(w http.ResponseWriter, r *http.Request) {
 		ExpectedSchema: 5, NowMS: time.Now().UTC().UnixMilli(), BackupMaxAgeMS: (7 * 24 * time.Hour).Milliseconds(),
 		ReconciliationThreshold: 10, ProviderErrorThreshold: 20,
 	})
-	s.AlertQueue.Reconcile(alerts)
-	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "count": len(alerts)})
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "count": len(alerts), "queue": s.AlertQueue.Status()})
 }
