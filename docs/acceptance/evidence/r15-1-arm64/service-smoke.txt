@@ -1,0 +1,1 @@
+RUNTIME_SERVICE_PASS linux/arm64 schema=6 readyz=200 run=a3ccc55d-54ad-464e-9326-8a035b3136e2 restart=persisted

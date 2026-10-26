@@ -23,6 +23,7 @@ live-platform success.
 | [R6.1.md](R6.1.md) | R6.1 | Container runtime closure attempt: Docker daemon unavailable, all runtime gates **NOT_RUN** | **DEPLOYMENT_BLOCKED**; no image/ID/digest |
 | [R7.md](R7.md) | R7 | Source-review closure + real container CI (Actions 40161727232, 63/63 PASS, image inspect verified) | **CONTAINER_RC_READY**; image ID only, no registry digest |
 | [REVIEW-R7.md](REVIEW-R7.md) | R7 | Independent review: PASS, P0=0/P1=0, P2 fixed | see report |
+| [R15.1.md](R15.1.md) | R15.1 | Outbox >500 set reconcile, webhook SSRF/retry, delivery identity, lease authority, schema5→6 | **R15_1_OFFLINE_CLOSED**; R16 sandbox NOT_RUN |
 | [R15.md](R15.md) | R15 | Schema6 durable alert outbox, webhook transport, restore/session invariants, secret materializer, ARM64/candidate | **R15_OFFLINE_ENGINEERING_CLOSED**; Authorized Live NOT_RUN |
 | [R14.1.md](R14.1.md) | R14.1 | Alert drain lifecycle, exact secret modes, CONFIRMED recovery, exact base digest, UI race, live handoff | **R14_1_OFFLINE_CLOSED**; Authorized Live NOT_RUN |
 | [R14.md](R14.md) | R14 | Secret policy, contract manifest, encrypted state restore, same candidate artifact, API concurrency, ARM64 service smoke, alert queue | **R14_PARTIAL**; Authorized Live NOT_RUN |

@@ -1,0 +1,4 @@
+Schema5 fixture backup -> schema6 restore -> Open migration:
+- health schema6, external ready, no fabricated outbox rows.
+- manifest/checksum/atomic restore path.
+P3: reconstructed fixture, not historical binary/WAL.

@@ -1,0 +1,49 @@
+=== use the already-built candidate artifact (no rebuild) ===
+PASS candidate identity: commit, image tar sha256, loaded image id, binary commit, SBOM sha256, base digests
+PASS candidate identity rejects image-id/provenance tamper
+PASS candidate identity rejects image.tar tamper
+PASS candidate identity rejects base digest mismatch
+onboardd 0.1.0 commit 8d25aa77719b3dbe9470ce2a94bbc8c65eaa66bc
+PASS same candidate artifact: image.tar, image ID, SBOM and commit verified
+SAME_CANDIDATE_ARTIFACT=/home/runner/work/account-onboarding/account-onboarding/candidate
+Unable to find image 'registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373' locally
+docker.io/library/registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373: Pulling from library/registry
+44cf07d57ee4: Pulling fs layer
+bbbdd6c6894b: Pulling fs layer
+8e82f80af0de: Pulling fs layer
+3493bf46cdec: Pulling fs layer
+6d464ea18732: Pulling fs layer
+6d464ea18732: Waiting
+3493bf46cdec: Waiting
+bbbdd6c6894b: Verifying Checksum
+bbbdd6c6894b: Download complete
+8e82f80af0de: Verifying Checksum
+8e82f80af0de: Download complete
+44cf07d57ee4: Download complete
+3493bf46cdec: Verifying Checksum
+3493bf46cdec: Download complete
+44cf07d57ee4: Pull complete
+bbbdd6c6894b: Pull complete
+8e82f80af0de: Pull complete
+3493bf46cdec: Pull complete
+6d464ea18732: Verifying Checksum
+6d464ea18732: Download complete
+6d464ea18732: Pull complete
+Digest: sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+Status: Downloaded newer image for registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+PASS throwaway OCI registry reachable
+PASS pushed to throwaway registry
+PASS registry manifest digest sha256:a43c7db566a001f4adb7453092dcd6bbf5fa288acdb013f0c76549333f6f5141
+PASS registry Digest header agrees
+PASS digest immutable: registry rejected a valid-but-different manifest with HTTP 400
+PASS pulled by immutable digest
+onboardd 0.1.0 commit 8d25aa77719b3dbe9470ce2a94bbc8c65eaa66bc
+PASS pulled image commit matches
+PASS cosign v2.4.1 downloaded and SHA-256 verified
+PASS signed test image by digest
+PASS cosign verify passed
+PASS attestation pushed
+PASS attestation verified
+ATTESTATION_VALID subject_digest=sha256:a43c7db566a001f4adb7453092dcd6bbf5fa288acdb013f0c76549333f6f5141 commit=8d25aa77719b3dbe9470ce2a94bbc8c65eaa66bc
+PASS attestation subject digest + exact commit verified
+SUMMARY pass=14 fail=0 digest=sha256:a43c7db566a001f4adb7453092dcd6bbf5fa288acdb013f0c76549333f6f5141 image_id=sha256:0f4c27a4fb6aeb3048f1b8cc8fb61e5103de2603a06115c9e4992807b88322be

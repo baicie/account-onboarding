@@ -1,0 +1,6 @@
+Webhook egress:
+- pinned DialContext, every A/AAAA validated, TLS original hostname, proxy disabled.
+- blocked loopback/private/link-local/metadata/CGNAT/mapped/unspecified/multicast/0/8/240/4/NAT64/6to4/TEST-NET.
+- no redirect; HMAC exact body; DeliveryID + stable AlertID idempotency.
+- permanent 4xx (except 408/429) -> DEAD_LETTER; transient -> RETRY_PENDING.
+- expired lease cannot complete; post-HTTP time used.
