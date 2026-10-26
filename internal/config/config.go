@@ -519,8 +519,9 @@ func readSecureSecretFile(path, label string, policy secretPolicy) ([]byte, erro
 	if !os.SameFile(lst, st) {
 		return nil, fmt.Errorf("%s file changed while being opened", label)
 	}
-	if st.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("%s file %q permissions %04o are too broad; require 0600/0400", label, path, st.Mode().Perm())
+	perm := st.Mode().Perm()
+	if perm != 0o400 && perm != 0o600 {
+		return nil, fmt.Errorf("%s file %q permissions %04o are not allowed; require exactly 0400 or 0600", label, path, perm)
 	}
 	if st.Size() <= 0 {
 		return nil, fmt.Errorf("%s file %q is empty", label, path)
