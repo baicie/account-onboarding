@@ -18,6 +18,7 @@ on:
       - feat/r15-1-outbox-security-closure
       - feat/r16-r17-final-sandbox-release-readiness
       - feat/r18-final-release-candidate-closure
+      - feat/r19-trusted-release-full-acceptance
 concurrency:
   group: staging-acceptance
   cancel-in-progress: false

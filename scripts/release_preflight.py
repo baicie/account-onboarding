@@ -6,6 +6,8 @@ candidate to provenance/SBOM/tar bytes, verifies same-artifact evidence, and
 records an explicit gate matrix. Missing or failed required gates fail closed.
 """
 import argparse, hashlib, json, pathlib, re, sys, tarfile
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from trusted_ci_gates import build_report
 
 REQUIRED_GATES = [
     "go_unit_race", "provider_contract", "sandbox_infra", "application_e2e",
@@ -32,7 +34,11 @@ def main():
     ap.add_argument("--same-artifact-evidence", required=True)
     ap.add_argument("--expected-commit", required=True)
     ap.add_argument("--repo-root", default=str(pathlib.Path(__file__).resolve().parent.parent))
-    ap.add_argument("--gates", required=True, help="JSON gate->status or path")
+    ap.add_argument("--gates", help="gate report path (ignored with --trusted-gates)")
+    ap.add_argument("--trusted-gates", action="store_true", help="fetch gate evidence from GitHub Actions API")
+    ap.add_argument("--repository", default="baicie/account-onboarding")
+    ap.add_argument("--api-base", default="https://api.github.com")
+    ap.add_argument("--token-env", default="GITHUB_TOKEN")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     c = pathlib.Path(a.candidate_dir)
@@ -80,10 +86,27 @@ def main():
         return fail("attestation subject digest/commit mismatch")
     if "cosign verify passed" not in text or "attestation verified" not in text:
         return fail("same-artifact evidence missing cosign verify/attestation proof")
-    gates_raw = pathlib.Path(a.gates).read_text() if pathlib.Path(a.gates).exists() else a.gates
-    report = json.loads(gates_raw)
-    if report.get("commit") != commit:
-        return fail("gate report commit does not match candidate")
+    if a.trusted_gates:
+        import os
+        token = os.environ.get(a.token_env, "")
+        if not token:
+            return fail("trusted gates require token")
+        try:
+            report = build_report(a.repository, commit, token, a.api_base)
+        except Exception as exc:
+            return fail(f"trusted CI gate verification failed: {exc}")
+        if report.get("trusted_source") != "github-actions-api" or report.get("blockers"):
+            return fail("trusted CI gate verification incomplete")
+        report.setdefault("gates", {})["same_artifact"] = "PASS"
+        report["runs"]["same-artifact"] = {"verified": True, "source": "same-artifact evidence"}
+    else:
+        if not a.gates:
+            return fail("--gates is required unless --trusted-gates")
+        gates_raw = pathlib.Path(a.gates).read_text() if pathlib.Path(a.gates).exists() else a.gates
+        report = json.loads(gates_raw)
+        if report.get("commit") != commit:
+            return fail("gate report commit does not match candidate")
+        report["gate_source"] = "caller-json-untrusted"
     gates = report.get("gates", {})
     blockers = []
     for name in REQUIRED_GATES:
@@ -103,6 +126,7 @@ def main():
         "registry_manifest_digest": registry_digest,
         "gate_report_commit": report.get("commit"),
         "ci_runs": report.get("runs", {}),
+        "gate_source": report.get("trusted_source", report.get("gate_source", "unknown")),
         "gates": gates,
         "blockers": blockers,
         "release_authorized": False,
