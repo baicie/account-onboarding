@@ -7,14 +7,16 @@ repository, full head SHA, workflow, conclusion and run attempt.
 """
 import argparse, json, os, sys, urllib.request, urllib.error
 
+# Protected workflow identity: name -> (exact workflow file path, gate names).
 DEFAULT_WORKFLOWS = {
-    "ci": ["go_unit_race", "provider_contract"],
-    "r12-integration": ["backup_restore", "arm64_service"],
-    "r16-sandbox-e2e": ["sandbox_infra", "application_e2e"],
-    "r17-browser-e2e": ["browser_admin_core"],
-    "supply-chain": ["supply_chain"],
-    "staging-acceptance": ["staging_acceptance"],
+    "ci": (".github/workflows/ci.yml", ["go_unit_race", "provider_contract"]),
+    "r12-integration": (".github/workflows/r11-integration.yml", ["backup_restore", "arm64_service"]),
+    "r16-sandbox-e2e": (".github/workflows/r16-sandbox-e2e.yml", ["sandbox_infra", "application_e2e"]),
+    "r17-browser-e2e": (".github/workflows/r17-browser-e2e.yml", ["browser_admin_core"]),
+    "supply-chain": (".github/workflows/supply-chain.yml", ["supply_chain"]),
+    "staging-acceptance": (".github/workflows/staging-acceptance.yml", ["staging_acceptance"]),
 }
+TRUSTED_EVENTS = {"push", "workflow_dispatch"}
 
 def api_get(url, token):
     req = urllib.request.Request(url, headers={
@@ -34,12 +36,23 @@ def build_report(repo, commit, token, api_base="https://api.github.com", workflo
     gates, runs, blockers = {}, {}, []
     data = api_get(f"{api_base}/repos/{repo}/actions/runs?head_sha={commit}&per_page=100", token)
     all_runs = data.get("workflow_runs", [])
-    for wf, gate_names in workflows.items():
+    for wf, spec in workflows.items():
+        path, gate_names = spec
         candidates = [r for r in all_runs
-                      if r.get("head_sha") == commit and r.get("name") == wf]
+                      if r.get("head_sha") == commit and r.get("name") == wf
+                      and r.get("path") == path and r.get("event") in TRUSTED_EVENTS]
         if not candidates:
-            blockers.append({"gate": gate_names[0], "reason": f"no {wf} run for exact SHA"})
+            blockers.append({"gate": gate_names[0], "reason": f"no trusted push/workflow_dispatch {wf} run at {path} for exact SHA"})
             for g in gate_names: gates[g] = "MISSING"
+            continue
+        # A same-name workflow at a different path is never trusted, even if it
+        # reports success; reject ambiguity instead of selecting by recency.
+        other_paths = {r.get("path") for r in all_runs
+                       if r.get("name") == wf and r.get("path") != path
+                       and r.get("head_sha") == commit}
+        if other_paths:
+            blockers.append({"gate": gate_names[0], "reason": "same-name workflow at untrusted path"})
+            for g in gate_names: gates[g] = "FAIL"
             continue
         # deterministic: latest created run, then highest attempt
         run = sorted(candidates, key=lambda r: (r.get("created_at", ""), r.get("run_attempt", 0)))[-1]
@@ -52,10 +65,12 @@ def build_report(repo, commit, token, api_base="https://api.github.com", workflo
         for g in gate_names:
             gates[g] = "PASS" if not any(b["gate"] == gate_names[0] for b in blockers) else "FAIL"
         runs[wf] = {"repository": repo, "commit": commit, "workflow": wf,
+                    "path": run.get("path"), "workflowId": run.get("workflow_id"),
                     "runId": run.get("id"), "runAttempt": run.get("run_attempt"),
                     "event": run.get("event"), "ref": run.get("head_branch"),
                     "conclusion": run.get("conclusion"), "status": run.get("status"),
-                    "verified": run.get("head_sha") == commit and run.get("conclusion") == "success"}
+                    "verified": (run.get("head_sha") == commit and run.get("conclusion") == "success"
+                                 and run.get("path") == path and run.get("event") in TRUSTED_EVENTS)}
     return {"schema": 2, "commit": commit, "repository": repo, "gates": gates,
             "runs": runs, "blockers": blockers, "trusted_source": "github-actions-api"}
 

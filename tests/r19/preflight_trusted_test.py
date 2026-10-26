@@ -1,5 +1,6 @@
 import hashlib, io, json, os, subprocess, sys, tarfile, tempfile, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+paths = {'ci': '.github/workflows/ci.yml', 'r12-integration': '.github/workflows/r11-integration.yml', 'r16-sandbox-e2e': '.github/workflows/r16-sandbox-e2e.yml', 'r17-browser-e2e': '.github/workflows/r17-browser-e2e.yml', 'supply-chain': '.github/workflows/supply-chain.yml', 'staging-acceptance': '.github/workflows/staging-acceptance.yml'}
 repo='baicie/account-onboarding'; sha='a'*40
 W=tempfile.mkdtemp(); c=os.path.join(W,'c'); ev=os.path.join(W,'ev'); os.makedirs(os.path.join(c,'supply')); os.makedirs(ev)
 open(os.path.join(c,'commit.txt'),'w').write(sha+'\n')
@@ -15,7 +16,7 @@ digest='sha256:'+'1'*64
 open(os.path.join(ev,'dry-run.log'),'w').write(f'SAME_CANDIDATE_ARTIFACT=x\nSUMMARY pass=14 fail=0 digest={digest} image_id={iid}\ncosign verify passed\nattestation verified\nATTESTATION_VALID subject_digest={digest} commit={sha}\n')
 wfs=['ci','r12-integration','r16-sandbox-e2e','r17-browser-e2e','supply-chain','staging-acceptance']
 def runs(conclusion='success'):
-    return {w:[{"id":i+1,"name":w,"head_sha":sha,"status":"completed","conclusion":conclusion,"run_attempt":1,"event":"push","head_branch":"feat/x","created_at":"2026-01-01T00:00:00Z","repository":{"full_name":repo}}] for i,w in enumerate(wfs)}
+    return {w:[{"id":i+1,"name":w,"head_sha":sha,"status":"completed","conclusion":conclusion,"run_attempt":1,"event":"push","head_branch":"feat/x","path":paths[w],"workflow_id":i+1,"created_at":"2026-01-01T00:00:00Z","repository":{"full_name":repo}}] for i,w in enumerate(wfs)}
 def serve(d):
     class H(BaseHTTPRequestHandler):
         def log_message(self,*a): pass

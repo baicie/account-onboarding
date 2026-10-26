@@ -38,8 +38,16 @@ jobs:
           for i in $(seq 1 40); do
             missing=0
             for wf in ci r12-integration r16-sandbox-e2e r17-browser-e2e supply-chain staging-acceptance; do
+              case "$wf" in
+                ci) path=.github/workflows/ci.yml ;;
+                r12-integration) path=.github/workflows/r11-integration.yml ;;
+                r16-sandbox-e2e) path=.github/workflows/r16-sandbox-e2e.yml ;;
+                r17-browser-e2e) path=.github/workflows/r17-browser-e2e.yml ;;
+                supply-chain) path=.github/workflows/supply-chain.yml ;;
+                staging-acceptance) path=.github/workflows/staging-acceptance.yml ;;
+              esac
               n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&per_page=100" \
-                --jq "[.workflow_runs[] | select(.name==\"$wf\" and .conclusion==\"success\")] | length")
+                --jq "[.workflow_runs[] | select(.name==\"$wf\" and .event==\"push\" and .path==\"$path\" and .conclusion==\"success\")] | length")
               [ "$n" -ge 1 ] || missing=$((missing+1))
             done
             [ "$missing" = 0 ] && exit 0

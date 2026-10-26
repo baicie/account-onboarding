@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/r19-trusted-release-full-acceptance]
   pull_request:
 
 permissions:
