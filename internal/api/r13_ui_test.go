@@ -190,3 +190,29 @@ func TestReconciliationActionStatesAndAudit404(t *testing.T) {
 		t.Fatalf("unknown audit status = %d, want 404", status)
 	}
 }
+
+func loginUISessionClient(t *testing.T, e *env, client *http.Client) string {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/login", strings.NewReader(url.Values{"token": {adminToken}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", e.ts.URL)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login = %d", resp.StatusCode)
+	}
+	resp, err = client.Get(e.ts.URL + "/ui/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	m := regexp.MustCompile(`name="csrf" value="([^"]+)"`).FindStringSubmatch(string(raw))
+	if len(m) != 2 {
+		t.Fatalf("dashboard has no csrf token: %s", raw)
+	}
+	return m[1]
+}

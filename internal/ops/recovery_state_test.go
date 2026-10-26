@@ -123,6 +123,11 @@ func seedRecoveryState(t *testing.T, s *storage.Store) (runs []string, ops map[s
 	if err := s.RevokeSession(ctx, "session-r14", time.Now().UTC(), time.Now().UTC().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	// Create the expired revocation before backup so restore proves it is
+	// preserved as expired (not just created afterwards).
+	if err := s.RevokeSession(ctx, "session-expired-r14", time.Now().Add(-2*time.Hour).UTC(), time.Now().Add(-time.Hour).UTC()); err != nil {
+		t.Fatal(err)
+	}
 	var n int64
 	if err := db.QueryRow(`SELECT count(*) FROM audit_log`).Scan(&n); err != nil {
 		t.Fatal(err)
@@ -196,12 +201,9 @@ func TestEncryptedBackupRestorePreservesDurableState(t *testing.T) {
 	if err != nil || !revoked {
 		t.Fatalf("session revocation not restored: %v %v", revoked, err)
 	}
-	// An expired revocation must no longer block future sessions.
-	if err := restored.RevokeSession(ctx, "session-expired-r14", time.Now().Add(-2*time.Hour).UTC(), time.Now().Add(-time.Hour).UTC()); err != nil {
-		t.Fatal(err)
-	}
+	// The expired revocation was present in the backup and must remain expired.
 	if expired, err := restored.SessionRevoked(ctx, "session-expired-r14", time.Now().UTC()); err != nil || expired {
-		t.Fatalf("expired session revocation still active: %v %v", expired, err)
+		t.Fatalf("restored expired session revocation still active: %v %v", expired, err)
 	}
 	wantStates := map[string]string{
 		"prepared": storage.ExternalPrepared, "inflight": storage.ExternalInFlight,

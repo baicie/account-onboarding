@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strconv"
 	"strings"
@@ -163,22 +164,31 @@ func TestAlertReconcileEndpointIsExplicitAdminControl(t *testing.T) {
 func TestTwoAdminsUIResolutionRace(t *testing.T) {
 	e := newEnv(t, nil)
 	op := seedExternalAt(t, e, "OUTCOME_UNKNOWN")
-	csrf := loginUISession(t, e)
-	form := func(resolution string) url.Values {
+	jarA, _ := cookiejar.New(nil)
+	jarB, _ := cookiejar.New(nil)
+	clientA := &http.Client{Jar: jarA, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	clientB := &http.Client{Jar: jarB, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	csrfA := loginUISessionClient(t, e, clientA)
+	csrfB := loginUISessionClient(t, e, clientB)
+	form := func(csrf, resolution string) url.Values {
 		return url.Values{"csrf": {csrf}, "expected_version": {strconv.FormatInt(op.Version, 10)},
 			"resolution": {resolution}, "reason": {"ui race"}}
 	}
 	results := make(chan int, 2)
 	var wg sync.WaitGroup
-	for _, res := range []string{"RESOURCE_CONFIRMED", "MANUAL_COMPENSATION_COMPLETED"} {
+	for i, res := range []string{"RESOURCE_CONFIRMED", "MANUAL_COMPENSATION_COMPLETED"} {
 		wg.Add(1)
-		go func(resolution string) {
+		go func(i int, resolution string) {
 			defer wg.Done()
+			csrf, client := csrfA, clientA
+			if i == 1 {
+				csrf, client = csrfB, clientB
+			}
 			req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/ops/external/"+op.ID+"/resolve",
-				strings.NewReader(form(resolution).Encode()))
+				strings.NewReader(form(csrf, resolution).Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			req.Header.Set("Origin", e.ts.URL)
-			resp, err := e.client.Do(req)
+			resp, err := client.Do(req)
 			if err != nil {
 				t.Error(err)
 				results <- 0
@@ -186,7 +196,7 @@ func TestTwoAdminsUIResolutionRace(t *testing.T) {
 			}
 			resp.Body.Close()
 			results <- resp.StatusCode
-		}(res)
+		}(i, res)
 	}
 	wg.Wait()
 	close(results)
