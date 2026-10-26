@@ -1,0 +1,68 @@
+name: r19-trusted-preflight-manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Exact candidate source SHA"
+        required: true
+      release_run_id:
+        description: "release-image run ID that produced the candidate artifact"
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  trusted-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: {go-version: "1.25.x", cache: true}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - name: Download frozen candidate and same-artifact evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ inputs.release_run_id }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          mkdir -p candidate same-artifact
+          gh run download "$RUN_ID" -n "release-candidate-$SHA" -D candidate
+          gh run download "$RUN_ID" -n same-artifact-dry-run-evidence -D same-artifact
+      - name: Wait for required workflows on exact SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          for i in $(seq 1 40); do
+            missing=0
+            for wf in ci r12-integration r16-sandbox-e2e r17-browser-e2e supply-chain staging-acceptance; do
+              n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&per_page=100" \
+                --jq "[.workflow_runs[] | select(.name==\"$wf\" and .conclusion==\"success\")] | length")
+              [ "$n" -ge 1 ] || missing=$((missing+1))
+            done
+            [ "$missing" = 0 ] && exit 0
+            sleep 15
+          done
+          echo "required workflows did not all succeed on $SHA" >&2; exit 1
+      - name: Trusted GitHub API preflight
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          python3 scripts/release_preflight.py --candidate-dir candidate --same-artifact-evidence same-artifact \
+            --expected-commit "$SHA" --trusted-gates --api-base "$GITHUB_API_URL" \
+            --token-env GITHUB_TOKEN --out trusted-preflight.json
+      - name: Upload trusted preflight evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: r19-trusted-preflight-${{ inputs.sha }}
+          path: trusted-preflight.json
+          retention-days: 14
+          if-no-files-found: ignore
