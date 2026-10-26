@@ -34,4 +34,10 @@ for _ in $(seq 1 100); do curl -sf -m 2 "http://127.0.0.1:$PORT/healthz" >/dev/n
 curl -sf -m 3 "http://127.0.0.1:$PORT/healthz" >/dev/null
 cd "$ROOT/tests/browser"
 if [ ! -d node_modules ]; then npm install --no-audit --no-fund >/dev/null; fi
-npx playwright test --reporter=line
+set +e
+npx playwright test
+STATUS=$?
+set -e
+node sanitize-evidence.js playwright-results.json "${BROWSER_EVIDENCE_PATH:-$PWD/browser-evidence.json}"
+rm -f playwright-results.json
+exit "$STATUS"
