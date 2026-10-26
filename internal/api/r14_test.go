@@ -3,6 +3,8 @@ package api_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -155,5 +157,59 @@ func TestAlertReconcileEndpointIsExplicitAdminControl(t *testing.T) {
 	}
 	if status, _ := e.request(t, http.MethodGet, "/v1/ops/alerts/queue", nil, adminToken, nil); status != http.StatusOK {
 		t.Fatalf("queue status=%d", status)
+	}
+}
+
+func TestTwoAdminsUIResolutionRace(t *testing.T) {
+	e := newEnv(t, nil)
+	op := seedExternalAt(t, e, "OUTCOME_UNKNOWN")
+	csrf := loginUISession(t, e)
+	form := func(resolution string) url.Values {
+		return url.Values{"csrf": {csrf}, "expected_version": {strconv.FormatInt(op.Version, 10)},
+			"resolution": {resolution}, "reason": {"ui race"}}
+	}
+	results := make(chan int, 2)
+	var wg sync.WaitGroup
+	for _, res := range []string{"RESOURCE_CONFIRMED", "MANUAL_COMPENSATION_COMPLETED"} {
+		wg.Add(1)
+		go func(resolution string) {
+			defer wg.Done()
+			req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/ops/external/"+op.ID+"/resolve",
+				strings.NewReader(form(resolution).Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Origin", e.ts.URL)
+			resp, err := e.client.Do(req)
+			if err != nil {
+				t.Error(err)
+				results <- 0
+				return
+			}
+			resp.Body.Close()
+			results <- resp.StatusCode
+		}(res)
+	}
+	wg.Wait()
+	close(results)
+	for status := range results {
+		if status != http.StatusSeeOther {
+			t.Fatalf("UI race status=%d", status)
+		}
+	}
+	after, err := e.store.GetExternalOperationByID(t.Context(), op.ID)
+	if err != nil || after.Status != storage.ExternalResolved {
+		t.Fatalf("operation not resolved exactly once: %+v err=%v", after, err)
+	}
+	audits, err := e.store.ListExternalOperationAudit(t.Context(), op.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := 0
+	for _, a := range audits {
+		if a.Action == "external_operation.resolve" {
+			resolved++
+		}
+	}
+	if resolved != 1 {
+		t.Fatalf("resolution audit count=%d, want 1", resolved)
 	}
 }
