@@ -12,6 +12,7 @@ on:
       - feat/r11-integration-readiness
       - feat/r12-acceptance-integrity
       - feat/r13-integration-reliability
+      - feat/r14-security-release-closure
 concurrency:
   group: supply-chain
   cancel-in-progress: false

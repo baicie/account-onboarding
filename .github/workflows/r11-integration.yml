@@ -3,7 +3,7 @@ name: r12-integration
 # and ARM64 runtime smoke. Isolated GitHub runner only.
 on:
   push:
-    branches: [feat/r12-acceptance-integrity, feat/r13-integration-reliability]
+    branches: [feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure]
   workflow_dispatch:
 permissions:
   contents: read
