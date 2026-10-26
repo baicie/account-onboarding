@@ -36,6 +36,9 @@ jobs:
       - name: Secret materializer tests
         run: bash tests/r15/secret_materialize.sh
 
+      - name: Release preflight fail-closed tests
+        run: bash tests/r18/release_preflight_test.sh
+
   formatting:
     name: gofmt
     runs-on: ubuntu-latest

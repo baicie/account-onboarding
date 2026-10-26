@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - feat/r16-r17-final-sandbox-release-readiness
+      - feat/r18-final-release-candidate-closure
       - feat/r17-final-release-readiness
       - main
 
