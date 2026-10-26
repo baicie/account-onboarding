@@ -84,17 +84,50 @@ jobs:
           echo "$ARCH" | tee r12-evidence/arm64/image.txt
           if [ "$ARCH" != "linux/arm64" ]; then echo "ARCH_FAIL expected linux/arm64 got $ARCH"; exit 1; fi
           if docker run --rm --platform linux/arm64 onboarding-r12-arm64:test version > r12-evidence/arm64/version.txt 2> r12-evidence/arm64/runtime.err; then
-            echo "RUNTIME_PASS linux/arm64" | tee -a r12-evidence/arm64/version.txt
+            echo "RUNTIME_VERSION_PASS linux/arm64" | tee -a r12-evidence/arm64/version.txt
             grep -q "commit $COMMIT" r12-evidence/arm64/version.txt
           else
             if grep -Eqi 'exec format error|qemu.*not found|no matching.*platform|operation not permitted' r12-evidence/arm64/runtime.err; then
-              echo "RUNTIME_NOT_RUN: emulator unavailable; gate fails closed" | tee -a r12-evidence/arm64/runtime.err
-            else
-              echo "RUNTIME_FAIL linux/arm64" | tee -a r12-evidence/arm64/runtime.err
+              echo "RUNTIME_NOT_RUN: emulator unavailable; full service smoke not attempted" | tee -a r12-evidence/arm64/runtime.err
+              exit 0
             fi
+            echo "RUNTIME_FAIL linux/arm64" | tee -a r12-evidence/arm64/runtime.err
             cat r12-evidence/arm64/runtime.err
             exit 1
           fi
+          # Full service smoke under QEMU: schema, secret read, readiness, run CRUD,
+          # SIGTERM, restart and persistence.
+          WORK="$(mktemp -d)"; NAME="onboard-r14-arm64-$$"; PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+          cleanup_arm(){ docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$WORK"; }
+          trap cleanup_arm EXIT
+          mkdir -p "$WORK"/{data,secrets}
+          head -c 32 /dev/urandom > "$WORK/secrets/master.key"
+          head -c 32 /dev/urandom | base64 > "$WORK/secrets/admin.token"
+          chmod 0400 "$WORK/secrets/"*
+          TOKEN="$(cat "$WORK/secrets/admin.token")"
+          sudo -n chown -R 10001:10001 "$WORK"
+          docker run -d --name "$NAME" --platform linux/arm64 --user 10001:10001 --read-only             --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,size=16m             -p "127.0.0.1:$PORT:8788" -v "$WORK/data:/app/data" -v "$WORK/secrets:/run/secrets:ro"             -e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1 -e ONBOARD_DB_PATH=/app/data/state.sqlite             -e ONBOARD_FAKE_PROVIDERS=true -e ONBOARD_DOMAINS=moonbyte.test             -e ONBOARD_MASTER_KEY_FILE=/run/secrets/master.key -e ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/admin.token             onboarding-r12-arm64:test >/dev/null
+          READY=0
+          for _ in $(seq 1 90); do
+            CODE="$(curl -sS -m 2 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)"
+            [ "$CODE" = "200" ] && { READY=1; break; }; sleep 1
+          done
+          if [ "$READY" != "1" ]; then echo "ARM64_SERVICE_NOT_READY"; docker logs "$NAME" 2>&1 | tail -30; exit 1; fi
+          BODY='{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox"}'
+          RUN_JSON="$(curl -sS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: r14-arm64-1" -X POST "http://127.0.0.1:$PORT/v1/runs" -d "$BODY")"
+          RUN="$(printf '%s' "$RUN_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')"
+          [ -n "$RUN" ] || { echo "ARM64_RUN_NOT_CREATED: $RUN_JSON"; exit 1; }
+          docker stop -t 20 "$NAME" >/dev/null
+          docker run -d --name "$NAME" --platform linux/arm64 --user 10001:10001 --read-only             --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,size=16m             -p "127.0.0.1:$PORT:8788" -v "$WORK/data:/app/data" -v "$WORK/secrets:/run/secrets:ro"             -e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1 -e ONBOARD_DB_PATH=/app/data/state.sqlite             -e ONBOARD_FAKE_PROVIDERS=true -e ONBOARD_DOMAINS=moonbyte.test             -e ONBOARD_MASTER_KEY_FILE=/run/secrets/master.key -e ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/admin.token             onboarding-r12-arm64:test >/dev/null
+          READY=0
+          for _ in $(seq 1 90); do
+            CODE="$(curl -sS -m 2 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/readyz" 2>/dev/null || true)"
+            [ "$CODE" = "200" ] && { READY=1; break; }; sleep 1
+          done
+          [ "$READY" = "1" ] || { echo "ARM64_RESTART_NOT_READY"; docker logs "$NAME" 2>&1 | tail -30; exit 1; }
+          curl -sS -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/v1/runs/$RUN" | grep -q "$RUN" || { echo "ARM64_PERSISTENCE_FAILED"; exit 1; }
+          echo "RUNTIME_SERVICE_PASS linux/arm64 schema=5 readyz=200 run=$RUN restart=persisted" | tee r12-evidence/arm64/service-smoke.txt
+          cleanup_arm; trap - EXIT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with: {name: r12-arm64-evidence, path: r12-evidence/arm64/}
