@@ -22,14 +22,29 @@ cleanup(){
   return 0
 }
 trap cleanup EXIT
-GIT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
-echo "=== build candidate $GIT_SHA ==="
-docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$GIT_SHA" -t "$IMAGE_LOCAL" "$ROOT" >/dev/null
-IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE_LOCAL")"
-docker run --rm "$IMAGE_LOCAL" version | tee "$WORK/version.txt"
-grep -q "commit $GIT_SHA" "$WORK/version.txt" && ok "image-internal commit matches $GIT_SHA" || bad "image commit mismatch"
-bash "$ROOT/scripts/supply_chain.sh" "$IMAGE_LOCAL" "$WORK/supply" >/dev/null
-ok "SBOM/provenance generated"
+if [ -n "${CANDIDATE_ARTIFACT_DIR:-}" ]; then
+  echo "=== use the already-built candidate artifact (no rebuild) ==="
+  CAND="$(cd "$CANDIDATE_ARTIFACT_DIR" && pwd)"
+  GIT_SHA="$(cat "$CAND/commit.txt")"
+  bash "$ROOT/tests/r13/candidate_identity.sh" "$CAND" || { echo "candidate identity failed"; exit 1; }
+  docker load -i "$CAND/image.tar" >/dev/null
+  IMAGE_LOCAL="account-onboarding:candidate"
+  IMAGE_ID="$(cat "$CAND/image-id.txt")"
+  test "$(docker image inspect --format '{{.Id}}' "$IMAGE_LOCAL")" = "$IMAGE_ID" || { echo "loaded image ID mismatch"; exit 1; }
+  docker run --rm "$IMAGE_LOCAL" version | tee "$WORK/version.txt"
+  grep -q "commit $GIT_SHA" "$WORK/version.txt" || { echo "candidate image commit mismatch"; exit 1; }
+  ok "same candidate artifact: image.tar, image ID, SBOM and commit verified"
+  echo "SAME_CANDIDATE_ARTIFACT=$CAND"
+else
+  GIT_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+  echo "=== build candidate $GIT_SHA ==="
+  docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$GIT_SHA" -t "$IMAGE_LOCAL" "$ROOT" >/dev/null
+  IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE_LOCAL")"
+  docker run --rm "$IMAGE_LOCAL" version | tee "$WORK/version.txt"
+  grep -q "commit $GIT_SHA" "$WORK/version.txt" && ok "image-internal commit matches $GIT_SHA" || bad "image commit mismatch"
+  bash "$ROOT/scripts/supply_chain.sh" "$IMAGE_LOCAL" "$WORK/supply" >/dev/null
+  ok "SBOM/provenance generated"
+fi
 # Isolated registry (local only).
 docker run -d --name "$ID-registry" -p "127.0.0.1:$REG_PORT:5000" registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373 >/dev/null
 for _ in $(seq 1 60); do curl -fsS "http://$REG/v2/" >/dev/null 2>&1 && break; sleep 0.5; done
