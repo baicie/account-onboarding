@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "status": "NOT_READY",
+  "release_authorized": false,
+  "blockers": [
+    {
+      "id": "browser-full-matrix",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "docker-k8s-acl",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "arm64-full",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "trusted-build-provenance",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "native-arm64",
+      "severity": "P3",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "live-ghcr-release-production",
+      "severity": "P1",
+      "status": "BLOCKED",
+      "reason": "explicit operator authorization required"
+    }
+  ],
+  "trusted_preflight": "PASS_FOR_FROZEN_CANDIDATE"
+}
