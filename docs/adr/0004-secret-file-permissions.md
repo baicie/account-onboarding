@@ -8,7 +8,7 @@ before reading it. A world/group-readable secret is a configuration error and
 startup fails closed; the error names the setting and observed mode, never the
 secret value.
 
-This is defense in depth for bind-mounted Docker secrets and host deployments.
+R14 supersedes this ADR with ADR 0005 (single entry point, symlink/TOCTOU checks, all provider fields). This is defense in depth for bind-mounted Docker secrets and host deployments.
 It does not replace the deployment checks that keep the secret directory
 non-world-readable and does not cover environment-variable secrets (which the
 process environment exposes to other same-user processes).
