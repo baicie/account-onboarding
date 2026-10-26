@@ -1,0 +1,254 @@
+#0 building with "r12" instance using docker-container driver
+
+#1 [internal] booting buildkit
+#1 pulling image moby/buildkit:buildx-stable-1
+#1 pulling image moby/buildkit:buildx-stable-1 3.8s done
+#1 creating container buildx_buildkit_r120
+#1 creating container buildx_buildkit_r120 0.3s done
+#1 DONE 4.1s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.03kB done
+#2 DONE 0.0s
+
+#3 [auth] docker/dockerfile:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#4 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#4 DONE 0.6s
+
+#5 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#5 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e done
+#5 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 2.10MB / 14.28MB 0.2s
+#5 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.3s
+#5 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.4s done
+#5 extracting sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 0.1s done
+#5 DONE 0.4s
+
+#6 [auth] library/debian:pull token for registry-1.docker.io
+#6 DONE 0.0s
+
+#7 [auth] library/golang:pull token for registry-1.docker.io
+#7 DONE 0.0s
+
+#8 [internal] load metadata for docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#8 DONE 0.4s
+
+#9 [internal] load metadata for docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#9 DONE 0.5s
+
+#10 [internal] load .dockerignore
+#10 transferring context: 376B done
+#10 DONE 0.0s
+
+#11 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#11 ...
+
+#12 [internal] load build context
+#12 transferring context: 3.95MB 0.1s done
+#12 DONE 0.1s
+
+#11 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#11 resolve docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af done
+#11 sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 32B / 32B 0.1s done
+#11 sha256:c01787a05efb1dfa4332bb0535dea99d7a0245166be679027fc2d10f335fb9ce 126B / 126B 0.1s done
+#11 sha256:f479512a7c2d16486f55ac7c53df92a7602694c24b3823b02b71d49afd4db2a7 0B / 86.70MB 0.2s
+#11 sha256:6a3f500343e7e2dfb125dab0e3da0151614ed4139d23d4e7b5b214a9b5bfccc0 1.05MB / 64.52MB 0.2s
+#11 sha256:f479512a7c2d16486f55ac7c53df92a7602694c24b3823b02b71d49afd4db2a7 19.92MB / 86.70MB 0.3s
+#11 sha256:6a3f500343e7e2dfb125dab0e3da0151614ed4139d23d4e7b5b214a9b5bfccc0 32.51MB / 64.52MB 0.3s
+#11 sha256:b2cfc367cb90bd1944554d9dcbd0ba1ae2c992ad35a1659813c2e139a81d0e48 6.29MB / 64.25MB 0.2s
+#11 sha256:f479512a7c2d16486f55ac7c53df92a7602694c24b3823b02b71d49afd4db2a7 86.70MB / 86.70MB 0.5s
+#11 sha256:6a3f500343e7e2dfb125dab0e3da0151614ed4139d23d4e7b5b214a9b5bfccc0 64.52MB / 64.52MB 0.5s
+#11 sha256:b2cfc367cb90bd1944554d9dcbd0ba1ae2c992ad35a1659813c2e139a81d0e48 42.99MB / 64.25MB 0.3s
+#11 sha256:b2cfc367cb90bd1944554d9dcbd0ba1ae2c992ad35a1659813c2e139a81d0e48 64.25MB / 64.25MB 0.5s
+#11 sha256:f479512a7c2d16486f55ac7c53df92a7602694c24b3823b02b71d49afd4db2a7 86.70MB / 86.70MB 1.6s done
+#11 sha256:6a3f500343e7e2dfb125dab0e3da0151614ed4139d23d4e7b5b214a9b5bfccc0 64.52MB / 64.52MB 1.6s done
+#11 sha256:b2cfc367cb90bd1944554d9dcbd0ba1ae2c992ad35a1659813c2e139a81d0e48 64.25MB / 64.25MB 1.5s done
+#11 sha256:aaeb1b620bf2b62e66c0d3dc56c355947e95ede0e1f00fd7c3c9d37e3db15a29 18.87MB / 23.44MB 0.2s
+#11 sha256:aaeb1b620bf2b62e66c0d3dc56c355947e95ede0e1f00fd7c3c9d37e3db15a29 23.44MB / 23.44MB 0.3s
+#11 sha256:a97cb698362f4b23d085b953f3106766a2137816fe5e17a99fdc3e48bd37e810 48.40MB / 48.40MB 0.2s
+#11 sha256:aaeb1b620bf2b62e66c0d3dc56c355947e95ede0e1f00fd7c3c9d37e3db15a29 23.44MB / 23.44MB 0.5s done
+#11 sha256:a97cb698362f4b23d085b953f3106766a2137816fe5e17a99fdc3e48bd37e810 48.40MB / 48.40MB 0.5s done
+#11 extracting sha256:a97cb698362f4b23d085b953f3106766a2137816fe5e17a99fdc3e48bd37e810
+#11 ...
+
+#13 [runtime 1/4] FROM docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#13 resolve docker.io/library/debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 done
+#13 sha256:41b2195c355367079ebad200f9591fe3c2cb886c3b1e67abaaf2090dc11c04d9 28.14MB / 28.14MB 1.4s done
+#13 extracting sha256:41b2195c355367079ebad200f9591fe3c2cb886c3b1e67abaaf2090dc11c04d9 0.7s done
+#13 DONE 2.4s
+
+#14 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
+#14 0.355 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#14 0.445 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#14 0.445 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#14 ...
+
+#11 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#11 extracting sha256:a97cb698362f4b23d085b953f3106766a2137816fe5e17a99fdc3e48bd37e810 0.9s done
+#11 DONE 3.0s
+
+#11 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#11 extracting sha256:aaeb1b620bf2b62e66c0d3dc56c355947e95ede0e1f00fd7c3c9d37e3db15a29
+#11 extracting sha256:aaeb1b620bf2b62e66c0d3dc56c355947e95ede0e1f00fd7c3c9d37e3db15a29 0.3s done
+#11 DONE 3.3s
+
+#14 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
+#14 1.304 Get:4 http://deb.debian.org/debian bookworm/main arm64 Packages [8689 kB]
+#14 2.167 Get:5 http://deb.debian.org/debian bookworm-updates/main arm64 Packages [6936 B]
+#14 2.992 Get:6 http://deb.debian.org/debian-security bookworm-security/main arm64 Packages [355 kB]
+#14 ...
+
+#11 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#11 extracting sha256:6a3f500343e7e2dfb125dab0e3da0151614ed4139d23d4e7b5b214a9b5bfccc0 1.1s done
+#11 extracting sha256:f479512a7c2d16486f55ac7c53df92a7602694c24b3823b02b71d49afd4db2a7 1.2s done
+#11 DONE 5.6s
+
+#11 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#11 extracting sha256:b2cfc367cb90bd1944554d9dcbd0ba1ae2c992ad35a1659813c2e139a81d0e48
+#11 extracting sha256:b2cfc367cb90bd1944554d9dcbd0ba1ae2c992ad35a1659813c2e139a81d0e48 2.1s done
+#11 DONE 7.7s
+
+#14 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
+#14 4.866 Fetched 9293 kB in 5s (2027 kB/s)
+#14 4.866 Reading package lists...
+#14 ...
+
+#11 [build 1/7] FROM docker.io/library/golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+#11 extracting sha256:c01787a05efb1dfa4332bb0535dea99d7a0245166be679027fc2d10f335fb9ce done
+#11 extracting sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 done
+#11 DONE 7.7s
+
+#15 [build 2/7] WORKDIR /src
+#15 ...
+
+#14 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
+#14 4.866 Reading package lists...
+#14 7.655 Reading package lists...
+#14 10.20 Building dependency tree...
+#14 10.72 Reading state information...
+#14 11.10 The following additional packages will be installed:
+#14 11.10   libssl3 openssl
+#14 11.25 The following NEW packages will be installed:
+#14 11.25   ca-certificates libssl3 openssl
+#14 11.25 The following packages will be upgraded:
+#14 11.25   tzdata
+#14 11.37 1 upgraded, 3 newly installed, 0 to remove and 0 not upgraded.
+#14 11.37 Need to get 3706 kB of archives.
+#14 11.37 After this operation, 8943 kB of additional disk space will be used.
+#14 11.37 Get:1 http://deb.debian.org/debian-security bookworm-security/main arm64 tzdata all 2026e-0+deb12u1 [306 kB]
+#14 ...
+
+#15 [build 2/7] WORKDIR /src
+#15 DONE 6.1s
+
+#14 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
+#14 11.43 Get:2 http://deb.debian.org/debian-security bookworm-security/main arm64 libssl3 arm64 3.0.22-1~deb12u2 [1829 kB]
+#14 11.50 Get:3 http://deb.debian.org/debian-security bookworm-security/main arm64 openssl arm64 3.0.22-1~deb12u2 [1410 kB]
+#14 11.52 Get:4 http://deb.debian.org/debian-security bookworm-security/main arm64 ca-certificates all 20250419~deb12u2 [161 kB]
+#14 12.11 debconf: delaying package configuration, since apt-utils is not installed
+#14 12.23 Fetched 3706 kB in 0s (14.8 MB/s)
+#14 12.36 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6090 files and directories currently installed.)
+#14 12.37 Preparing to unpack .../tzdata_2026e-0+deb12u1_all.deb ...
+#14 15.04 Unpacking tzdata (2026e-0+deb12u1) over (2026c-0+deb12u1) ...
+#14 17.20 Selecting previously unselected package libssl3:arm64.
+#14 17.20 Preparing to unpack .../libssl3_3.0.22-1~deb12u2_arm64.deb ...
+#14 17.21 Unpacking libssl3:arm64 (3.0.22-1~deb12u2) ...
+#14 17.73 Selecting previously unselected package openssl.
+#14 17.73 Preparing to unpack .../openssl_3.0.22-1~deb12u2_arm64.deb ...
+#14 17.73 Unpacking openssl (3.0.22-1~deb12u2) ...
+#14 18.12 Selecting previously unselected package ca-certificates.
+#14 18.12 Preparing to unpack .../ca-certificates_20250419~deb12u2_all.deb ...
+#14 18.12 Unpacking ca-certificates (20250419~deb12u2) ...
+#14 18.29 Setting up libssl3:arm64 (3.0.22-1~deb12u2) ...
+#14 18.30 Setting up tzdata (2026e-0+deb12u1) ...
+#14 18.84 debconf: unable to initialize frontend: Dialog
+#14 18.84 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#14 18.84 debconf: falling back to frontend: Readline
+#14 18.84 debconf: unable to initialize frontend: Readline
+#14 18.84 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/aarch64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/aarch64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/aarch64-linux-gnu/perl-base /usr/lib/aarch64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#14 18.84 debconf: falling back to frontend: Teletype
+#14 19.27 
+#14 19.27 Current default time zone: 'Etc/UTC'
+#14 19.31 Local time is now:      Mon Oct 26 08:33:39 UTC 2026.
+#14 19.31 Universal Time is now:  Mon Oct 26 08:33:39 UTC 2026.
+#14 19.31 Run 'dpkg-reconfigure tzdata' if you wish to change it.
+#14 19.31 
+#14 20.53 Setting up openssl (3.0.22-1~deb12u2) ...
+#14 20.55 Setting up ca-certificates (20250419~deb12u2) ...
+#14 21.22 debconf: unable to initialize frontend: Dialog
+#14 21.22 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#14 21.22 debconf: falling back to frontend: Readline
+#14 21.22 debconf: unable to initialize frontend: Readline
+#14 21.22 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/aarch64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/aarch64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/aarch64-linux-gnu/perl-base /usr/lib/aarch64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#14 21.22 debconf: falling back to frontend: Teletype
+#14 ...
+
+#16 [build 3/7] RUN apt-get update     && apt-get install -y --no-install-recommends gcc libc6-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
+#16 0.344 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#16 0.415 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#16 0.416 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#16 1.255 Get:4 http://deb.debian.org/debian bookworm/main arm64 Packages [8689 kB]
+#16 2.229 Get:5 http://deb.debian.org/debian bookworm-updates/main arm64 Packages [6936 B]
+#16 3.161 Get:6 http://deb.debian.org/debian-security bookworm-security/main arm64 Packages [355 kB]
+#16 4.747 Fetched 9293 kB in 4s (2237 kB/s)
+#16 4.747 Reading package lists...
+#16 7.526 Reading package lists...
+#16 10.26 Building dependency tree...
+#16 10.89 Reading state information...
+#16 11.46 gcc is already the newest version (4:12.2.0-3).
+#16 11.46 libc6-dev is already the newest version (2.36-9+deb12u14).
+#16 11.46 ca-certificates is already the newest version (20250419~deb12u2).
+#16 11.46 0 upgraded, 0 newly installed, 0 to remove and 5 not upgraded.
+#16 DONE 11.5s
+
+#17 [build 4/7] COPY go.mod go.sum ./
+#17 DONE 0.0s
+
+#18 [build 5/7] RUN go mod download
+#18 DONE 1.6s
+
+#14 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
+#14 ...
+
+#19 [build 6/7] COPY . .
+#19 DONE 0.1s
+
+#20 [build 7/7] RUN CGO_ENABLED=1 GOOS=linux go build -trimpath     -ldflags="-s -w -X github.com/baicie/account-onboarding/internal/api.Version=0.1.0 -X github.com/baicie/account-onboarding/internal/api.Commit=49cbbca7ee0798e482634620c56b7f9f7b13210e"     -o /out/onboardd ./cmd/onboardd
+#20 ...
+
+#14 [runtime 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates tzdata     && rm -rf /var/lib/apt/lists/*     && groupadd -g 10001 onboard     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard     && mkdir -p /app/data     && chown 10001:10001 /app/data
+#14 32.92 Updating certificates in /etc/ssl/certs...
+#14 54.20 148 added, 0 removed; done.
+#14 54.45 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+#14 54.56 Processing triggers for ca-certificates (20250419~deb12u2) ...
+#14 54.73 Updating certificates in /etc/ssl/certs...
+#14 74.16 0 added, 0 removed; done.
+#14 74.16 Running hooks in /etc/ca-certificates/update.d...
+#14 74.20 done.
+#14 DONE 74.9s
+
+#20 [build 7/7] RUN CGO_ENABLED=1 GOOS=linux go build -trimpath     -ldflags="-s -w -X github.com/baicie/account-onboarding/internal/api.Version=0.1.0 -X github.com/baicie/account-onboarding/internal/api.Commit=49cbbca7ee0798e482634620c56b7f9f7b13210e"     -o /out/onboardd ./cmd/onboardd
+#20 DONE 354.8s
+
+#21 [runtime 3/4] COPY --from=build /out/onboardd /app/onboardd
+#21 DONE 0.1s
+
+#22 [runtime 4/4] WORKDIR /app
+#22 DONE 0.0s
+
+#23 exporting to docker image format
+#23 exporting layers
+#23 exporting layers 0.3s done
+#23 exporting manifest sha256:d5c51c8d277165d11f61e71c737bee466679fbc82bc1f92316e9baef6ada1cd4 done
+#23 exporting config sha256:863715bb680b0ee4620f8e780602d5073ae99580abb3acc5ffed87f545a72226 done
+#23 sending tarball
+#23 sending tarball 1.9s done
+#23 DONE 2.2s
+
+#24 importing to docker
+#24 loading layer 3b7c7ecdb9b2 28.14MB / 28.14MB 1.8s done
+#24 loading layer 34894df8f4b9 3.80MB / 3.80MB 1.1s done
+#24 loading layer 6648d89ef21b 4.72MB / 4.72MB 0.1s done
+#24 loading layer 5f70bf18a086 32B / 32B 0.0s done
+#24 DONE 1.8s

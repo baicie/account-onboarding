@@ -1,0 +1,1 @@
+R15 candidate: exact Dockerfile base refs/digests; tamper probes image-id/provenance, image.tar, base mismatch all PASS; same-artifact 14/14; publish skipped.

@@ -1,0 +1,6 @@
+R15 secret materializer: tests/r15/secret_materialize.sh 5/5 local
+- read-only 0444 projection copied to private 0700 target
+- target 0400, content preserved
+- symlink source rejected
+- writable source rejected
+Docker/K8s fixture illustrative and NOT_RUN; service exact 0400/0600 unchanged.
