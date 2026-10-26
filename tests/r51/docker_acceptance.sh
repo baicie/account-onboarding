@@ -293,7 +293,7 @@ wait_http "$PORT" /readyz 200 60 && ok "/readyz 200 (schema/revocation-table/mas
 wait_health "$PROJECT-app" 90 && ok "Docker HEALTHCHECK healthy (readyz-based)" || bad "Docker HEALTHCHECK"
 docker exec "$PROJECT-app" /app/onboardd healthcheck >/dev/null 2>&1 \
   && ok "in-container 'onboardd healthcheck' exit 0" || bad "in-container healthcheck"
-[ "$(meta_schema "$PORT")" = "5" ] && ok "fresh database migrated to schema 6" || bad "fresh schema"
+[ "$(meta_schema "$PORT")" = "6" ] && ok "fresh database migrated to schema 6" || bad "fresh schema"
 [ "$(docker exec "$PROJECT-app" id -u)" = "10001" ] && ok "runs as UID 10001 (non-root)" || bad "non-root"
 [ "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$PROJECT-app")" = "true" ] \
   && ok "read-only root filesystem (HostConfig)" || bad "ReadonlyRootfs"
@@ -360,7 +360,7 @@ docker run --rm --user 0:0 -v "$WORK/v2data:/data" --entrypoint sh "$IMAGE" -c \
 run_app "$PROJECT-upgrade" "$PORT_UPGRADE" "$WORK/v2data"
 if wait_http "$PORT_UPGRADE" /readyz 200 60; then
   ok "v2 database upgraded and /readyz 200"
-  [ "$(meta_schema "$PORT_UPGRADE")" = "5" ] && ok "v2 -> schema 6 after container start" || bad "v2 upgrade schema"
+  [ "$(meta_schema "$PORT_UPGRADE")" = "6" ] && ok "v2 -> schema 6 after container start" || bad "v2 upgrade schema"
 else
   bad "v2 upgrade readyz"
   echo "--- v2 upgrade diagnostics (state/logs/permissions) ---"

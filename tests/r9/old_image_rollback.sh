@@ -4,7 +4,7 @@
 #   old image (R8 commit, schema 3, future-schema guard)
 #     -> create run/event/session, encrypted backup
 #     -> new image migrates to schema 6 and serves the data
-#     -> old image MUST refuse the schema-4 DB (rollback safety)
+#     -> old image MUST refuse the schema-6 DB (rollback safety)
 #     -> restore the pre-upgrade backup to a new volume; old image serves schema 3
 #     -> wrong key / failed restore must not overwrite valid data
 #
@@ -103,13 +103,13 @@ docker run --rm --user 0:0 -v "$WORK/upgrade:/data" --entrypoint sh "$NEW_IMAGE"
 echo "=== new version: schema 6 upgrade ==="
 run_app "$ID-new" "$NEW_IMAGE" "$PORT2" "$WORK/upgrade"
 wait_http "$PORT2" /readyz 200 90 && ok "new image upgraded DB and is ready" || bad "new ready"
-[ "$(meta_schema "$PORT2")" = "5" ] && ok "new schema is 5" || bad "new schema=$(meta_schema "$PORT2")"
+[ "$(meta_schema "$PORT2")" = "6" ] && ok "new schema is 6" || bad "new schema=$(meta_schema "$PORT2")"
 curl -sS "${AUTH[@]}" "$BASE2/v1/runs/$RUN" | grep -q '"id"' && ok "new image serves old run" || bad "new run missing"
 # Deliberate crash of the new instance before rollback.
 docker kill -s KILL "$ID-new" >/dev/null
 docker rm -f "$ID-new" >/dev/null 2>&1 || true
 
-echo "=== old image must refuse schema-4 DB ==="
+echo "=== old image must refuse schema-6 DB ==="
 run_app "$ID-oldrefuse" "$OLD_IMAGE" "$PORT" "$WORK/upgrade" || true
 sleep 5
 STATE="$(docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}}' "$ID-oldrefuse" 2>/dev/null || echo missing)"
