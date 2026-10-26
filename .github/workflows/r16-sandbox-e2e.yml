@@ -1,0 +1,77 @@
+name: r16-sandbox-e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - feat/r16-r17-final-sandbox-release-readiness
+      - feat/r17-final-release-readiness
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox-e2e:
+    name: real keycloak + mailpit + onboardd + 5 identities
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install sandbox dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq lsof openssl curl ca-certificates
+          command -v jq lsof openssl curl
+
+      - name: Start real loopback sandbox
+        env:
+          MP_PLATFORM: linux-amd64
+        run: bash tests/sandbox/up.sh
+
+      - name: Sandbox infra five-identity gate
+        run: bash tests/sandbox/verify.sh --count 5
+
+      - name: Build real onboardd
+        run: go build -trimpath -o "${RUNNER_TEMP}/onboardd" ./cmd/onboardd
+
+      - name: Real application five-identity E2E
+        env:
+          ONBOARD_SANDBOX_E2E: "1"
+          ONBOARD_BIN: ${{ runner.temp }}/onboardd
+        run: go test ./tests/e2e -v -count=1 -timeout 900s
+
+      - name: Collect evidence
+        if: always()
+        run: |
+          mkdir -p r16-evidence
+          cp -a .sandbox/logs r16-evidence/sandbox-logs 2>/dev/null || true
+          cp -a .sandbox/e2e r16-evidence/app-e2e 2>/dev/null || true
+          # Never upload credentials or unredacted mail bodies.
+          rm -rf r16-evidence/sandbox-logs/verify-*.log 2>/dev/null || true
+          find r16-evidence -type f -name '*.env' -delete 2>/dev/null || true
+
+      - name: Upload sandbox evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: r16-sandbox-evidence
+          path: r16-evidence
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Stop sandbox and purge test data
+        if: always()
+        run: bash tests/sandbox/down.sh --purge || true

@@ -66,7 +66,11 @@ verify_md5_sidecar() { # verify_md5_sidecar <file> <md5-url>...
     warn "no published md5 reachable for $(basename "$file") — skipping integrity check"
     return 0
   fi
-  got="$(md5 -q "$file" | tr -d '[:space:]')"
+  if command -v md5 >/dev/null 2>&1; then
+    got="$(md5 -q "$file" | tr -d '[:space:]')"
+  else
+    got="$(md5sum "$file" | awk '{print $1}' | tr -d '[:space:]')"
+  fi
   if [ "$got" = "$want" ]; then
     ok "checksum verified: $(basename "$file") md5=$got"
   else
