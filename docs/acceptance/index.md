@@ -23,6 +23,7 @@ live-platform success.
 | [R6.1.md](R6.1.md) | R6.1 | Container runtime closure attempt: Docker daemon unavailable, all runtime gates **NOT_RUN** | **DEPLOYMENT_BLOCKED**; no image/ID/digest |
 | [R7.md](R7.md) | R7 | Source-review closure + real container CI (Actions 40161727232, 63/63 PASS, image inspect verified) | **CONTAINER_RC_READY**; image ID only, no registry digest |
 | [REVIEW-R7.md](REVIEW-R7.md) | R7 | Independent review: PASS, P0=0/P1=0, P2 fixed | see report |
+| [R20.md](R20.md) | R20 | Trusted gate pagination/event, final audit, release candidate manifests | **R20_PARTIAL**; P2 workflow-definition trust; release NOT READY |
 | [R19.md](R19.md) | R19 | Trusted GitHub Actions gate verification, fail-closed release preflight, publish dependency | **R19_PARTIAL**; release NOT READY |
 | [R18.md](R18.md) | R18 | CI artifact security, sanitized browser evidence, release preflight/candidate manifests | **R18_PARTIAL**; release NOT READY |
 | [R16.md](R16.md) | R16 | Real Keycloak+Mailpit+onboardd 5-identity, crash/idempotency/cancel, Chromium admin core | **PASS (scoped)**; R17 PARTIAL |
