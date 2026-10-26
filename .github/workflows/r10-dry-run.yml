@@ -3,7 +3,7 @@ name: r10-release-dry-run
 # no production credentials, no Release/Tag. This is not a publish experiment.
 on:
   push:
-    branches: [feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness]
+    branches: [feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure]
   workflow_dispatch:
 permissions:
   contents: read

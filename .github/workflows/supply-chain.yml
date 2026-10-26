@@ -15,6 +15,7 @@ on:
       - feat/r14-security-release-closure
       - feat/r14-1-final-safety-closure
       - feat/r15-final-engineering-readiness
+      - feat/r15-1-outbox-security-closure
 concurrency:
   group: supply-chain
   cancel-in-progress: false
