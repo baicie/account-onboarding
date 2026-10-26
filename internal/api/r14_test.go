@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baicie/account-onboarding/internal/config"
+	"github.com/baicie/account-onboarding/internal/provider"
 	"github.com/baicie/account-onboarding/internal/storage"
 )
 
@@ -120,4 +122,17 @@ func TestAuditLimitAndMissingOperation(t *testing.T) {
 func storageResolution(version int64) storage.ExternalResolution {
 	return storage.ExternalResolution{Resolution: "UNRESOLVED", Reason: "review", ExpectedVersion: version,
 		Actor: "test:admin", RequestedAtMS: time.Now().UnixMilli()}
+}
+
+func TestAlertQueueStatusAdminOnly(t *testing.T) {
+	e := newEnv(t, nil)
+	status, raw := e.request(t, http.MethodGet, "/v1/ops/alerts/queue", nil, adminToken, nil)
+	if status != http.StatusOK || !strings.Contains(string(raw), `"pending"`) {
+		t.Fatalf("admin queue status=%d %s", status, raw)
+	}
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/alerts/queue", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer queue status=%d", status)
+	}
 }

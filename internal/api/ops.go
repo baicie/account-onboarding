@@ -140,6 +140,14 @@ func (s *Server) handleOpsMetrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleOpsAlertQueue(w http.ResponseWriter, r *http.Request) {
+	if s.AlertQueue == nil {
+		writeError(w, r, errs.New(errs.ClassInternal, "ops.alerts", "alert queue unavailable"))
+		return
+	}
+	writeJSON(w, http.StatusOK, s.AlertQueue.Status())
+}
+
 func (s *Server) handleOpsAlerts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	m, err := s.Store.OperationalMetrics(ctx)

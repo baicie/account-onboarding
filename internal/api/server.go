@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/baicie/account-onboarding/internal/alerts"
 	"github.com/baicie/account-onboarding/internal/config"
 	"github.com/baicie/account-onboarding/internal/errs"
 	"github.com/baicie/account-onboarding/internal/provider"
@@ -34,16 +35,17 @@ var Commit = "unknown"
 
 // Server wires the API to storage, the engine and providers.
 type Server struct {
-	Cfg       config.Config
-	Store     *storage.Store
-	Engine    *workflow.Engine
-	Registry  *provider.Registry
-	Secrets   *secrets.Service
-	Log       *slog.Logger
-	Signer    *security.SessionSigner
-	Redactor  *security.Redactor
-	StartedAt time.Time
-	Version   string
+	Cfg        config.Config
+	Store      *storage.Store
+	Engine     *workflow.Engine
+	Registry   *provider.Registry
+	Secrets    *secrets.Service
+	Log        *slog.Logger
+	Signer     *security.SessionSigner
+	Redactor   *security.Redactor
+	AlertQueue *alerts.Queue
+	StartedAt  time.Time
+	Version    string
 
 	pages map[string]*page
 
@@ -74,6 +76,7 @@ func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 		Log:            log,
 		Signer:         signer,
 		Redactor:       redactor,
+		AlertQueue:     alerts.NewQueue(100, time.Minute),
 		StartedAt:      time.Now().UTC(),
 		Version:        Version,
 		pages:          pages,
@@ -105,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/ops/external/{id}/audit", s.apiAuth(false, true, s.handleExternalOperationAudit))
 	mux.HandleFunc("GET /v1/ops/metrics", s.apiAuth(false, true, s.handleOpsMetrics))
 	mux.HandleFunc("GET /v1/ops/alerts", s.apiAuth(false, true, s.handleOpsAlerts))
+	mux.HandleFunc("GET /v1/ops/alerts/queue", s.apiAuth(false, true, s.handleOpsAlertQueue))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)
