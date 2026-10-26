@@ -17,7 +17,10 @@ def check(name, cond):
 perms=lambda j: (j.get("permissions") or {})
 check("candidate has contents:read", perms(cand).get("contents")=="read")
 check("candidate has no packages:write", perms(cand).get("packages")!="write")
-check("publish needs candidate", pub.get("needs")=="candidate")
+needs=pub.get("needs")
+if isinstance(needs,str): needs=[needs]
+check("publish needs candidate", "candidate" in needs)
+check("publish needs same-artifact-dry-run", "same-artifact-dry-run" in needs)
 check("publish guarded by inputs.publish==true", "inputs.publish == true" in str(pub.get("if","")))
 check("publish has protected environment", pub.get("environment")=="release")
 check("only publish has packages:write", perms(pub).get("packages")=="write")
@@ -30,6 +33,7 @@ check("publish validates allowed ref", "allowed protected tag or main" in text)
 check("publish verifies candidate commit", 'test "$(cat candidate/commit.txt)" = "$COMMIT"' in text)
 check("publish verifies image tar hash", "image_tar_sha256" in text)
 check("publish loads and re-checks binary commit", "grep -q \"commit $COMMIT\"" in text)
+check("publish requires same-artifact evidence", "Require same-artifact evidence before publish" in text and "SAME_CANDIDATE_ARTIFACT=" in text)
 failed=[n for n,ok in checks if not ok]
 for n,ok in checks:
     print(("PASS " if ok else "FAIL ")+n)
