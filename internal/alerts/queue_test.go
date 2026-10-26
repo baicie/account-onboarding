@@ -147,3 +147,25 @@ func (n *blockingNotifier) Notify(ctx context.Context, alerts []Alert) error {
 		return ctx.Err()
 	}
 }
+
+func TestQueueReconcileRearmsRecoveredRules(t *testing.T) {
+	q := NewQueue(10, 0)
+	a := Alert{Rule: "a", Severity: "warning", Message: "a"}
+	b := Alert{Rule: "b", Severity: "warning", Message: "b"}
+	q.Enqueue([]Alert{a})
+	// a recovered, b is now firing: reconcile clears a and enqueues b.
+	q.Reconcile([]Alert{b})
+	if st := q.Status(); st.Pending != 1 || st.Active != 1 {
+		t.Fatalf("reconcile status: %+v", st)
+	}
+	// a fires again: after recovery it must be re-armed, not deduped forever.
+	q.Reconcile([]Alert{a, b})
+	if st := q.Status(); st.Pending != 2 || st.Active != 2 {
+		t.Fatalf("re-arm status: %+v", st)
+	}
+	// Empty evaluation resolves all active rules and drops pending stale entries.
+	q.Reconcile(nil)
+	if st := q.Status(); st.Pending != 0 || st.Active != 0 {
+		t.Fatalf("empty reconcile status: %+v", st)
+	}
+}

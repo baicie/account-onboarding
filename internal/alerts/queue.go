@@ -55,12 +55,41 @@ func NewQueue(max int, minInterval time.Duration) *Queue {
 
 func alertKey(a Alert) string { return a.Rule + "|" + a.Severity + "|" + a.Message }
 
+// Reconcile makes the queue exactly reflect the current evaluated rules:
+// recovered conditions are cleared and re-armed conditions enqueue again. It is
+// the production control path for alert recovery.
+func (q *Queue) Reconcile(items []Alert) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	current := make(map[string]bool, len(items))
+	for _, a := range items {
+		current[alertKey(a)] = true
+	}
+	kept := q.pending[:0]
+	for _, a := range q.pending {
+		if current[alertKey(a)] {
+			kept = append(kept, a)
+		}
+	}
+	q.pending = kept
+	for key := range q.active {
+		if !current[key] {
+			delete(q.active, key)
+		}
+	}
+	q.enqueueLocked(items)
+}
+
 // Enqueue adds only currently-inactive alerts; duplicates are suppressed until
 // Resolve clears the rule. When full, the oldest pending entry is dropped and
 // counted; this keeps memory bounded under alert storms.
 func (q *Queue) Enqueue(items []Alert) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	q.enqueueLocked(items)
+}
+
+func (q *Queue) enqueueLocked(items []Alert) {
 	for _, a := range items {
 		key := alertKey(a)
 		if q.active[key] {

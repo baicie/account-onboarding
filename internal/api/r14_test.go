@@ -136,3 +136,11 @@ func TestAlertQueueStatusAdminOnly(t *testing.T) {
 		t.Fatalf("viewer queue status=%d", status)
 	}
 }
+
+func TestAlertResolveAPIRequiresActiveRule(t *testing.T) {
+	e := newEnv(t, nil)
+	status, _ := e.request(t, http.MethodPost, "/v1/ops/alerts/resolve", map[string]any{"rule": "does-not-exist"}, adminToken, nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("missing alert rule status=%d", status)
+	}
+}

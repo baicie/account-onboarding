@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -140,6 +141,28 @@ func (s *Server) handleOpsMetrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleOpsAlertResolve(w http.ResponseWriter, r *http.Request) {
+	rule := strings.TrimSpace(r.FormValue("rule"))
+	if rule == "" {
+		var req struct {
+			Rule string `json:"rule"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			rule = strings.TrimSpace(req.Rule)
+		}
+	}
+	if rule == "" {
+		writeError(w, r, errsValidation("rule is required"))
+		return
+	}
+	recovery, ok := s.AlertQueue.Resolve(rule)
+	if !ok {
+		writeError(w, r, errs.New(errs.ClassNotFound, "ops.alerts", "alert rule not active"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"resolved": true, "recovery": recovery, "status": s.AlertQueue.Status()})
+}
+
 func (s *Server) handleOpsAlertDrain(w http.ResponseWriter, r *http.Request) {
 	if s.AlertQueue == nil || s.AlertNotifier == nil {
 		writeError(w, r, errs.New(errs.ClassInternal, "ops.alerts", "alert execution not configured"))
@@ -184,6 +207,6 @@ func (s *Server) handleOpsAlerts(w http.ResponseWriter, r *http.Request) {
 		ExpectedSchema: 5, NowMS: time.Now().UTC().UnixMilli(), BackupMaxAgeMS: (7 * 24 * time.Hour).Milliseconds(),
 		ReconciliationThreshold: 10, ProviderErrorThreshold: 20,
 	})
-	s.AlertQueue.Enqueue(alerts)
+	s.AlertQueue.Reconcile(alerts)
 	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "count": len(alerts)})
 }
