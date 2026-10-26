@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure]
+    branches: [main, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification]
   pull_request:
 
 permissions:
@@ -38,6 +38,9 @@ jobs:
 
       - name: Release preflight fail-closed tests
         run: bash tests/r18/release_preflight_test.sh
+
+      - name: Publish trusted artifact revalidation tests
+        run: python3 tests/r21/publish_revalidation_test.py
 
   formatting:
     name: gofmt

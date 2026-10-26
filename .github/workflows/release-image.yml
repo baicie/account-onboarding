@@ -7,7 +7,7 @@
 name: release-image
 on:
   push:
-    branches: [feat/r9-release-hardening, feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure, feat/r16-r17-final-sandbox-release-readiness, feat/r18-final-release-candidate-closure, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure]
+    branches: [feat/r9-release-hardening, feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure, feat/r16-r17-final-sandbox-release-readiness, feat/r18-final-release-candidate-closure, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification]
   workflow_dispatch:
     inputs:
       publish:
@@ -249,6 +249,18 @@ jobs:
           grep -q '^SAME_CANDIDATE_ARTIFACT=' same-artifact-evidence/dry-run.log
           grep -qE '^SUMMARY pass=[0-9]+ fail=0' same-artifact-evidence/dry-run.log
           grep -q 'account-onboarding:candidate' same-artifact-evidence/dry-run.log
+      - name: Download and revalidate trusted preflight evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: r19-trusted-preflight-${{ github.sha }}
+          path: trusted-preflight
+      - name: Revalidate trusted preflight before any publish step
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_trusted_artifact.py \
+            --preflight trusted-preflight/trusted-preflight.json \
+            --candidate candidate --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
       - name: Verify candidate integrity
         run: |
           set -euo pipefail
