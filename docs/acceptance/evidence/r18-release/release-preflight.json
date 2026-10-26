@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "commit": "73fc6aab011ebc445fa4dfd494e2112f3f8630bb",
+  "candidate_image_tar_sha256": "be53eae5814f27b424fdb7ce200dc8c581fa8e19ae6de25023a367e10f515772",
+  "candidate_image_id": "sha256:06fcfc79dcedafa3cd86be17d271f20f078aa6229aab1e1ca1593e15c510e9db",
+  "sbom_sha256": "042bc23161c3bf269d15624f6ea281316c99906b84c3557a53a8e709e55e6d12",
+  "provenance_commit": "73fc6aab011ebc445fa4dfd494e2112f3f8630bb",
+  "gates": {
+    "go_unit_race": "PASS",
+    "provider_contract": "PASS",
+    "sandbox_infra": "PASS",
+    "application_e2e": "PASS",
+    "browser_admin_core": "PASS",
+    "backup_restore": "PASS",
+    "supply_chain": "PASS",
+    "same_artifact": "PASS",
+    "arm64_service": "PASS",
+    "staging_acceptance": "PASS",
+    "authorized_live": "NOT_RUN",
+    "ghcr_publish": "NOT_RUN",
+    "github_release": "NOT_RUN",
+    "production_deploy": "NOT_RUN"
+  },
+  "blockers": [],
+  "release_authorized": false,
+  "note": "PREFLIGHT ONLY. Release requires a separate operator approval; this tool never publishes, tags, merges, or deploys."
+}

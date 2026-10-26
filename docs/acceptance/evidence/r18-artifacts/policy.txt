@@ -1,0 +1,3 @@
+R18 artifact policy: legacy r16-sandbox-evidence artifacts deleted from 5 runs (API verified empty).
+New sandbox artifact allowlist: only evidence-*.json + summary; upload gated on allowlist success.
+Browser artifact: only sanitized browser-evidence.json; raw test-results/report/trace/HAR/screenshots not uploaded.

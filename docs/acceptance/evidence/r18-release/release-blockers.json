@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "status": "NOT_READY",
+  "blockers": [
+    {
+      "id": "browser-full-matrix",
+      "severity": "P2",
+      "status": "NOT_RUN",
+      "reason": "external ops/alerts/two-context/session matrix not executed"
+    },
+    {
+      "id": "docker-k8s-acl",
+      "severity": "P2",
+      "status": "NOT_RUN",
+      "reason": "no Docker/Kind runner in this round"
+    },
+    {
+      "id": "arm64-full",
+      "severity": "P2",
+      "status": "NOT_RUN",
+      "reason": "only QEMU service smoke, no full staging/backup"
+    },
+    {
+      "id": "native-arm64",
+      "severity": "P3",
+      "status": "BLOCKED",
+      "reason": "no native arm64 runner"
+    },
+    {
+      "id": "buildkit-slsa",
+      "severity": "P2",
+      "status": "NOT_RUN",
+      "reason": "custom provenance only, no trusted builder attestation"
+    },
+    {
+      "id": "live-authorization",
+      "severity": "P1",
+      "status": "BLOCKED",
+      "reason": "operator authorization required"
+    },
+    {
+      "id": "ghcr-release-production",
+      "severity": "P1",
+      "status": "BLOCKED",
+      "reason": "explicitly prohibited without operator approval"
+    }
+  ],
+  "preflight_verdict": "PASS_FOR_FROZEN_CANDIDATE_ONLY",
+  "release_authorized": false
+}
