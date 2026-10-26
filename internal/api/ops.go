@@ -140,6 +140,24 @@ func (s *Server) handleOpsMetrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleOpsAlertDrain(w http.ResponseWriter, r *http.Request) {
+	if s.AlertQueue == nil || s.AlertNotifier == nil {
+		writeError(w, r, errs.New(errs.ClassInternal, "ops.alerts", "alert execution not configured"))
+		return
+	}
+	sent, err := s.AlertQueue.Drain(r.Context(), s.AlertNotifier)
+	if err != nil {
+		switch {
+		case errors.Is(err, alerts.ErrRateLimited), errors.Is(err, alerts.ErrDrainInProgress):
+			writeError(w, r, errs.New(errs.ClassConflict, "ops.alerts", err.Error()))
+		default:
+			writeError(w, r, err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sent": sent, "status": s.AlertQueue.Status()})
+}
+
 func (s *Server) handleOpsAlertQueue(w http.ResponseWriter, r *http.Request) {
 	if s.AlertQueue == nil {
 		writeError(w, r, errs.New(errs.ClassInternal, "ops.alerts", "alert queue unavailable"))
@@ -166,5 +184,6 @@ func (s *Server) handleOpsAlerts(w http.ResponseWriter, r *http.Request) {
 		ExpectedSchema: 5, NowMS: time.Now().UTC().UnixMilli(), BackupMaxAgeMS: (7 * 24 * time.Hour).Milliseconds(),
 		ReconciliationThreshold: 10, ProviderErrorThreshold: 20,
 	})
+	s.AlertQueue.Enqueue(alerts)
 	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "count": len(alerts)})
 }

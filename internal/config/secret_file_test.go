@@ -25,7 +25,7 @@ func TestSecureSecretFileModes(t *testing.T) {
 		ok   bool
 	}{
 		{0o400, true}, {0o600, true},
-		{0o644, false}, {0o660, false}, {0o666, false}, {0o640, false},
+		{0o644, false}, {0o660, false}, {0o666, false}, {0o640, false}, {0o450, false},
 	} {
 		t.Run(tc.mode.String(), func(t *testing.T) {
 			p := writeMode(t, tc.mode, "secret-value")

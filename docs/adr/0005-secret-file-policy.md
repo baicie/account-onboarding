@@ -7,7 +7,7 @@ admin/site passwords, Keycloak admin password/admin client/client secret, GitHub
 token, WorkBuddy token, OIDC client secret) go through one entry point:
 
 - must be a regular non-symlink file;
-- mode must have no group/other bits (0400/0450/0600 are acceptable);
+- mode must have no group/other bits (0400/0600 are accepted; 0450 is rejected (no group bits));
 - size 1..64 KiB;
 - the opened file descriptor is re-statted and compared with the pre-open inode
   (`os.SameFile`), so a path swap between check and read is rejected;

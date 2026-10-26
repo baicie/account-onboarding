@@ -151,7 +151,7 @@ jobs:
           path: same-artifact-evidence/
 
   publish:
-    needs: candidate
+    needs: [candidate, same-artifact-dry-run]
     if: ${{ inputs.publish == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -179,6 +179,17 @@ jobs:
         with:
           name: release-candidate-${{ github.sha }}
           path: candidate
+      - name: Download same-artifact dry-run evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: same-artifact-dry-run-evidence
+          path: same-artifact-evidence
+      - name: Require same-artifact evidence before publish
+        run: |
+          set -euo pipefail
+          grep -q '^SAME_CANDIDATE_ARTIFACT=' same-artifact-evidence/dry-run.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' same-artifact-evidence/dry-run.log
+          grep -q 'account-onboarding:candidate' same-artifact-evidence/dry-run.log
       - name: Verify candidate integrity
         run: |
           set -euo pipefail

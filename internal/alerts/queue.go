@@ -10,6 +10,7 @@ import (
 )
 
 var ErrRateLimited = errors.New("alerts: notification retry rate-limited")
+var ErrDrainInProgress = errors.New("alerts: drain already in progress")
 
 type QueueStatus struct {
 	Active         int       `json:"active"`
@@ -39,6 +40,7 @@ type Queue struct {
 	sent        uint64
 	lastError   string
 	lastAttempt time.Time
+	draining    bool
 }
 
 func NewQueue(max int, minInterval time.Duration) *Queue {
@@ -66,7 +68,9 @@ func (q *Queue) Enqueue(items []Alert) {
 			continue
 		}
 		if len(q.pending) >= q.max {
+			dropped := q.pending[0]
 			q.pending = q.pending[1:]
+			delete(q.active, alertKey(dropped))
 			q.dropped++
 		}
 		q.pending = append(q.pending, a)
@@ -80,6 +84,15 @@ func (q *Queue) Resolve(rule string) (Alert, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	found := false
+	kept := q.pending[:0]
+	for _, a := range q.pending {
+		if strings.HasPrefix(alertKey(a), rule+"|") {
+			found = true
+			continue
+		}
+		kept = append(kept, a)
+	}
+	q.pending = kept
 	for key := range q.active {
 		if strings.HasPrefix(key, rule+"|") {
 			delete(q.active, key)
@@ -97,6 +110,10 @@ func (q *Queue) Resolve(rule string) (Alert, bool) {
 // are not re-sent until Resolve.
 func (q *Queue) Drain(ctx context.Context, n Notifier) (int, error) {
 	q.mu.Lock()
+	if q.draining {
+		q.mu.Unlock()
+		return 0, ErrDrainInProgress
+	}
 	if q.now().Sub(q.lastAttempt) < q.minInterval {
 		q.mu.Unlock()
 		return 0, ErrRateLimited
@@ -105,6 +122,7 @@ func (q *Queue) Drain(ctx context.Context, n Notifier) (int, error) {
 		q.mu.Unlock()
 		return 0, nil
 	}
+	q.draining = true
 	batch := append([]Alert(nil), q.pending...)
 	q.lastAttempt = q.now()
 	q.mu.Unlock()
@@ -112,10 +130,12 @@ func (q *Queue) Drain(ctx context.Context, n Notifier) (int, error) {
 		q.mu.Lock()
 		q.lastError = err.Error()
 		q.lastAttempt = q.now()
+		q.draining = false
 		q.mu.Unlock()
 		return 0, fmt.Errorf("alerts: notify: %w", err)
 	}
 	q.mu.Lock()
+	q.draining = false
 	q.pending = q.pending[len(batch):]
 	q.sent += uint64(len(batch))
 	q.lastError = ""

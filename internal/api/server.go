@@ -35,17 +35,18 @@ var Commit = "unknown"
 
 // Server wires the API to storage, the engine and providers.
 type Server struct {
-	Cfg        config.Config
-	Store      *storage.Store
-	Engine     *workflow.Engine
-	Registry   *provider.Registry
-	Secrets    *secrets.Service
-	Log        *slog.Logger
-	Signer     *security.SessionSigner
-	Redactor   *security.Redactor
-	AlertQueue *alerts.Queue
-	StartedAt  time.Time
-	Version    string
+	Cfg           config.Config
+	Store         *storage.Store
+	Engine        *workflow.Engine
+	Registry      *provider.Registry
+	Secrets       *secrets.Service
+	Log           *slog.Logger
+	Signer        *security.SessionSigner
+	Redactor      *security.Redactor
+	AlertQueue    *alerts.Queue
+	AlertNotifier alerts.Notifier
+	StartedAt     time.Time
+	Version       string
 
 	pages map[string]*page
 
@@ -77,6 +78,7 @@ func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 		Signer:         signer,
 		Redactor:       redactor,
 		AlertQueue:     alerts.NewQueue(100, time.Minute),
+		AlertNotifier:  &alerts.RecordingNotifier{},
 		StartedAt:      time.Now().UTC(),
 		Version:        Version,
 		pages:          pages,
@@ -109,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/ops/metrics", s.apiAuth(false, true, s.handleOpsMetrics))
 	mux.HandleFunc("GET /v1/ops/alerts", s.apiAuth(false, true, s.handleOpsAlerts))
 	mux.HandleFunc("GET /v1/ops/alerts/queue", s.apiAuth(false, true, s.handleOpsAlertQueue))
+	mux.HandleFunc("POST /v1/ops/alerts/drain", s.apiAuth(true, true, s.handleOpsAlertDrain))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)
