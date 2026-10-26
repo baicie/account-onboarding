@@ -14,6 +14,7 @@ SBOM="$CAND/supply/sbom.cdx.json"
 for f in "$COMMIT_FILE" "$PROV" "$TAR" "$IMGID" "$SBOM"; do
   test -s "$f" || { echo "FAIL missing artifact $f" >&2; exit 1; }
 done
+export CANDIDATE_ROOT="$ROOT"
 python3 - "$CAND" "$COMMIT_FILE" "$PROV" "$TAR" "$IMGID" "$SBOM" <<'PY'
 import hashlib,json,os,shutil,sys,subprocess
 cand,commit_file,prov_file,tar,imgid_file,sbom=sys.argv[1:]
@@ -32,9 +33,22 @@ if p.get('image_tar_sha256') != sha(tar): raise SystemExit('FAIL image tar hash 
 if p.get('sbom_sha256') != sha(sbom): raise SystemExit('FAIL SBOM hash mismatch')
 for key in ('base_image_refs','base_image_digests'):
     if not p.get(key): raise SystemExit(f'FAIL missing {key}')
+# Base digests must exactly match the immutable refs in the Dockerfile, not
+# merely contain an @sha256 substring.
+dockerfile=open(os.path.join(os.environ['CANDIDATE_ROOT'],'Dockerfile')).read()
+expected=[]
+for m in __import__('re').finditer(r'^ARG (GOLANG_IMAGE|RUNTIME_IMAGE)=(\S+)$', dockerfile, __import__('re').M):
+    expected.append(m.group(2))
+if len(expected)!=2: raise SystemExit('FAIL Dockerfile must pin two base images')
+refs={}
+for part in str(p['base_image_refs']).split():
+    if '=' in part:
+        k,v=part.split('=',1); refs[k]=v
+expected_refs={'golang_image':expected[0], 'runtime_image':expected[1]}
+if refs != expected_refs: raise SystemExit(f'FAIL base refs {refs} != Dockerfile {expected_refs}')
 digests=p['base_image_digests']
 if isinstance(digests,str): digests=[x.strip() for x in digests.split(';') if x.strip()]
-if not digests or not all('@sha256:' in str(x) for x in digests): raise SystemExit('FAIL base image digest not pinned')
+if sorted(digests) != sorted(expected): raise SystemExit(f'FAIL base digests {digests} != Dockerfile {expected}')
 # Bind metadata to actual image bytes: load the saved tar and compare Docker's
 # content-addressed image ID. Metadata agreement alone is not sufficient.
 if not shutil.which('docker'):
@@ -64,4 +78,17 @@ p=json.load(open(sys.argv[1])); p['image_id']='sha256:'+'0'*64
 json.dump(p,open(sys.argv[1],'w'))
 PY
 if bash "$0" "$TMP" >/dev/null 2>&1; then echo "FAIL tampered candidate accepted" >&2; exit 1; fi
-echo "PASS candidate identity rejects tampered provenance"
+echo "PASS candidate identity rejects image-id/provenance tamper"
+cp -a "$CAND/image-id.txt" "$TMP/image-id.txt"; cp -a "$CAND/candidate-provenance.json" "$TMP/candidate-provenance.json"
+printf 'X' >> "$TMP/image.tar"
+if bash "$0" "$TMP" >/dev/null 2>&1; then echo "FAIL tampered candidate tar accepted" >&2; exit 1; fi
+echo "PASS candidate identity rejects image.tar tamper"
+cp -a "$CAND/image.tar" "$TMP/image.tar"
+python3 - "$TMP/candidate-provenance.json" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1])); p['base_image_digests']='golang@sha256:'+'1'*64+'; debian@sha256:'+'2'*64
+json.dump(p,open(sys.argv[1],'w'))
+PY
+if bash "$0" "$TMP" >/dev/null 2>&1; then echo "FAIL mismatched base digest accepted" >&2; exit 1; fi
+echo "PASS candidate identity rejects base digest mismatch"
+rm -rf "$TMP"
