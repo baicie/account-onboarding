@@ -16,7 +16,7 @@ DEFAULT_WORKFLOWS = {
     "supply-chain": (".github/workflows/supply-chain.yml", ["supply_chain"]),
     "staging-acceptance": (".github/workflows/staging-acceptance.yml", ["staging_acceptance"]),
 }
-TRUSTED_EVENTS = {"push", "workflow_dispatch"}
+TRUSTED_EVENTS = {"push"}  # manual dispatch is not a release gate by default
 
 def api_get(url, token):
     req = urllib.request.Request(url, headers={
@@ -27,15 +27,44 @@ def api_get(url, token):
     })
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            return json.loads(r.read())
+            return json.loads(r.read()), r.headers.get("Link", "")
     except Exception as ex:
         raise RuntimeError(f"GitHub API failure: {ex}")
+
+def next_link(link_header):
+    for part in (link_header or "").split(","):
+        if 'rel="next"' in part:
+            return part.split(";")[0].strip().strip("<>")
+    return ""
+
+def fetch_all_runs(base_url, token, max_pages=20):
+    runs, seen, url, pages = [], set(), base_url, 0
+    while url:
+        pages += 1
+        if pages > max_pages:
+            raise RuntimeError("GitHub API pagination exceeded limit")
+        data, link = api_get(url, token)
+        for r in data.get("workflow_runs", []):
+            rid = r.get("id")
+            if rid in seen:
+                continue
+            seen.add(rid)
+            runs.append(r)
+        nxt = next_link(link)
+        if nxt:
+            if nxt in (url,):
+                raise RuntimeError("GitHub API pagination loop")
+            url = nxt
+        else:
+            break
+    return runs
 
 def build_report(repo, commit, token, api_base="https://api.github.com", workflows=None):
     workflows = workflows or DEFAULT_WORKFLOWS
     gates, runs, blockers = {}, {}, []
-    data = api_get(f"{api_base}/repos/{repo}/actions/runs?head_sha={commit}&per_page=100", token)
-    all_runs = data.get("workflow_runs", [])
+    all_runs = fetch_all_runs(
+        f"{api_base}/repos/{repo}/actions/runs?head_sha={commit}&per_page=100&page=1",
+        token)
     for wf, spec in workflows.items():
         path, gate_names = spec
         candidates = [r for r in all_runs

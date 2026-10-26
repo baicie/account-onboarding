@@ -19,6 +19,7 @@ on:
       - feat/r16-r17-final-sandbox-release-readiness
       - feat/r18-final-release-candidate-closure
       - feat/r19-trusted-release-full-acceptance
+      - feat/r20-final-product-release-closure
 concurrency:
   group: supply-chain
   cancel-in-progress: false
