@@ -11,9 +11,12 @@ done
 if find "$DIR" -type f | grep -qE '\.(db|sqlite|sqlite3|pem|key)$'; then
   echo "FORBIDDEN database/key extension" >&2; bad=1
 fi
-if grep -RInE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|admin-token|master-key|client_secret|keycloak-admin-password' "$DIR" >/tmp/artifact-secret-hits.txt 2>/dev/null; then
-  echo "FORBIDDEN secret-looking content:" >&2; cat /tmp/artifact-secret-hits.txt >&2; bad=1
+if grep -RIlE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|admin-token|master-key|client_secret|keycloak-admin-password' "$DIR" >/tmp/artifact-secret-files.txt 2>/dev/null; then
+  echo "FORBIDDEN secret-looking content in files (contents not printed):" >&2
+  sed "s|$DIR/||" /tmp/artifact-secret-files.txt >&2
+  bad=1
 fi
+rm -f /tmp/artifact-secret-files.txt
 # Only sanitized evidence JSON plus a generated summary are allowed.
 while IFS= read -r f; do
   case "$(basename "$f")" in

@@ -36,6 +36,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends jq lsof openssl curl ca-certificates
           command -v jq lsof openssl curl
 
+      - name: Artifact policy tests
+        run: bash tests/sandbox/artifact_allowlist_test.sh
+
       - name: Start real loopback sandbox
         env:
           MP_PLATFORM: linux-amd64
@@ -64,10 +67,14 @@ jobs:
             cp "$f" "r16-evidence/evidence-$i-$(basename "$f")"
           done
           printf 'Sandbox app E2E evidence: %s test(s). Raw credentials, state DBs, admin tokens and logs are intentionally excluded.\n' "$i" > r16-evidence/summary.txt
-          bash tests/sandbox/artifact_allowlist.sh r16-evidence
+
+      - name: Enforce artifact allowlist
+        id: allowlist
+        if: always()
+        run: bash tests/sandbox/artifact_allowlist.sh r16-evidence
 
       - name: Upload sandbox evidence
-        if: always()
+        if: always() && steps.allowlist.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: r16-sandbox-evidence
