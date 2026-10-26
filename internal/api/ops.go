@@ -161,7 +161,13 @@ func (s *Server) handleOpsAlertResolve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, errs.New(errs.ClassNotFound, "ops.alerts", "alert rule not active"))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"resolved": true, "recovery": recovery, "status": s.AlertQueue.Status()})
+	durableResolved, err := s.Store.ResolveAlertOutbox(r.Context(), rule, time.Now().UTC().UnixMilli())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"resolved": true, "recovery": recovery,
+		"outbox_resolved": durableResolved, "status": s.AlertQueue.Status()})
 }
 
 func (s *Server) handleOpsAlertDrain(w http.ResponseWriter, r *http.Request) {

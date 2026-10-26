@@ -41,6 +41,7 @@ type env struct {
 	reg    *provider.Registry
 	world  *fake.World
 	sec    *secrets.Service
+	server *api.Server
 	log    *slog.Logger
 	signer *security.SessionSigner
 }
@@ -117,7 +118,7 @@ func newEnv(t *testing.T, mutate func(*config.Config, *provider.Registry)) *env 
 		_ = store.Close()
 	})
 	return &env{ts: ts, client: client, cfg: cfg, store: store, engine: engine, reg: reg,
-		world: world, sec: sec, log: log, signer: signer}
+		server: server, world: world, sec: sec, log: log, signer: signer}
 }
 
 func (e *env) request(t *testing.T, method, path string, body any, token string, headers map[string]string) (int, []byte) {

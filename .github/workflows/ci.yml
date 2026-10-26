@@ -33,6 +33,9 @@ jobs:
       - name: Provider contract tests
         run: go test ./internal/provider/... ./internal/mailx/... -race -count=1
 
+      - name: Secret materializer tests
+        run: bash tests/r15/secret_materialize.sh
+
   formatting:
     name: gofmt
     runs-on: ubuntu-latest

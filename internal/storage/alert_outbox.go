@@ -92,10 +92,9 @@ func (s *Store) EnqueueAlertOutbox(ctx context.Context, items []AlertOutboxInput
 		res, err := tx.ExecContext(ctx, `INSERT INTO alert_outbox
 			(id,fingerprint,rule,severity,message,status,attempts,next_attempt_ms,created_at_ms,updated_at_ms)
 			SELECT ?,?,?,?,?,'PENDING',0,?,?,?
-			WHERE NOT EXISTS (SELECT 1 FROM alert_outbox WHERE fingerprint=? AND status IN (?,?,?))`,
+			WHERE NOT EXISTS (SELECT 1 FROM alert_outbox WHERE fingerprint=? AND status != ?)`,
 			newAlertOutboxID(time.UnixMilli(nowMS)), in.Fingerprint, in.Rule, in.Severity, in.Message,
-			nowMS, nowMS, nowMS, in.Fingerprint,
-			AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
+			nowMS, nowMS, nowMS, in.Fingerprint, AlertOutboxResolved)
 		if err != nil {
 			return 0, err
 		}
@@ -261,8 +260,7 @@ func (s *Store) ResolveAlertOutbox(ctx context.Context, rule string, nowMS int64
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
-		WHERE rule=? AND status IN (?,?,?)`, AlertOutboxResolved, nowMS, rule,
-		AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
+		WHERE rule=? AND status != ?`, AlertOutboxResolved, nowMS, rule, AlertOutboxResolved)
 	if err != nil {
 		return 0, err
 	}
@@ -286,7 +284,7 @@ func (s *Store) ResolveAlertOutboxMissing(ctx context.Context, currentRules []st
 	}
 	var n int64
 	for _, it := range active {
-		if it.Status == AlertOutboxDelivered || it.Status == AlertOutboxResolved || it.Status == AlertOutboxDeadLetter || current[it.Rule] {
+		if it.Status == AlertOutboxResolved || current[it.Rule] {
 			continue
 		}
 		tx, err := s.writeDB.BeginTx(ctx, nil)

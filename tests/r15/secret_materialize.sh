@@ -11,7 +11,14 @@ if bash "$ROOT/scripts/materialize_secrets.sh" --source-dir "$W/src" --target-di
 [ "$(cat "$W/dst/token")" = "secret-value" ] && ok "content preserved" || bad "content"
 ln -s "$W/src/token" "$W/src/link"
 if bash "$ROOT/scripts/materialize_secrets.sh" --source-dir "$W/src" --target-dir "$W/dst2" >/dev/null 2>&1; then bad "symlink accepted"; else ok "symlink rejected"; fi
-rm -f "$W/src/link"; printf 'x' > "$W/src/writable"; chmod 0666 "$W/src/writable"
-if bash "$ROOT/scripts/materialize_secrets.sh" --source-dir "$W/src" --target-dir "$W/dst3" >/dev/null 2>&1; then bad "writable source accepted"; else ok "writable source rejected"; fi
+rm -f "$W/src/link"
+for mode in 0600 0660 0620 0460 0666; do
+  d="$W/mode-$mode"; mkdir -p "$d"; printf 'x' > "$d/token"; chmod "$mode" "$d/token"
+  if bash "$ROOT/scripts/materialize_secrets.sh" --source-dir "$d" --target-dir "$W/out-$mode" >/dev/null 2>&1; then
+    bad "writable source $mode accepted"
+  else
+    ok "writable source $mode rejected"
+  fi
+done
 echo "SUMMARY pass=$P fail=$F"
 [ "$F" = "0" ]

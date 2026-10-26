@@ -55,6 +55,33 @@ func TestAlertOutboxAtLeastOnceLifecycle(t *testing.T) {
 	}
 }
 
+func TestAlertOutboxDeliveredStaysDedupedUntilResolve(t *testing.T) {
+	s := outboxStore(t)
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	in := []AlertOutboxInput{{Fingerprint: "fp-delivered", Rule: "delivered", Severity: "warning", Message: "m"}}
+	_, _ = s.EnqueueAlertOutbox(ctx, in, now)
+	items, _, err := s.ClaimAlertOutbox(ctx, "owner", 1, time.Minute, now)
+	if err != nil || len(items) != 1 {
+		t.Fatal(err)
+	}
+	if err := s.CompleteAlertOutbox(ctx, items[0].DeliveryID, "owner", true, now+1, 0, 200, "", 3); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.EnqueueAlertOutbox(ctx, in, now+2); err != nil || n != 0 {
+		t.Fatalf("delivered alert re-enqueued: n=%d err=%v", n, err)
+	}
+	if items, _, _ := s.ClaimAlertOutbox(ctx, "owner", 1, time.Minute, now+3); len(items) != 0 {
+		t.Fatalf("delivered alert reclaimed: %d", len(items))
+	}
+	if n, err := s.ResolveAlertOutbox(ctx, "delivered", now+4); err != nil || n != 1 {
+		t.Fatalf("resolve delivered = %d %v", n, err)
+	}
+	if n, err := s.EnqueueAlertOutbox(ctx, in, now+5); err != nil || n != 1 {
+		t.Fatalf("re-arm after resolve = %d %v", n, err)
+	}
+}
+
 func TestAlertOutboxRetryBackoffAndDeadLetter(t *testing.T) {
 	s := outboxStore(t)
 	ctx := context.Background()

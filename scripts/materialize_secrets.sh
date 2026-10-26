@@ -29,9 +29,11 @@ for f in "$SRC"/*; do
   [ -L "$f" ] && { echo "refusing symlink source $name" >&2; exit 1; }
   [ -f "$f" ] || { echo "refusing non-regular source $name" >&2; exit 1; }
   mode="$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f")"
-  # Reject writable source projections; read-only bits are acceptable because
-  # the destination is private 0400/0600 and owned by the runtime user.
-  case "$mode" in *2|*3|*6|*7) echo "refusing writable source $name mode $mode" >&2; exit 1 ;; esac
+  # Reject all owner/group/other write bits (0o222). Checking the last digit
+  # alone incorrectly accepted 0600/0660/0620/0460.
+  if (( (8#$mode & 8#222) != 0 )); then
+    echo "refusing writable source $name mode $mode" >&2; exit 1
+  fi
   out="$DST/$name.new.$$"
   cp -- "$f" "$out"
   chmod 0400 "$out"
