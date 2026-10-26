@@ -118,6 +118,7 @@ jobs:
           RUN="$(printf '%s' "$RUN_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')"
           [ -n "$RUN" ] || { echo "ARM64_RUN_NOT_CREATED: $RUN_JSON"; exit 1; }
           docker stop -t 20 "$NAME" >/dev/null
+          docker rm -f "$NAME" >/dev/null
           docker run -d --name "$NAME" --platform linux/arm64 --user 10001:10001 --read-only             --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,size=16m             -p "127.0.0.1:$PORT:8788" -v "$WORK/data:/app/data" -v "$WORK/secrets:/run/secrets:ro"             -e ONBOARD_LISTEN=0.0.0.0:8788 -e ONBOARD_ALLOW_PUBLIC_LISTEN=1 -e ONBOARD_DB_PATH=/app/data/state.sqlite             -e ONBOARD_FAKE_PROVIDERS=true -e ONBOARD_DOMAINS=moonbyte.test             -e ONBOARD_MASTER_KEY_FILE=/run/secrets/master.key -e ONBOARD_ADMIN_TOKEN_FILE=/run/secrets/admin.token             onboarding-r12-arm64:test >/dev/null
           READY=0
           for _ in $(seq 1 90); do
