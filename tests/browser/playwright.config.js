@@ -9,7 +9,7 @@ module.exports = defineConfig({
     browserName: 'chromium',
     ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
     headless: true,
-    trace: 'retain-on-failure',
+    trace: 'off',
     screenshot: 'only-on-failure'
   }
 });

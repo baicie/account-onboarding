@@ -34,6 +34,10 @@ jobs:
         env:
           PLAYWRIGHT_CHANNEL: ""
         run: bash tests/browser/run.sh
+      - name: Remove token-bearing traces before upload
+        if: always()
+        run: find tests/browser/test-results -name 'trace.zip' -delete 2>/dev/null || true
+
       - name: Upload Playwright failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
