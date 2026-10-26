@@ -1,0 +1,71 @@
+{
+  "completed": 5,
+  "data_dir": "/tmp/r16src/.sandbox/e2e/run-20261026T111444-af825c",
+  "environment": "LOCAL SANDBOX (Keycloak http://127.0.0.1:8180 realm moonbyte-test, Mailpit http://127.0.0.1:8025)",
+  "generated_at": "2026-10-26T11:14:48Z",
+  "keycloak_window_users": 5,
+  "log": "/tmp/r16src/.sandbox/e2e/run-20261026T111444-af825c/onboardd.log",
+  "p50_ms": 2062,
+  "p95_ms": 3479,
+  "requested": 5,
+  "rows": [
+    {
+      "index": 1,
+      "run_id": "00f08f1e-84b9-42a5-8878-407671c164d7",
+      "status": "COMPLETED",
+      "subject": "8e3a5fe2-8911-4bca-930a-6ed2e3959f91",
+      "email": "onboard00f08f1e84b9@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 763
+    },
+    {
+      "index": 2,
+      "run_id": "7dde4e4d-050f-4c39-b652-000e966a761e",
+      "status": "COMPLETED",
+      "subject": "23cc3c18-83e4-4053-80b7-565728e86890",
+      "email": "onboard7dde4e4d050f@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 759
+    },
+    {
+      "index": 3,
+      "run_id": "0b820a35-d115-4a89-bef8-eac5a88d2ef4",
+      "status": "COMPLETED",
+      "subject": "8bfed49e-ecf9-456e-8928-c36a95d0e91d",
+      "email": "onboard0b820a35d115@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 2062
+    },
+    {
+      "index": 4,
+      "run_id": "4007171e-943f-4a55-a007-d42b76d1a550",
+      "status": "COMPLETED",
+      "subject": "254cb432-a794-4eee-a76b-47f103892de7",
+      "email": "onboard4007171e943f@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 2215
+    },
+    {
+      "index": 5,
+      "run_id": "d56ee8de-357b-4881-9356-98926b8f51cb",
+      "status": "COMPLETED",
+      "subject": "67c1abed-1fd8-4489-bc30-8433e775a9b2",
+      "email": "onboardd56ee8de357b@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 3479
+    }
+  ],
+  "template": "sandbox-email-verify-oidc",
+  "test": "E2E-001 five sandbox identities",
+  "userinfo_valid": 5
+}

@@ -1,0 +1,17 @@
+{
+  "credential_userinfo_status": 200,
+  "environment": "LOCAL SANDBOX (Keycloak http://127.0.0.1:8180, Mailpit http://127.0.0.1:8025)",
+  "final_status": "COMPLETED",
+  "first_status": 202,
+  "generated_at": "2026-10-26T11:14:54Z",
+  "idempotency_key": "r2-idempotency-5b7f0407",
+  "keycloak_subject": "910b8e0c-4dfc-429f-9553-ebba4a09fa44",
+  "keycloak_users": 1,
+  "mailbox": "onboardd960e360aeaa@moonbyte.top",
+  "run_created_events": 1,
+  "run_id": "d960e360-aeaa-4404-9148-002e8f0b9373",
+  "same_run_id": true,
+  "second_status": 202,
+  "test": "E2E-002 idempotent run creation",
+  "verification_emails": 1
+}

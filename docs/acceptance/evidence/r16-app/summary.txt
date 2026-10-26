@@ -1,0 +1,1 @@
+Sandbox app E2E evidence: 4 test(s). Raw credentials, state DBs, admin tokens and logs are intentionally excluded.

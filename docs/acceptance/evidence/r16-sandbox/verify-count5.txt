@@ -1,0 +1,10 @@
+SANDBOX_INFRA_VERIFIED
+command: bash tests/sandbox/verify.sh --count 5
+exit: 0
+1   e2e-m1.1793013162@moonbyte.test           201     ok     true      200    ok        204     PASS
+2   e2e-m2.1793013180@moonbyte.test           201     ok     true      200    ok        204     PASS
+3   e2e-m3.1793013190@moonbyte.test           201     ok     true      200    ok        204     PASS
+4   e2e-m4.1793013191@moonbyte.test           201     ok     true      200    ok        204     PASS
+5   e2e-m5.1793013192@moonbyte.test           201     ok     true      200    ok        204     PASS
+MULTI-IDENTITY RESULT: PASS — 5/5 identities created, email-verified, OIDC+PKCE token obtained, userinfo matched, deleted
+mailpit messages stored: 5

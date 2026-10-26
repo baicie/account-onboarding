@@ -1,0 +1,18 @@
+{
+  "credential_resources": 0,
+  "data_dir": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/e2e/run-20261026T121524-538fa1",
+  "environment": "LOCAL SANDBOX (Keycloak http://127.0.0.1:8180, Mailpit http://127.0.0.1:8025)",
+  "final_status": "CANCELLED",
+  "generated_at": "2026-10-26T12:15:25Z",
+  "keycloak_identity_created": 1,
+  "oauth_started_events": 0,
+  "oauth_step_status": "CANCELLED",
+  "post_identity_step_starts": 0,
+  "run_cancelled_events": 1,
+  "run_id": "78de30c7-e45e-4bed-acd7-f164ebb41555",
+  "status_after_cancel_request": "CANCEL_REQUESTED",
+  "status_when_cancelled": "WAITING_EMAIL",
+  "test": "E2E-006 surrogate cancel while WAITING_EMAIL",
+  "verification_emails_delivered": 1,
+  "verify_credential_step_status": "CANCELLED"
+}

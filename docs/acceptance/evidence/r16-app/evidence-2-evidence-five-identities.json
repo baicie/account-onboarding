@@ -1,0 +1,71 @@
+{
+  "completed": 5,
+  "data_dir": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/e2e/run-20261026T121522-d64ac7",
+  "environment": "LOCAL SANDBOX (Keycloak http://127.0.0.1:8180 realm moonbyte-test, Mailpit http://127.0.0.1:8025)",
+  "generated_at": "2026-10-26T12:15:24Z",
+  "keycloak_window_users": 5,
+  "log": "/home/runner/work/account-onboarding/account-onboarding/.sandbox/e2e/run-20261026T121522-d64ac7/onboardd.log",
+  "p50_ms": 924,
+  "p95_ms": 1206,
+  "requested": 5,
+  "rows": [
+    {
+      "index": 1,
+      "run_id": "ce92f718-9c88-4691-8f8f-f9c0f595ae76",
+      "status": "COMPLETED",
+      "subject": "1db16bad-3b4d-4284-94b6-92b25e2ad248",
+      "email": "onboardce92f7189c88@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 530
+    },
+    {
+      "index": 2,
+      "run_id": "d74828b8-0d0b-4b29-8e55-3aba6c6dc6ed",
+      "status": "COMPLETED",
+      "subject": "01442ea5-1648-4d1d-b26e-761d951bd4b9",
+      "email": "onboardd74828b80d0b@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 531
+    },
+    {
+      "index": 3,
+      "run_id": "cdf24ef7-9a91-43b8-8eec-995cc1494dc1",
+      "status": "COMPLETED",
+      "subject": "750d9257-9d9d-4945-8208-caddfb031ba6",
+      "email": "onboardcdf24ef79a91@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 925
+    },
+    {
+      "index": 4,
+      "run_id": "c7aa2492-de34-456b-9777-2fa790368ea4",
+      "status": "COMPLETED",
+      "subject": "63c7f206-2678-4588-8233-a518bfb25bed",
+      "email": "onboardc7aa2492de34@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 924
+    },
+    {
+      "index": 5,
+      "run_id": "f47203ee-3390-4a58-b325-bd9d30d84aaa",
+      "status": "COMPLETED",
+      "subject": "ad253567-74a9-4c7c-ad78-fb0bdd5b5f46",
+      "email": "onboardf47203ee3390@moonbyte.top",
+      "email_verified": true,
+      "userinfo_valid": true,
+      "email_count": 1,
+      "duration_ms": 1206
+    }
+  ],
+  "template": "sandbox-email-verify-oidc",
+  "test": "E2E-001 five sandbox identities",
+  "userinfo_valid": 5
+}

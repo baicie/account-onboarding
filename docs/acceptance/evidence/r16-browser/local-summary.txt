@@ -1,0 +1,8 @@
+BROWSER_E2E_LOCAL_PARTIAL
+command: bash tests/browser/run.sh
+exit: 0
+[1A[2K[1/4] operator.spec.js:12:1 › invalid token is rejected without a session
+[1A[2K[2/4] operator.spec.js:21:1 › admin can create and inspect a real run through the UI
+[1A[2K[3/4] operator.spec.js:35:1 › cookie mutation without CSRF is rejected
+[1A[2K[4/4] operator.spec.js:41:1 › logout clears the admin session
+[1A[2K  4 passed (7.4s)
