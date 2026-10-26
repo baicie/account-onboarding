@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "generated_for": "R15",
+  "status_legend": ["TODO","IN_PROGRESS","PASS","PARTIAL","FAIL","NOT_RUN","BLOCKED"],
+  "items": [
+    {"id":"A-design","status":"PASS","method":"docs/design/R15-FINAL-ENGINEERING-DESIGN.md reviewed","evidence":"commit"},
+    {"id":"B-durable-outbox","status":"PARTIAL","method":"go test ./internal/storage -run TestAlertOutbox","evidence":"schema 0006 + tests","blocker":"production external transport disabled"},
+    {"id":"B-webhook","status":"PARTIAL","method":"go test ./internal/alerts -run TestWebhook","evidence":"loopback TLS tests","blocker":"real external target NOT_RUN by policy"},
+    {"id":"B-queue-panic","status":"PASS","method":"TestQueueRecoversNotifierPanicAndRetries","evidence":"race count tests"},
+    {"id":"C-backup-state","status":"PARTIAL","method":"TestEncryptedBackupRestorePreservesDurableState","evidence":"CONFIRMED/expired session/outbox included via schema","blocker":"runtime restore/retention NOT_RUN"},
+    {"id":"C-independent-admins","status":"PASS","method":"TestTwoAdminsUIResolutionRace two cookie jars","evidence":"single resolution/audit"},
+    {"id":"C-ui-e2e","status":"NOT_RUN","method":"Playwright/equivalent","evidence":"none","blocker":"no browser harness in repo"},
+    {"id":"D-secret-exact","status":"PASS","method":"TestSecureSecretFileModes/TestAllProviderSecretFilesUseSecureReader","evidence":"0400/0600 accept; negative modes"},
+    {"id":"D-secret-materialize","status":"PASS","method":"tests/r15/secret_materialize.sh","evidence":"5/5 local","blocker":"Docker/K8s fixture NOT_RUN"},
+    {"id":"E-arm64-service","status":"PASS","method":"QEMU service smoke","evidence":"R14.1/R15 CI","blocker":"full arm64 staging NOT_RUN"},
+    {"id":"F-candidate-identity","status":"PASS","method":"candidate_identity.sh + same-artifact dry run","evidence":"exact base refs/digests, tamper probes","blocker":"SLSA resolver provenance NOT_RUN"},
+    {"id":"F-publish","status":"NOT_RUN","method":"publish job skipped; dependency audit","evidence":"publish_gate_audit","blocker":"no GHCR authorization"},
+    {"id":"G-cloudflare-live","status":"NOT_RUN","method":"approval runbook only","evidence":"none","blocker":"operator authorization"},
+    {"id":"G-keycloak-mailpit-e2e","status":"NOT_RUN","method":"real sandbox 5 identities","evidence":"none","blocker":"no sandbox service this round"},
+    {"id":"G-github-workbuddy","status":"NOT_RUN","method":"offline fake only","evidence":"existing fake contracts","blocker":"real account access prohibited"},
+    {"id":"H-security-review","status":"IN_PROGRESS","method":"REVIEW-R15","evidence":"pending independent review"}
+  ]
+}
