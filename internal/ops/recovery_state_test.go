@@ -120,6 +120,11 @@ func seedRecoveryState(t *testing.T, s *storage.Store) (runs []string, ops map[s
 	if err := s.Audit(ctx, "test:operator", "r14.fixture", runs[0], map[string]any{"n": 1}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.EnqueueAlertOutbox(ctx, []storage.AlertOutboxInput{{
+		Fingerprint: "r14-backup-alert", Rule: "readyz_failing", Severity: "critical", Message: "restore fixture",
+	}}, now); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.RevokeSession(ctx, "session-r14", time.Now().UTC(), time.Now().UTC().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +235,10 @@ func TestEncryptedBackupRestorePreservesDurableState(t *testing.T) {
 	}
 	if auditAfter != auditBefore {
 		t.Fatalf("audit rows changed: %d -> %d", auditBefore, auditAfter)
+	}
+	outbox, err := restored.ListAlertOutbox(ctx, 10)
+	if err != nil || len(outbox) != 1 || outbox[0].Status != storage.AlertOutboxPending {
+		t.Fatalf("durable alert outbox not restored: %+v err=%v", outbox, err)
 	}
 	// No automatic retry: the unresolved unknown op remains pending with its version.
 	op, err := restored.GetExternalOperationByID(ctx, ops["unknown"])
