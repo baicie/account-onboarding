@@ -53,15 +53,18 @@ jobs:
           ONBOARD_BIN: ${{ runner.temp }}/onboardd
         run: go test ./tests/e2e -v -count=1 -timeout 900s
 
-      - name: Collect evidence
+      - name: Collect only redacted evidence
         if: always()
         run: |
-          mkdir -p r16-evidence
-          cp -a .sandbox/logs r16-evidence/sandbox-logs 2>/dev/null || true
-          cp -a .sandbox/e2e r16-evidence/app-e2e 2>/dev/null || true
-          # Never upload credentials or unredacted mail bodies.
-          rm -rf r16-evidence/sandbox-logs/verify-*.log 2>/dev/null || true
-          find r16-evidence -type f -name '*.env' -delete 2>/dev/null || true
+          rm -rf r16-evidence && mkdir -p r16-evidence
+          i=0
+          for f in .sandbox/e2e/run-*/evidence-*.json; do
+            [ -f "$f" ] || continue
+            i=$((i+1))
+            cp "$f" "r16-evidence/evidence-$i-$(basename "$f")"
+          done
+          printf 'Sandbox app E2E evidence: %s test(s). Raw credentials, state DBs, admin tokens and logs are intentionally excluded.\n' "$i" > r16-evidence/summary.txt
+          bash tests/sandbox/artifact_allowlist.sh r16-evidence
 
       - name: Upload sandbox evidence
         if: always()
