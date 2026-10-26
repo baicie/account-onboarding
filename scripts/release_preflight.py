@@ -5,7 +5,7 @@ This does not build, sign, publish, or approve a release. It binds a frozen
 candidate to provenance/SBOM/tar bytes, verifies same-artifact evidence, and
 records an explicit gate matrix. Missing or failed required gates fail closed.
 """
-import argparse, hashlib, json, pathlib, re, sys
+import argparse, hashlib, json, pathlib, re, sys, tarfile
 
 REQUIRED_GATES = [
     "go_unit_race", "provider_contract", "sandbox_infra", "application_e2e",
@@ -31,6 +31,7 @@ def main():
     ap.add_argument("--candidate-dir", required=True)
     ap.add_argument("--same-artifact-evidence", required=True)
     ap.add_argument("--expected-commit", required=True)
+    ap.add_argument("--repo-root", default=str(pathlib.Path(__file__).resolve().parent.parent))
     ap.add_argument("--gates", required=True, help="JSON gate->status or path")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
@@ -42,25 +43,48 @@ def main():
     commit = (c / "commit.txt").read_text().strip()
     if commit != a.expected_commit:
         return fail(f"candidate commit {commit} != expected {a.expected_commit}")
+    # Docker image ID is the sha256 of the config blob inside image.tar; bind it
+    # to bytes rather than trusting image-id.txt.
+    try:
+        with tarfile.open(c / "image.tar", "r") as tf:
+            manifest = json.loads(tf.extractfile("manifest.json").read())
+            config_name = manifest[0]["Config"]
+            config_bytes = tf.extractfile(config_name).read()
+    except Exception as exc:
+        return fail(f"image.tar manifest/config unreadable: {exc}")
+    actual_image_id = "sha256:" + hashlib.sha256(config_bytes).hexdigest()
+    recorded_image_id = (c / "image-id.txt").read_text().strip()
+    if actual_image_id != recorded_image_id:
+        return fail(f"image-id.txt {recorded_image_id} != image.tar config {actual_image_id}")
     prov = json.loads((c / "candidate-provenance.json").read_text())
     if prov.get("commit") != commit:
         return fail("provenance commit mismatch")
     if prov.get("image_tar_sha256") != sha256(c / "image.tar"):
         return fail("image.tar hash mismatch")
-    if prov.get("image_id") != (c / "image-id.txt").read_text().strip():
-        return fail("image-id mismatch")
+    if prov.get("image_id") != actual_image_id:
+        return fail("provenance image-id mismatch")
     if prov.get("sbom_sha256") != sha256(c / "supply/sbom.cdx.json"):
         return fail("SBOM hash mismatch")
     ev = pathlib.Path(a.same_artifact_evidence)
     text = "\n".join(p.read_text(errors="replace") for p in ev.rglob("*") if p.is_file() and p.stat().st_size < 5_000_000) if ev.exists() else ""
     if "SAME_CANDIDATE_ARTIFACT=" not in text:
         return fail("same-artifact evidence missing SAME_CANDIDATE_ARTIFACT")
-    if not re.search(r"SUMMARY pass=14 fail=0", text):
-        return fail("same-artifact evidence missing 14/14 pass")
-    if "cosign" not in text.lower() or "attest" not in text.lower():
-        return fail("same-artifact evidence missing sign/attest proof")
+    summary = re.search(r"SUMMARY pass=14 fail=0 digest=(sha256:[0-9a-f]{64}) image_id=(sha256:[0-9a-f]{64})", text)
+    if not summary:
+        return fail("same-artifact SUMMARY/digests missing or not 14/14")
+    registry_digest, evidence_image_id = summary.group(1), summary.group(2)
+    if evidence_image_id != actual_image_id:
+        return fail("same-artifact image ID does not match candidate image.tar")
+    att = re.search(r"ATTESTATION_VALID subject_digest=(sha256:[0-9a-f]{64}) commit=([0-9a-f]{40})", text)
+    if not att or att.group(1) != registry_digest or att.group(2) != commit:
+        return fail("attestation subject digest/commit mismatch")
+    if "cosign verify passed" not in text or "attestation verified" not in text:
+        return fail("same-artifact evidence missing cosign verify/attestation proof")
     gates_raw = pathlib.Path(a.gates).read_text() if pathlib.Path(a.gates).exists() else a.gates
-    gates = json.loads(gates_raw)
+    report = json.loads(gates_raw)
+    if report.get("commit") != commit:
+        return fail("gate report commit does not match candidate")
+    gates = report.get("gates", {})
     blockers = []
     for name in REQUIRED_GATES:
         if gates.get(name) != "PASS":
@@ -73,9 +97,12 @@ def main():
         "status": "PASS" if not blockers else "FAIL",
         "commit": commit,
         "candidate_image_tar_sha256": sha256(c / "image.tar"),
-        "candidate_image_id": prov.get("image_id"),
+        "candidate_image_id": actual_image_id,
         "sbom_sha256": prov.get("sbom_sha256"),
         "provenance_commit": prov.get("commit"),
+        "registry_manifest_digest": registry_digest,
+        "gate_report_commit": report.get("commit"),
+        "ci_runs": report.get("runs", {}),
         "gates": gates,
         "blockers": blockers,
         "release_authorized": False,

@@ -31,21 +31,27 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Browser artifact policy test
+        run: bash tests/browser/artifact_allowlist_test.sh
+
       - name: Run real browser E2E
         env:
           PLAYWRIGHT_CHANNEL: ""
-        run: bash tests/browser/run.sh
-      - name: Remove token-bearing traces before upload
-        if: always()
-        run: find tests/browser/test-results -name 'trace.zip' -delete 2>/dev/null || true
+          BROWSER_EVIDENCE_PATH: ${{ github.workspace }}/browser-evidence/browser-evidence.json
+        run: |
+          mkdir -p browser-evidence
+          bash tests/browser/run.sh
 
-      - name: Upload Playwright failures
+      - name: Enforce browser artifact allowlist
+        id: allowlist
         if: always()
+        run: bash tests/browser/artifact_allowlist.sh browser-evidence
+
+      - name: Upload sanitized browser evidence
+        if: always() && steps.allowlist.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: r17-browser-evidence
-          path: |
-            tests/browser/test-results
-            tests/browser/playwright-report
+          path: browser-evidence/browser-evidence.json
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: error

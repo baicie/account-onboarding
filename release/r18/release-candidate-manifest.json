@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "candidate": "account-onboarding",
+  "source_repository": "https://github.com/baicie/account-onboarding",
+  "commit": "73fc6aab011ebc445fa4dfd494e2112f3f8630bb",
+  "tree": null,
+  "schema_version": 6,
+  "candidate_image_tar_sha256": "be53eae5814f27b424fdb7ce200dc8c581fa8e19ae6de25023a367e10f515772",
+  "candidate_image_id": "sha256:06fcfc79dcedafa3cd86be17d271f20f078aa6229aab1e1ca1593e15c510e9db",
+  "sbom_sha256": "042bc23161c3bf269d15624f6ea281316c99906b84c3557a53a8e709e55e6d12",
+  "registry_manifest_digest": "sha256:2172ff8263b95666d300671462afe984c20909d0fc4fa27b1651fdea64d2bdd9",
+  "base_image_refs": "golang_image=golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af runtime_image=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "base_image_digests": "golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af; debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "platforms": [
+    "linux/amd64"
+  ],
+  "ci_runs": {
+    "ci": 40326133768,
+    "r16_sandbox": 40326133679,
+    "r17_browser": 40326133664,
+    "r12_integration": 40326125127,
+    "staging": 40326125152,
+    "supply": 40326125278,
+    "r9_release": 40326125465,
+    "r10_dry_run": 40326125137,
+    "release_image": 40326125182
+  },
+  "provenance": {
+    "type": "project-custom-candidate-provenance",
+    "trusted_buildkit_slsa": false,
+    "note": "Does not claim trusted BuildKit/SLSA builder provenance; candidate identity is same-artifact verified."
+  },
+  "gates": {
+    "sandbox_infra": "PASS",
+    "application_e2e": "PASS",
+    "browser_admin_core": "PASS",
+    "browser_full_matrix": "NOT_RUN",
+    "docker_secret": "NOT_RUN",
+    "kubernetes": "NOT_RUN",
+    "acl": "NOT_RUN",
+    "arm64_full": "NOT_RUN",
+    "native_arm64": "NOT_RUN",
+    "backup_restore": "PASS",
+    "ssrf_outbox": "PASS",
+    "build_provenance": "NOT_RUN",
+    "same_artifact": "PASS",
+    "release_preflight": "PASS",
+    "authorized_live": "NOT_RUN",
+    "github_workbuddy_live": "NOT_RUN",
+    "ghcr_release_merge_production": "NOT_RUN"
+  },
+  "required_operator_approvals": [
+    "release tag and GHCR publish",
+    "production deploy",
+    "Cloudflare Stage A live",
+    "GitHub/WorkBuddy live"
+  ],
+  "release_authorized": false,
+  "preflight": {
+    "status": "PASS",
+    "registry_manifest_digest": "sha256:2172ff8263b95666d300671462afe984c20909d0fc4fa27b1651fdea64d2bdd9",
+    "gate_report_commit": "73fc6aab011ebc445fa4dfd494e2112f3f8630bb"
+  }
+}
