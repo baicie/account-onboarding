@@ -50,3 +50,22 @@ func TestAdminResolveClearsDurableOutbox(t *testing.T) {
 		t.Fatalf("durable outbox not resolved: %+v err=%v", counts, err)
 	}
 }
+
+func TestAdminResolveClearsOutboxOnlyAfterRestart(t *testing.T) {
+	e := newEnv(t, nil)
+	rule := "readyz_failing"
+	if _, err := e.store.EnqueueAlertOutbox(t.Context(), []storage.AlertOutboxInput{{
+		Fingerprint: "outbox-only-" + rule, Rule: rule, Severity: "critical", Message: "readyz",
+	}}, time.Now().UTC().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	// The in-memory queue is empty here, emulating restart recovery.
+	status, raw := e.request(t, http.MethodPost, "/v1/ops/alerts/resolve", map[string]any{"rule": rule}, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("outbox-only resolve status=%d %s", status, raw)
+	}
+	counts, err := e.store.AlertOutboxStatusCounts(t.Context())
+	if err != nil || counts.Resolved != 1 || counts.Pending != 0 {
+		t.Fatalf("outbox-only resolve counts: %+v err=%v", counts, err)
+	}
+}

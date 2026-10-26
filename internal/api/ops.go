@@ -156,14 +156,17 @@ func (s *Server) handleOpsAlertResolve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, errsValidation("rule is required"))
 		return
 	}
-	recovery, ok := s.AlertQueue.Resolve(rule)
-	if !ok {
-		writeError(w, r, errs.New(errs.ClassNotFound, "ops.alerts", "alert rule not active"))
-		return
-	}
+	// Durable resolve must work after a restart when the in-memory queue is
+	// empty. Resolve the outbox first, then the queue, and only 404 when neither
+	// has an active rule.
 	durableResolved, err := s.Store.ResolveAlertOutbox(r.Context(), rule, time.Now().UTC().UnixMilli())
 	if err != nil {
 		writeError(w, r, err)
+		return
+	}
+	recovery, queueFound := s.AlertQueue.Resolve(rule)
+	if !queueFound && durableResolved == 0 {
+		writeError(w, r, errs.New(errs.ClassNotFound, "ops.alerts", "alert rule not active"))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"resolved": true, "recovery": recovery,
