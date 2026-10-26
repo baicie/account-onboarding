@@ -323,6 +323,45 @@ func TestCloudflareSharedContractFixtures(t *testing.T) {
 	}
 }
 
+func TestCloudflareInvalidContractFixtures(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "cloudflare", "parsed_mails_contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Invalid []struct {
+			Name        string `json:"name"`
+			ContentType string `json:"content_type"`
+			Body        string `json:"body"`
+			Expect      string `json:"expect"`
+		} `json:"invalid_cases"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range manifest.Invalid {
+		t.Run(tc.Name, func(t *testing.T) {
+			body, ct := []byte(tc.Body), tc.ContentType
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", ct)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(body)
+			}))
+			defer srv.Close()
+			ca, token := writeTLSFixture(t, srv)
+			report := filepath.Join(t.TempDir(), "report.json")
+			out, err := runPreflight(t, srv.URL, ca, token, report)
+			if err == nil {
+				t.Fatalf("invalid contract accepted: %s", out)
+			}
+			rawReport, _ := os.ReadFile(report)
+			if !strings.Contains(string(rawReport), `"stop_reason": "`+tc.Expect+`"`) {
+				t.Fatalf("report = %s, want stop %s; out=%s", rawReport, tc.Expect, out)
+			}
+		})
+	}
+}
+
 func TestCloudflareScriptsAreExecutableForRunbook(t *testing.T) {
 	requireScriptsExecutable(t)
 }
