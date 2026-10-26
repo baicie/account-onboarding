@@ -327,3 +327,48 @@ func bytes32() []byte {
 	}
 	return b
 }
+
+func TestSchema5BackupRestoresAndMigratesTo6(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	path := filepath.Join(dir, "schema5.sqlite")
+	s, err := storage.Open(ctx, storage.Options{Path: path, HMACKey: []byte("schema5-restore-hmac")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnqueueAlertOutbox(ctx, []storage.AlertOutboxInput{{Fingerprint: "legacy", Rule: "legacy", Severity: "warning", Message: "m"}}, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	// Reconstruct a schema-5 fixture: drop migration-6 tables/version marker.
+	raw, err := sql.Open("sqlite3", "file:"+path+"?_foreign_keys=on")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`DROP TABLE alert_deliveries; DROP TABLE alert_outbox; DELETE FROM schema_migrations WHERE version=6`); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+	backup, err := Backup(ctx, BackupOptions{DBPath: path, OutDir: dir, Now: func() time.Time { return time.Unix(1700000000, 0) }})
+	if err != nil {
+		t.Fatalf("schema5 backup: %v", err)
+	}
+	target := filepath.Join(dir, "restored.sqlite")
+	res, err := Restore(ctx, RestoreOptions{SnapshotPath: backup.SnapshotPath, ManifestPath: backup.ManifestPath, TargetPath: target, Force: true})
+	if err != nil || !res.ManifestVerified {
+		t.Fatalf("restore schema5: %+v err=%v", res, err)
+	}
+	restored, err := storage.Open(ctx, storage.Options{Path: target, HMACKey: []byte("schema5-restore-hmac")})
+	if err != nil {
+		t.Fatalf("open migrated restore: %v", err)
+	}
+	defer restored.Close()
+	h, err := restored.Health(ctx)
+	if err != nil || h.SchemaVersion != 6 || !h.ExternalOperationsReady {
+		t.Fatalf("migrated health = %+v err=%v", h, err)
+	}
+	outbox, err := restored.ListAlertOutbox(ctx, 10)
+	if err != nil || len(outbox) != 0 {
+		t.Fatalf("migration should start empty outbox (schema5 had none): %+v err=%v", outbox, err)
+	}
+}
