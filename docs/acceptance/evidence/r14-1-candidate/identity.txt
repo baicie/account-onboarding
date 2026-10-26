@@ -1,0 +1,7 @@
+Candidate identity R14.1 CI:
+PASS candidate identity (commit, image tar sha256, loaded image id, binary commit, SBOM sha256, base digests)
+PASS candidate identity rejects image-id/provenance tamper
+PASS candidate identity rejects image.tar tamper
+PASS candidate identity rejects base digest mismatch
+PASS same candidate artifact: image.tar, image ID, SBOM and commit verified (registry dry run 14/14)
+Base refs/digests must equal Dockerfile GOLANG_IMAGE/RUNTIME_IMAGE exactly.
