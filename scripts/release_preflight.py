@@ -5,7 +5,7 @@ This does not build, sign, publish, or approve a release. It binds a frozen
 candidate to provenance/SBOM/tar bytes, verifies same-artifact evidence, and
 records an explicit gate matrix. Missing or failed required gates fail closed.
 """
-import argparse, hashlib, json, pathlib, re, sys, tarfile
+import argparse, hashlib, json, os, pathlib, re, sys, tarfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from trusted_ci_gates import build_report
 
@@ -87,7 +87,6 @@ def main():
     if "cosign verify passed" not in text or "attestation verified" not in text:
         return fail("same-artifact evidence missing cosign verify/attestation proof")
     if a.trusted_gates:
-        import os
         token = os.environ.get(a.token_env, "")
         if not token:
             return fail("trusted gates require token")
@@ -127,6 +126,8 @@ def main():
         "gate_report_commit": report.get("commit"),
         "ci_runs": report.get("runs", {}),
         "gate_source": report.get("trusted_source", report.get("gate_source", "unknown")),
+        "generation_run_id": int(os.environ.get("GITHUB_RUN_ID", "0") or 0),
+        "generation_run_attempt": int(os.environ.get("GITHUB_RUN_ATTEMPT", "0") or 0),
         "gates": gates,
         "blockers": blockers,
         "release_authorized": False,
