@@ -98,7 +98,7 @@ jobs:
           # Full service smoke under QEMU: schema, secret read, readiness, run CRUD,
           # SIGTERM, restart and persistence.
           WORK="$(mktemp -d)"; NAME="onboard-r14-arm64-$$"; PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
-          cleanup_arm(){ docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$WORK"; }
+          cleanup_arm(){ docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$WORK" 2>/dev/null || sudo -n rm -rf "$WORK" 2>/dev/null || true; }
           trap cleanup_arm EXIT
           mkdir -p "$WORK"/{data,secrets}
           head -c 32 /dev/urandom > "$WORK/secrets/master.key"
