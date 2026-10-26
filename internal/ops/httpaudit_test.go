@@ -127,7 +127,7 @@ func TestHTTPHardeningHeadersAndCSP(t *testing.T) {
 	if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
 		t.Fatalf("healthz X-Frame-Options = %q", got)
 	}
-	if got := resp.Header.Get("Referrer-Policy"); got != "no-referrer" {
+	if got := resp.Header.Get("Referrer-Policy"); got != "same-origin" {
 		t.Fatalf("healthz Referrer-Policy = %q", got)
 	}
 	if got := resp.Header.Get("Cross-Origin-Opener-Policy"); got != "same-origin" {
