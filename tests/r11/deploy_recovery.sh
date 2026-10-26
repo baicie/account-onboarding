@@ -71,7 +71,7 @@ echo "=== first install ==="
 start "$ID-app" "$PORT" "$WORK/data"
 if wait_ready "$PORT"; then ok "first install ready"; else bad "first install not ready"; docker logs "$ID-app" | tail -10; fi
 SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT/v1/meta" | python3 -c 'import json,sys;print(json.load(sys.stdin)["schema_version"])')"
-[ "$SCHEMA" = "5" ] && ok "first install schema 5" || bad "schema $SCHEMA"
+[ "$SCHEMA" = "6" ] && ok "first install schema 6" || bad "schema $SCHEMA"
 # Create durable data (event/run via API) and SIGKILL.
 BODY='{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox"}'
 RUN="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" -H 'Content-Type: application/json' -H "Idempotency-Key: r12-deploy-1" -X POST "http://127.0.0.1:$PORT/v1/runs" -d "$BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')"
@@ -146,15 +146,15 @@ else
 fi
 PORT_PARTIAL="$(free_port)"
 start "$ID-partial" "$PORT_PARTIAL" "$WORK/partial"
-if wait_ready "$PORT_PARTIAL"; then ok "partial schema 3 upgrades to 5"; else bad "partial schema upgrade"; docker logs "$ID-partial" 2>&1 | tail -20; fi
+if wait_ready "$PORT_PARTIAL"; then ok "partial schema 3 upgrades to 6"; else bad "partial schema upgrade"; docker logs "$ID-partial" 2>&1 | tail -20; fi
 SCHEMA="$(curl -sS -H "Authorization: Bearer $(cat "$WORK/secrets/admin.token")" "http://127.0.0.1:$PORT_PARTIAL/v1/meta" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("schema_version",0))' 2>/dev/null || echo 0)"
-[ "$SCHEMA" = "5" ] && ok "partial schema reports 5" || bad "partial schema $SCHEMA"
+[ "$SCHEMA" = "6" ] && ok "partial schema reports 6" || bad "partial schema $SCHEMA"
 docker rm -f "$ID-partial" >/dev/null 2>&1 || true
 echo "=== schema too-new rejection ==="
 mkdir -p "$WORK/toonew"; cp -a "$WORK/partial/." "$WORK/toonew/" 2>/dev/null || { sudo -n cp -a "$WORK/partial/." "$WORK/toonew/"; sudo -n chown -R "$(id -u):$(id -g)" "$WORK/toonew"; }
 python3 - "$WORK/toonew/state.sqlite" <<'DBPY'
 import sqlite3,sys
-db=sqlite3.connect(sys.argv[1]); db.execute("INSERT OR REPLACE INTO schema_migrations(version,applied_at_ms) VALUES(6,strftime('%s','now')*1000)"); db.commit(); db.close()
+db=sqlite3.connect(sys.argv[1]); db.execute("INSERT OR REPLACE INTO schema_migrations(version,applied_at_ms) VALUES(7,strftime('%s','now')*1000)"); db.commit(); db.close()
 DBPY
 chgrp "$(id -g)" "$WORK/toonew"; chmod 770 "$WORK/toonew"
 if ! chown -R 10001:10001 "$WORK/toonew" 2>/dev/null; then sudo -n chown -R 10001:10001 "$WORK/toonew"; fi

@@ -35,18 +35,19 @@ var Commit = "unknown"
 
 // Server wires the API to storage, the engine and providers.
 type Server struct {
-	Cfg           config.Config
-	Store         *storage.Store
-	Engine        *workflow.Engine
-	Registry      *provider.Registry
-	Secrets       *secrets.Service
-	Log           *slog.Logger
-	Signer        *security.SessionSigner
-	Redactor      *security.Redactor
-	AlertQueue    *alerts.Queue
-	AlertNotifier alerts.Notifier
-	StartedAt     time.Time
-	Version       string
+	Cfg                 config.Config
+	Store               *storage.Store
+	Engine              *workflow.Engine
+	Registry            *provider.Registry
+	Secrets             *secrets.Service
+	Log                 *slog.Logger
+	Signer              *security.SessionSigner
+	Redactor            *security.Redactor
+	AlertQueue          *alerts.Queue
+	AlertNotifier       alerts.Notifier
+	AlertOutboxNotifier alerts.Notifier
+	StartedAt           time.Time
+	Version             string
 
 	pages map[string]*page
 
@@ -69,21 +70,22 @@ func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 		redactor = security.NewRedactor()
 	}
 	return &Server{
-		Cfg:            cfg,
-		Store:          store,
-		Engine:         engine,
-		Registry:       registry,
-		Secrets:        sec,
-		Log:            log,
-		Signer:         signer,
-		Redactor:       redactor,
-		AlertQueue:     alerts.NewQueue(100, time.Minute),
-		AlertNotifier:  &alerts.RecordingNotifier{},
-		StartedAt:      time.Now().UTC(),
-		Version:        Version,
-		pages:          pages,
-		generalLimiter: newRateLimiter(cfg.RateLimitPerMinute, time.Minute),
-		loginLimiter:   newRateLimiter(cfg.LoginRateLimitPerMinute, time.Minute),
+		Cfg:                 cfg,
+		Store:               store,
+		Engine:              engine,
+		Registry:            registry,
+		Secrets:             sec,
+		Log:                 log,
+		Signer:              signer,
+		Redactor:            redactor,
+		AlertQueue:          alerts.NewQueue(100, time.Minute),
+		AlertNotifier:       &alerts.RecordingNotifier{},
+		AlertOutboxNotifier: nil,
+		StartedAt:           time.Now().UTC(),
+		Version:             Version,
+		pages:               pages,
+		generalLimiter:      newRateLimiter(cfg.RateLimitPerMinute, time.Minute),
+		loginLimiter:        newRateLimiter(cfg.LoginRateLimitPerMinute, time.Minute),
 	}, nil
 }
 
@@ -114,6 +116,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/ops/alerts/drain", s.apiAuth(true, true, s.handleOpsAlertDrain))
 	mux.HandleFunc("POST /v1/ops/alerts/resolve", s.apiAuth(true, true, s.handleOpsAlertResolve))
 	mux.HandleFunc("POST /v1/ops/alerts/reconcile", s.apiAuth(true, true, s.handleOpsAlertReconcile))
+	mux.HandleFunc("GET /v1/ops/alerts/outbox", s.apiAuth(false, true, s.handleAlertOutbox))
+	mux.HandleFunc("POST /v1/ops/alerts/outbox/dispatch", s.apiAuth(true, true, s.handleAlertOutboxDispatch))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)
@@ -527,7 +531,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "database unavailable"})
 		return
 	}
-	ready := health.Writable && health.SchemaVersion >= 5 && health.SessionRevocationsReady &&
+	ready := health.Writable && health.SchemaVersion >= 6 && health.SessionRevocationsReady &&
 		health.ExternalOperationsReady &&
 		strings.EqualFold(health.WALMode, "wal")
 	if len(s.Cfg.MasterKey) != 32 {

@@ -41,7 +41,7 @@ start_app() {
 stop_app() { kill -TERM "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; PID=""; }
 
 start_app 1 || { bad "JSON keyring startup"; exit 1; }
-ok "service starts with documented JSON keyring envelope (schema 5)"
+ok "service starts with documented JSON keyring envelope (schema 6)"
 CODE="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$WORK/admin.token")" "$BASE/readyz")"
 [ "$CODE" = "200" ] && ok "/readyz 200 with JSON keyring" || bad "/readyz $CODE"
 "$BIN" healthcheck >"$WORK/healthcheck-ok.log" 2>&1 && ok "onboardd healthcheck exit 0 when ready" || bad "healthcheck should be 0: $(cat "$WORK/healthcheck-ok.log")"

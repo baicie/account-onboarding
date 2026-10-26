@@ -10,6 +10,7 @@ import (
 
 	"github.com/baicie/account-onboarding/internal/alerts"
 	"github.com/baicie/account-onboarding/internal/errs"
+	"github.com/baicie/account-onboarding/internal/security"
 	"github.com/baicie/account-onboarding/internal/storage"
 )
 
@@ -196,14 +197,93 @@ func (s *Server) handleOpsAlertReconcile(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	current := alerts.EvaluateAlerts(alerts.AlertInput{
-		Metrics: m, Ready: health.Writable && health.SchemaVersion >= 5 &&
+		Metrics: m, Ready: health.Writable && health.SchemaVersion >= 6 &&
 			health.SessionRevocationsReady && health.ExternalOperationsReady,
-		ExpectedSchema: 5, NowMS: time.Now().UTC().UnixMilli(),
+		ExpectedSchema: 6, NowMS: time.Now().UTC().UnixMilli(),
 		BackupMaxAgeMS:          (7 * 24 * time.Hour).Milliseconds(),
 		ReconciliationThreshold: 10, ProviderErrorThreshold: 20,
 	})
 	s.AlertQueue.Reconcile(current)
-	writeJSON(w, http.StatusOK, map[string]any{"evaluated": len(current), "status": s.AlertQueue.Status()})
+	now := time.Now().UTC().UnixMilli()
+	items := make([]storage.AlertOutboxInput, 0, len(current))
+	rules := make([]string, 0, len(current))
+	for _, a := range current {
+		items = append(items, storage.AlertOutboxInput{Fingerprint: alerts.Fingerprint(a),
+			Rule: a.Rule, Severity: a.Severity, Message: a.Message})
+		rules = append(rules, a.Rule)
+	}
+	enqueued, err := s.Store.EnqueueAlertOutbox(ctx, items, now)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	resolved, err := s.Store.ResolveAlertOutboxMissing(ctx, rules, now)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"evaluated": len(current), "outbox_enqueued": enqueued,
+		"outbox_resolved": resolved, "status": s.AlertQueue.Status()})
+}
+
+func (s *Server) handleAlertOutbox(w http.ResponseWriter, r *http.Request) {
+	counts, err := s.Store.AlertOutboxStatusCounts(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	items, err := s.Store.ListAlertOutbox(r.Context(), 100)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"counts": counts, "items": items,
+		"durable": true, "external_transport_configured": s.AlertOutboxNotifier != nil})
+}
+
+func (s *Server) handleAlertOutboxDispatch(w http.ResponseWriter, r *http.Request) {
+	if s.AlertOutboxNotifier == nil {
+		writeError(w, r, errs.New(errs.ClassInternal, "ops.alerts", "external alert transport is not configured"))
+		return
+	}
+	now := time.Now().UTC().UnixMilli()
+	items, deliveries, err := s.Store.ClaimAlertOutbox(r.Context(), "api:outbox:"+security.NewID(), 10, time.Minute, now)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if len(items) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"claimed": 0, "sent": 0})
+		return
+	}
+	batch := make([]alerts.Alert, 0, len(items))
+	for _, it := range items {
+		batch = append(batch, alerts.Alert{Rule: it.Rule, Severity: it.Severity, Message: it.Message})
+	}
+	deliverErr := alerts.DeliverBatch(r.Context(), s.AlertOutboxNotifier, batch)
+	sent := 0
+	for _, d := range deliveries {
+		ok := deliverErr == nil
+		if ok {
+			sent++
+		}
+		if err := s.Store.CompleteAlertOutbox(r.Context(), d.ID, d.LeaseOwner, ok, now, 60000, 0, errString(deliverErr), 10); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+	if deliverErr != nil {
+		writeError(w, r, errs.New(errs.ClassUpstreamTransient, "ops.alerts", "alert delivery failed; retry scheduled"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"claimed": len(items), "sent": sent})
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (s *Server) handleOpsAlertQueue(w http.ResponseWriter, r *http.Request) {
@@ -227,9 +307,9 @@ func (s *Server) handleOpsAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	alerts := alerts.EvaluateAlerts(alerts.AlertInput{
-		Metrics: m, Ready: health.Writable && health.SchemaVersion >= 5 &&
+		Metrics: m, Ready: health.Writable && health.SchemaVersion >= 6 &&
 			health.SessionRevocationsReady && health.ExternalOperationsReady,
-		ExpectedSchema: 5, NowMS: time.Now().UTC().UnixMilli(), BackupMaxAgeMS: (7 * 24 * time.Hour).Milliseconds(),
+		ExpectedSchema: 6, NowMS: time.Now().UTC().UnixMilli(), BackupMaxAgeMS: (7 * 24 * time.Hour).Milliseconds(),
 		ReconciliationThreshold: 10, ProviderErrorThreshold: 20,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "count": len(alerts), "queue": s.AlertQueue.Status()})

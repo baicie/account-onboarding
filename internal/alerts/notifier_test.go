@@ -9,7 +9,7 @@ import (
 )
 
 func TestRecordingNotifierOnlyDeliversEvaluatedAlerts(t *testing.T) {
-	in := AlertInput{Ready: false, Metrics: storage.OperationalMetrics{SchemaVersion: 4}, ExpectedSchema: 5, NowMS: 1000}
+	in := AlertInput{Ready: false, Metrics: storage.OperationalMetrics{SchemaVersion: 4}, ExpectedSchema: 6, NowMS: 1000}
 	evaluated := EvaluateAlerts(in)
 	n := &RecordingNotifier{}
 	if err := n.Notify(context.Background(), evaluated); err != nil {

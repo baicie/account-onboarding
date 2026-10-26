@@ -124,7 +124,13 @@ func TestMigration0003AppliesToExistingV2Database(t *testing.T) {
 	if _, err := raw.ExecContext(ctx, `DROP TABLE external_operations`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := raw.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version IN (3,4,5)`); err != nil {
+	if _, err := raw.ExecContext(ctx, `DROP TABLE IF EXISTS alert_outbox`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, `DROP TABLE IF EXISTS alert_deliveries`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version IN (3,4,5,6)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := raw.Close(); err != nil {
@@ -133,7 +139,7 @@ func TestMigration0003AppliesToExistingV2Database(t *testing.T) {
 	upgraded := openSessionStore(t, path)
 	defer upgraded.Close()
 	health, err := upgraded.Health(ctx)
-	if err != nil || health.SchemaVersion != 5 || !health.ExternalOperationsReady {
+	if err != nil || health.SchemaVersion != 6 || !health.ExternalOperationsReady {
 		t.Fatalf("schema after upgrade = %d ext=%v err=%v", health.SchemaVersion, health.ExternalOperationsReady, err)
 	}
 	// The pre-upgrade revocation row is of course gone (table was dropped), but
@@ -158,7 +164,7 @@ func TestHealthProbesSessionRevocationTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if health.SchemaVersion != 5 || !health.SessionRevocationsReady || !health.ExternalOperationsReady {
+	if health.SchemaVersion != 6 || !health.SessionRevocationsReady || !health.ExternalOperationsReady {
 		t.Fatalf("health = %+v", health)
 	}
 	if err := s.Close(); err != nil {
@@ -182,8 +188,8 @@ func TestHealthProbesSessionRevocationTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if health.SchemaVersion != 5 || health.SessionRevocationsReady {
-		t.Fatalf("degraded health = %+v (want schema 5, revocations not ready)", health)
+	if health.SchemaVersion != 6 || health.SessionRevocationsReady {
+		t.Fatalf("degraded health = %+v (want schema 6, revocations not ready)", health)
 	}
 	if err := degraded.RevokeSession(ctx, "sid", time.Now(), time.Now().Add(time.Hour)); err == nil {
 		t.Fatal("revocation succeeded without the revocation table")

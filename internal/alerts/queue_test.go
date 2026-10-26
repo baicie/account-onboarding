@@ -325,3 +325,22 @@ func TestQueueControlledConcurrentChurn(t *testing.T) {
 		t.Fatalf("queue exceeded bound: %+v", st)
 	}
 }
+
+type panicNotifier struct{}
+
+func (panicNotifier) Notify(context.Context, []Alert) error { panic("boom") }
+
+func TestQueueRecoversNotifierPanicAndRetries(t *testing.T) {
+	q := NewQueue(10, 0)
+	q.Enqueue([]Alert{{Rule: "r", Severity: "warning", Message: "m"}})
+	if _, err := q.Drain(context.Background(), panicNotifier{}); err == nil {
+		t.Fatal("panic was swallowed")
+	}
+	st := q.Status()
+	if st.InFlight != 0 || st.Pending != 1 || st.LastError == "" {
+		t.Fatalf("panic left batch stuck: %+v", st)
+	}
+	if _, err := q.Drain(context.Background(), &RecordingNotifier{}); err != nil {
+		t.Fatalf("retry after panic: %v", err)
+	}
+}

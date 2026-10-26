@@ -176,7 +176,7 @@ func TestEncryptedBackupRestorePreservesDurableState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.ManifestVerified || res.SchemaVersion != 5 {
+	if !res.ManifestVerified || res.SchemaVersion != 6 {
 		t.Fatalf("restore result = %+v", res)
 	}
 	restored := recoveryStore(t, target)

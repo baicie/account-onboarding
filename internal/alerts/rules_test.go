@@ -15,7 +15,7 @@ func TestEvaluateAlertsActionableRules(t *testing.T) {
 		LastVerifiedBackupMS: &backup,
 	}
 	got := EvaluateAlerts(AlertInput{
-		Metrics: m, Ready: false, ExpectedSchema: 5, NowMS: 10 * 24 * 3600 * 1000,
+		Metrics: m, Ready: false, ExpectedSchema: 6, NowMS: 10 * 24 * 3600 * 1000,
 		BackupMaxAgeMS: (7 * 24 * 3600 * 1000), ReconciliationThreshold: 10,
 		ProviderErrorThreshold: 20,
 	})
@@ -33,7 +33,7 @@ func TestEvaluateAlertsActionableRules(t *testing.T) {
 
 func TestEvaluateAlertsReportsMissingBackupOnlyWhenWindowConfigured(t *testing.T) {
 	got := EvaluateAlerts(AlertInput{Metrics: storage.OperationalMetrics{SchemaVersion: 5}, Ready: true,
-		ExpectedSchema: 5, BackupMaxAgeMS: 1000, NowMS: 2000})
+		ExpectedSchema: 6, BackupMaxAgeMS: 1000, NowMS: 2000})
 	found := false
 	for _, a := range got {
 		if a.Rule == "backup_verification_missing" {
@@ -44,7 +44,7 @@ func TestEvaluateAlertsReportsMissingBackupOnlyWhenWindowConfigured(t *testing.T
 		t.Fatalf("missing backup alert with configured window: %+v", got)
 	}
 	// No backup window => no backup alert.
-	none := EvaluateAlerts(AlertInput{Metrics: storage.OperationalMetrics{SchemaVersion: 5}, Ready: true, ExpectedSchema: 5})
+	none := EvaluateAlerts(AlertInput{Metrics: storage.OperationalMetrics{SchemaVersion: 5}, Ready: true, ExpectedSchema: 6})
 	for _, a := range none {
 		if a.Rule == "backup_verification_missing" || a.Rule == "backup_verification_stale" {
 			t.Fatalf("unexpected backup alert without window: %+v", none)

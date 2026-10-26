@@ -36,7 +36,7 @@ api() { curl -sS -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 DB="$WORK/data/state.sqlite"
 start_app "$PORT1" "$DB" "$WORK/app1.log" || { bad "first start"; exit 1; }
-ok "service started (fresh DB, schema 5)"
+ok "service started (fresh DB, schema 6)"
 
 # Workflow data: a sandbox run through the real engine with fake providers.
 RUN_JSON="$(api -X POST "$BASE1/v1/runs" -H "Idempotency-Key: r6-restore-1" -d '{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox"}')"

@@ -265,7 +265,7 @@ func TestHTTPBearerAuthNearMisses(t *testing.T) {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		t.Fatalf("decode meta: %v", err)
 	}
-	if meta.Version == "" || meta.SchemaVersion != 5 || meta.Mode != "sandbox" {
+	if meta.Version == "" || meta.SchemaVersion != 6 || meta.Mode != "sandbox" {
 		t.Fatalf("meta = %+v", meta)
 	}
 	if strings.Contains(string(raw), admin) {
@@ -439,7 +439,7 @@ func TestHTTPReadinessAndReadModel(t *testing.T) {
 	if err := json.Unmarshal(raw, &ready); err != nil {
 		t.Fatalf("decode readyz: %v", err)
 	}
-	if !ready.Ready || ready.SchemaVersion != 5 || !strings.EqualFold(ready.WAL, "wal") {
+	if !ready.Ready || ready.SchemaVersion != 6 || !strings.EqualFold(ready.WAL, "wal") {
 		t.Fatalf("readyz = %+v", ready)
 	}
 }

@@ -232,7 +232,7 @@ func (q *Queue) Drain(ctx context.Context, n Notifier) (int, error) {
 	}
 	q.mu.Unlock()
 
-	err := n.Notify(ctx, alerts)
+	err := safeNotify(ctx, n, alerts)
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -272,6 +272,15 @@ func (q *Queue) Drain(ctx context.Context, n Notifier) (int, error) {
 		sent++
 	}
 	return sent, nil
+}
+
+func safeNotify(ctx context.Context, n Notifier, alerts []Alert) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("alerts: notifier panic: %v", r)
+		}
+	}()
+	return n.Notify(ctx, alerts)
 }
 
 func (q *Queue) Status() QueueStatus {

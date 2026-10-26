@@ -40,6 +40,8 @@ func migrationName(v int) string {
 		return "0004_external_operations.sql"
 	case 5:
 		return "0005_external_operation_lifecycle.sql"
+	case 6:
+		return "0006_alert_outbox.sql"
 	default:
 		return ""
 	}
@@ -59,7 +61,7 @@ func TestSchemaUpgradesTo5FromEmpty3And4(t *testing.T) {
 			}
 			defer s.Close()
 			h, err := s.Health(ctx)
-			if err != nil || h.SchemaVersion != 5 || !h.ExternalOperationsReady {
+			if err != nil || h.SchemaVersion != 6 || !h.ExternalOperationsReady {
 				t.Fatalf("health = %+v err=%v", h, err)
 			}
 			rows, err := s.readDB.Query(`PRAGMA table_info(external_operations)`)
