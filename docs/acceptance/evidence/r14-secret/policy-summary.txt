@@ -1,0 +1,5 @@
+Secret policy R14:
+- one readSecureSecretFile for admin/readonly tokens, master key, Cloudflare admin/site passwords, Keycloak admin password/admin client/client secret, GitHub token, WorkBuddy token, OIDC client secret.
+- 0400/0600 accepted; 0450/0644/0660/0666 rejected.
+- directory/missing/empty/oversize/symlink/replacement/all-provider tests pass; error text never contains value.
+- Docker 0444 and K8s projected symlinks require explicit copy/defaultMode adaptation; ADR 0005.

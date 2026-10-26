@@ -1,0 +1,8 @@
+Encrypted backup/restore state test:
+- real SQLite + internal/ops AES-256-GCM Backup/Restore
+- completed/failed-terminal/waiting-retry runs
+- revoked session
+- PREPARED, IN_FLIGHT, OUTCOME_UNKNOWN, RECONCILIATION_REQUIRED, RESOLVED external operations
+- audit row count preserved, schema 5
+- wrong key and corrupt snapshot leave target byte-identical
+- unknown operation remains pending (no retry)
