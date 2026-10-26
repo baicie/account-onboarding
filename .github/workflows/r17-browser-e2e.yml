@@ -1,0 +1,47 @@
+name: r17-browser-e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - feat/r16-r17-final-sandbox-release-readiness
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: playwright chromium against real onboardd UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: false
+      - name: Install Playwright Chromium
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run real browser E2E
+        env:
+          PLAYWRIGHT_CHANNEL: ""
+        run: bash tests/browser/run.sh
+      - name: Upload Playwright failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: r17-browser-evidence
+          path: |
+            tests/browser/test-results
+            tests/browser/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore

@@ -18,3 +18,8 @@
 coverage.out
 *.test
 *.lock
+
+# R16 browser E2E artifacts
+tests/browser/node_modules/
+tests/browser/test-results/
+tests/browser/playwright-report/
