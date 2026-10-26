@@ -104,6 +104,7 @@ func seedRecoveryState(t *testing.T, s *storage.Store) (runs []string, ops map[s
 	seedOp("inflight", storage.ExternalInFlight)
 	seedOp("unknown", storage.ExternalOutcomeUnknown)
 	seedOp("recon", storage.ExternalReconciliationReq)
+	seedOp("confirmed", storage.ExternalConfirmed)
 	seedOp("resolved", storage.ExternalOutcomeUnknown)
 	// Resolve the last op through the real operator path.
 	op, err := s.GetExternalOperationByID(ctx, ops["resolved"])
@@ -195,10 +196,17 @@ func TestEncryptedBackupRestorePreservesDurableState(t *testing.T) {
 	if err != nil || !revoked {
 		t.Fatalf("session revocation not restored: %v %v", revoked, err)
 	}
+	// An expired revocation must no longer block future sessions.
+	if err := restored.RevokeSession(ctx, "session-expired-r14", time.Now().Add(-2*time.Hour).UTC(), time.Now().Add(-time.Hour).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if expired, err := restored.SessionRevoked(ctx, "session-expired-r14", time.Now().UTC()); err != nil || expired {
+		t.Fatalf("expired session revocation still active: %v %v", expired, err)
+	}
 	wantStates := map[string]string{
 		"prepared": storage.ExternalPrepared, "inflight": storage.ExternalInFlight,
 		"unknown": storage.ExternalOutcomeUnknown, "recon": storage.ExternalReconciliationReq,
-		"resolved": storage.ExternalResolved,
+		"confirmed": storage.ExternalConfirmed, "resolved": storage.ExternalResolved,
 	}
 	for name, want := range wantStates {
 		op, err := restored.GetExternalOperationByID(ctx, ops[name])
