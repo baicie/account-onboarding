@@ -119,7 +119,11 @@ func TestWebhookEgressIPPolicy(t *testing.T) {
 		{"127.0.0.1", false, false}, {"::1", false, false}, {"10.0.0.1", false, false},
 		{"172.16.0.1", false, false}, {"192.168.1.1", false, false}, {"169.254.1.1", false, false},
 		{"169.254.169.254", false, false}, {"::ffff:127.0.0.1", false, false},
-		{"100.64.0.1", false, false}, {"1.1.1.1", true, false}, {"127.0.0.1", true, true},
+		{"100.64.0.1", false, false}, {"0.0.0.1", false, false}, {"0.255.255.255", false, false},
+		{"240.0.0.1", false, false}, {"255.255.255.255", false, false}, {"192.0.0.1", false, false},
+		{"198.18.0.1", false, false}, {"198.51.100.1", false, false}, {"203.0.113.1", false, false},
+		{"224.0.0.1", false, false}, {"64:ff9b::1", false, false}, {"2002::1", false, false},
+		{"2001:db8::1", false, false}, {"1.1.1.1", true, false}, {"127.0.0.1", true, true},
 	}
 	for _, c := range cases {
 		ip := net.ParseIP(c.ip)

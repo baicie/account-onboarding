@@ -266,8 +266,23 @@ func validateEgressIP(ip net.IP, allowLoopback bool) error {
 	if addr.IsPrivate() {
 		return fmt.Errorf("private address %s", addr)
 	}
-	if addr.Is4() && netip.MustParsePrefix("100.64.0.0/10").Contains(addr) {
-		return fmt.Errorf("carrier-grade NAT address %s", addr)
+	blocked := []netip.Prefix{
+		netip.MustParsePrefix("0.0.0.0/8"),       // this-network / wildcard
+		netip.MustParsePrefix("100.64.0.0/10"),   // carrier-grade NAT
+		netip.MustParsePrefix("192.0.0.0/24"),    // IETF protocol assignments
+		netip.MustParsePrefix("192.0.2.0/24"),    // TEST-NET-1
+		netip.MustParsePrefix("198.18.0.0/15"),   // benchmarking
+		netip.MustParsePrefix("198.51.100.0/24"), // TEST-NET-2
+		netip.MustParsePrefix("203.0.113.0/24"),  // TEST-NET-3
+		netip.MustParsePrefix("240.0.0.0/4"),     // reserved/future
+		netip.MustParsePrefix("64:ff9b::/96"),    // NAT64
+		netip.MustParsePrefix("2002::/16"),       // 6to4
+		netip.MustParsePrefix("2001:db8::/32"),   // documentation
+	}
+	for _, prefix := range blocked {
+		if prefix.Contains(addr) {
+			return fmt.Errorf("reserved/blocked address %s", addr)
+		}
 	}
 	// Explicit metadata/RFC1918 special cases are covered by IsPrivate, but
 	// keep 169.254.169.254 protected if a platform reports non-standard flags.
