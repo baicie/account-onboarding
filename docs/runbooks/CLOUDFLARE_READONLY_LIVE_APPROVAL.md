@@ -4,6 +4,8 @@ Status values are exact and must not be inferred from tooling:
 
 - `NOT_AUTHORIZED` — default; no real request may be made.
 - `AUTHORIZED_READONLY` — operator signed this form with the exact scope below.
+- `AUTHORIZED_READONLY_LIVE_NOT_RUN` — approval exists but the request has not
+  run yet; this is the only acceptable R14.1 terminal state.
 - `EXECUTED_READONLY` — the approved request actually ran and evidence was archived.
 
 A tool existing, an authorization file existing, or a Mock PASS is **not**
@@ -31,6 +33,13 @@ the operator's behalf.
 | Review method | operator verifies report fields and artifact digest |
 | Remote side effects | none expected; read-only GET |
 | Approver / stop authority | `________________` |
+
+## Stage B is separate
+
+Stage A is list-only. Creating a dedicated mailbox, sending a real message, or
+deleting any resource requires a **separate written authorization** tied to a
+new window/budget; it cannot be inferred from Stage A approval. If Stage A has
+not succeeded, Stage B must not be planned as an execution.
 
 ## Execution evidence to return
 

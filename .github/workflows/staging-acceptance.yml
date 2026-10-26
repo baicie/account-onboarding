@@ -13,6 +13,7 @@ on:
       - feat/r12-acceptance-integrity
       - feat/r13-integration-reliability
       - feat/r14-security-release-closure
+      - feat/r14-1-final-safety-closure
 concurrency:
   group: staging-acceptance
   cancel-in-progress: false
