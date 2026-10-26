@@ -74,17 +74,12 @@ func TestSecureSecretFilePathSafety(t *testing.T) {
 
 func TestSecureSecretFileDetectsReplacement(t *testing.T) {
 	p := writeMode(t, 0o600, "original")
+	other := writeMode(t, 0o600, "different-inode")
 	origOpen := openSecretFile
 	t.Cleanup(func() { openSecretFile = origOpen })
-	openSecretFile = func(path string) (*os.File, error) {
-		// Replace with a different owner-only inode between Lstat and Open.
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("replacement"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return os.Open(path)
+	openSecretFile = func(string) (*os.File, error) {
+		// Open a different owner-only file than the one that was Lstat'ed.
+		return os.Open(other)
 	}
 	if _, err := readSecureSecretFile(p, "test", secretPolicy{}); err == nil || !strings.Contains(err.Error(), "changed") {
 		t.Fatalf("replacement not detected: %v", err)
