@@ -29,7 +29,10 @@ fi
 # ---- directories + compose file ---------------------------------------------------
 [ -n "$COMPOSE_B64" ] || { echo "ERROR: compose payload missing" >&2; exit 1; }
 as_root mkdir -p "$DATA" "$SECRETS" "$SECRETS_SRC"
-as_root chown "$(id -u):$(id -g)" "$DIR" "$DATA"
+as_root chown "$(id -u):$(id -g)" "$DIR"
+# The data directory belongs to the container user (10001), not to the deploy user.
+as_root chown 10001:10001 "$DATA"
+as_root chmod 0700 "$DATA"
 as_root chmod 0700 "$SECRETS"
 printf "%s" "$COMPOSE_B64" | base64 -d > "$COMPOSE.tmp"
 mv -f "$COMPOSE.tmp" "$COMPOSE"
