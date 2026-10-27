@@ -2,48 +2,41 @@
 # Runs ON the target host over ssh (fed to `bash -s` with positional arguments).
 #
 # Arguments:
-#   $1 image repository        (ghcr.io/owner/repo)
-#   $2 tag                     (v0.1.0)
-#   $3 digest                  (sha256:... of the pushed index; logged, not trusted)
-#   $4 container name          (account-onboarding)
-#   $5 deploy directory        (/opt/account-onboarding)
-#   $6 host port               (18788)
-#   $7 compose file path       (already uploaded by the workflow)
+#   $1 image repository   $2 tag        $3 digest      $4 container name
+#   $5 deploy dir         $6 host port  $7 domains     $8 compose (base64)
 #
-# Contract: idempotent, fails closed, never leaves the service on a half-deployed
-# image, and never prints secret material.
+# One SSH connection does everything: install the compose file, bootstrap the
+# directories and the secret projection, pull, materialize, deploy, health check and
+# roll back on failure. Failures are explicit; secret material is never printed.
 set -euo pipefail
 
-IMAGE="$1"; TAG="$2"; DIGEST="$3"; CONTAINER="$4"; DIR="$5"; HOST_PORT="$6"; COMPOSE="$7"; DOMAINS="${8:-moonbyte.test}"
+IMAGE="$1"; TAG="$2"; DIGEST="$3"; CONTAINER="$4"; DIR="$5"; HOST_PORT="$6"; DOMAINS="${7:-moonbyte.test}"; COMPOSE_B64="${8:-}"
 DATA="$DIR/data"; SECRETS_SRC="$DIR/secrets-src"; SECRETS="$DIR/secrets"; STATE="$DIR/.current-tag"
+COMPOSE="$DIR/docker-compose.deploy.yml"
 
 echo "==> target: $IMAGE:$TAG -> $DIR (container $CONTAINER, 127.0.0.1:$HOST_PORT)"
 
-# docker access: cloud images often have the user in sudo but not in the docker group
-if docker info >/dev/null 2>&1; then
-  DOCKER=(docker); echo "==> docker: direct"
-elif sudo -n true >/dev/null 2>&1; then
-  DOCKER=(sudo -n docker); echo "==> docker: via sudo -n"
-else
-  echo "ERROR: no docker access and no passwordless sudo; add the user to the docker group" >&2
-  exit 1
-fi
-dk() { "${DOCKER[@]}" "$@"; }
-
-# ---- bootstrap: directories + secret projection (generated here, once) ---------
-# Nothing has to be prepared by hand: this script creates the directories and, on
-# the first deploy, generates the two secrets on the host itself. They never leave
-# the host and are never echoed.
+# ---- root helper (the deploy user is usually in sudo, not root) -------------------
 if [ "$(id -u)" = "0" ]; then
   as_root() { "$@"; }
 elif sudo -n true >/dev/null 2>&1; then
   as_root() { sudo -n "$@"; }
 else
-  echo "ERROR: need root or passwordless sudo on the host to own the secret directory" >&2
+  echo "ERROR: need root or passwordless sudo on the host to own the deploy directory" >&2
   exit 1
 fi
+
+# ---- directories + compose file ---------------------------------------------------
+[ -n "$COMPOSE_B64" ] || { echo "ERROR: compose payload missing" >&2; exit 1; }
 as_root mkdir -p "$DATA" "$SECRETS" "$SECRETS_SRC"
+as_root chown "$(id -u):$(id -g)" "$DIR" "$DATA"
 as_root chmod 0700 "$SECRETS"
+printf "%s" "$COMPOSE_B64" | base64 -d > "$COMPOSE.tmp"
+mv -f "$COMPOSE.tmp" "$COMPOSE"
+chmod 0644 "$COMPOSE"
+echo "==> compose installed: $COMPOSE"
+
+# ---- secret projection: generated here, once, kept on re-deploy -------------------
 if ! as_root test -f "$SECRETS_SRC/onboarding_master_key"; then
   echo "==> generating the master keyring on the host"
   as_root sh -c "openssl rand 32 > $SECRETS_SRC/onboarding_master_key"
@@ -55,30 +48,42 @@ fi
 for f in onboarding_master_key onboard_admin_token; do
   as_root chown root:root "$SECRETS_SRC/$f"
   as_root chmod 0444 "$SECRETS_SRC/$f"
-  mode=$(as_root stat -c "%a" "$SECRETS_SRC/$f" 2>/dev/null || as_root stat -f "%Lp" "$SECRETS_SRC/$f")
+  mode=$(as_root stat -c "%a" "$SECRETS_SRC/$f")
   if [ "$mode" != "444" ]; then
     echo "ERROR: $SECRETS_SRC/$f must be 0444 (it is $mode)" >&2
     exit 1
   fi
 done
-[ -f "$COMPOSE" ] || { echo "ERROR: compose file $COMPOSE missing" >&2; exit 1; }
+
+# ---- docker access ----------------------------------------------------------------
+if docker info >/dev/null 2>&1; then
+  DOCKER=(docker); echo "==> docker: direct"
+elif sudo -n true >/dev/null 2>&1; then
+  DOCKER=(sudo -n docker); echo "==> docker: via sudo -n"
+else
+  echo "ERROR: no docker access and no passwordless sudo; run sudo usermod -aG docker <user>" >&2
+  exit 1
+fi
+dk() { "${DOCKER[@]}" "$@"; }
+
+# ---- pull ------------------------------------------------------------------------
 if ! dk image inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
   if [ -f "$DIR/.ghcr-token" ]; then
     echo "==> pulling with the host-stored registry token"
     dk login ghcr.io -u "${GHCR_USER:-token}" --password-stdin < "$DIR/.ghcr-token" >/dev/null
   else
-    echo "==> pulling (package assumed public)"
+    echo "==> pulling (package must be publicly readable)"
   fi
-  dk pull "$IMAGE:$TAG"
-else
-  echo "==> image already present locally"
+  if ! dk pull "$IMAGE:$TAG"; then
+    echo "ERROR: cannot pull $IMAGE:$TAG" >&2
+    echo "       make the GHCR package public, or store a read:packages token in" >&2
+    echo "       $DIR/.ghcr-token (mode 0600) so this script can log in" >&2
+    exit 1
+  fi
 fi
-pulled=$(dk image inspect "$IMAGE:$TAG" --format "{{.Id}}" 2>/dev/null || true)
-echo "==> local image id: $pulled (index digest from CI: $DIGEST)"
+echo "==> image id: $(dk image inspect "$IMAGE:$TAG" --format "{{.Id}}" 2>/dev/null || echo unknown) (CI index digest: $DIGEST)"
 
-# ---- materialize secrets: 0400/10001 files the service accepts -----------------
-# The service rejects 0444 sources and symlinks, so the root-owned projection is
-# copied by the shipped materializer (the same path the Docker/Kind gates verify).
+# ---- materialize the 0400 files the service accepts -------------------------------
 dk run --rm --user 0:0 \
   --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
   --security-opt no-new-privileges:true \
@@ -86,22 +91,20 @@ dk run --rm --user 0:0 \
   --entrypoint /bin/sh "$IMAGE:$TAG" \
   -c "exec /app/scripts/materialize_secrets.sh --source-dir /src --target-dir /run/secrets --uid 10001 --gid 10001"
 
-# ---- deploy with rollback -----------------------------------------------------
+# ---- deploy with rollback ---------------------------------------------------------
 previous=""
 if [ -f "$STATE" ]; then previous=$(cat "$STATE"); fi
 echo "==> previous tag: ${previous:-<none>}"
 
-# compose needs the four variables; sudo -n clears the environment, so pass them
-# explicitly on that path instead of relying on export.
-compose_up() {
+compose_up() { # compose_up <tag>
   local tag="$1"
   if [ "${DOCKER[0]}" = "sudo" ]; then
-    sudo -n env IMAGE_REPO="$IMAGE" IMAGE_TAG="$tag" CONTAINER_NAME="$CONTAINER" ONBOARD_DOMAINS="$DOMAINS" \
-      HOST_PORT="$HOST_PORT" HOST_DIR="$DIR" \
+    sudo -n env IMAGE_REPO="$IMAGE" IMAGE_TAG="$tag" CONTAINER_NAME="$CONTAINER" \
+      HOST_PORT="$HOST_PORT" HOST_DIR="$DIR" ONBOARD_DOMAINS="$DOMAINS" \
       docker compose -p "$CONTAINER" -f "$COMPOSE" up -d --remove-orphans
   else
-    IMAGE_REPO="$IMAGE" IMAGE_TAG="$tag" CONTAINER_NAME="$CONTAINER" ONBOARD_DOMAINS="$DOMAINS" \
-      HOST_PORT="$HOST_PORT" HOST_DIR="$DIR" \
+    IMAGE_REPO="$IMAGE" IMAGE_TAG="$tag" CONTAINER_NAME="$CONTAINER" \
+      HOST_PORT="$HOST_PORT" HOST_DIR="$DIR" ONBOARD_DOMAINS="$DOMAINS" \
       docker compose -p "$CONTAINER" -f "$COMPOSE" up -d --remove-orphans
   fi
 }
@@ -125,6 +128,7 @@ if [ "$healthy" != "1" ]; then
   exit 1
 fi
 
-printf "%s" "$TAG" > "$STATE"
+echo "$TAG" > "$STATE"
 echo "==> deployed $TAG, healthy on 127.0.0.1:$HOST_PORT"
+echo "==> admin token lives on the host: sudo cat $SECRETS/onboard_admin_token"
 dk image prune -f --filter "until=168h" >/dev/null 2>&1 || true
