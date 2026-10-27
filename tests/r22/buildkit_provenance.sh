@@ -157,7 +157,7 @@ REBUILT="$(curl -sI -H 'Accept: application/vnd.oci.image.index.v1+json' "http:/
   echo "rebuilt_digest=$REBUILT"
   echo "unsigned_digest=$UNDIGEST"
 } >"$WORK/summary.txt"
-[ -z "$EVIDENCE" ] || cp "$WORK/summary.txt" "$WORK/verify.json" "$EVIDENCE/" 2>/dev/null
+[ -z "$EVIDENCE" ] || cp "$WORK/summary.txt" "$WORK/verify.json" "$WORK/provenance.json" "$EVIDENCE/" 2>/dev/null
 cat "$WORK/summary.txt"
 echo "PROVENANCE_VERIFIED"
 echo "TRUSTED_BUILD_VERIFIED=NO (no signature issuer/identity verification in this job)"

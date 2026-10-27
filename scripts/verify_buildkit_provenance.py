@@ -73,13 +73,19 @@ def get_blob(base, repo, digest):
 
 
 def collect_statements(base, repo, image_digest):
-    """Return (items, errors) where items are (kind, statement, manifest_digest)."""
+    """Return (items, errors) for every attestation attached to the image."""
     items, errors = [], []
     index = get_manifest(base, repo, image_digest)
     manifests = index.get("manifests")
     if not manifests:
         # A single-platform image manifest: no attestation can be attached here.
         return items, ["image digest %s is not an index; no attestation manifests" % image_digest]
+    # Attestation subjects reference the *platform* manifest digest, not the index.
+    platform_digests = [
+        e.get("digest", "") for e in manifests
+        if (e.get("annotations") or {}).get("vnd.docker.reference.type") != "attestation-manifest"
+    ]
+    platform_digests = [d for d in platform_digests if d]
     for entry in manifests:
         annot = entry.get("annotations") or {}
         if annot.get("vnd.docker.reference.type") != "attestation-manifest":
@@ -93,12 +99,18 @@ def collect_statements(base, repo, image_digest):
             except Exception as exc:  # noqa: BLE001 - report, do not crash
                 errors.append("attestation blob %s is not JSON: %s" % (layer["digest"], exc))
                 continue
+            plat = entry.get("platform") or {}
+            platform_label = ""
+            if isinstance(plat, dict) and plat.get("os") and plat.get("architecture"):
+                platform_label = "%s/%s" % (plat["os"], plat["architecture"])
             items.append({
                 "kind": "provenance" if "provenance" in str(stmt.get("predicateType", "")) else "sbom",
                 "statement": stmt,
                 "attestation_manifest": entry["digest"],
                 "predicate_digest": layer["digest"],
                 "subject_hint": platform,
+                "platform": platform_label,
+                "platform_digests": platform_digests,
             })
     if not items:
         errors.append("no attestation statements found in the index")
@@ -110,16 +122,33 @@ def _digest_hex(expected):
 
 
 def _build_args(predicate):
+    """Collect build args from every shape BuildKit has used."""
+    out = {}
     params = (predicate.get("invocation") or {}).get("parameters") or {}
     raw = params.get("build-args") or []
-    out = {}
-    for item in raw:
-        if isinstance(item, dict) and "key" in item:
-            out[item["key"]] = item.get("value", "")
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict) and "key" in item:
+                out[item["key"]] = item.get("value", "")
+    elif isinstance(raw, dict):
+        out.update(raw)
+    build_def = predicate.get("buildDefinition") or {}
+    external = build_def.get("externalParameters") or {}
+    for holder in (external, external.get("config") or {}, external.get("request") or {},
+                   build_def.get("resolvedDependencies") and {} or {}):
+        if not isinstance(holder, dict):
+            continue
+        candidate = holder.get("build-args")
+        if isinstance(candidate, dict):
+            out.update(candidate)
+        elif isinstance(candidate, list):
+            for item in candidate:
+                if isinstance(item, dict) and "key" in item:
+                    out[item["key"]] = item.get("value", "")
     return out
 
 
-def verify_provenance(stmt, expect):
+def verify_provenance(stmt, expect, platform_hint=""):
     """Return a list of error strings; empty means verified."""
     errs = []
     subjects = stmt.get("subject") or []
@@ -127,9 +156,12 @@ def verify_provenance(stmt, expect):
         errs.append("provenance statement must have exactly one subject, got %d" % len(subjects))
         return errs
     got = (subjects[0].get("digest") or {}).get("sha256", "")
-    want = _digest_hex(expect["digest"])
-    if got != want:
-        errs.append("subject digest mismatch: statement=%s expected=%s" % (got, want))
+    allowed = {_digest_hex(expect["digest"])}
+    for d in expect.get("subject_digests") or []:
+        allowed.add(_digest_hex(d))
+    if got not in allowed:
+        errs.append("subject digest mismatch: statement=%s expected one of %s"
+                    % (got, sorted(allowed)))
 
     ptype = stmt.get("predicateType", "")
     if ptype not in (SLSA_V02, SLSA_V1):
@@ -170,8 +202,10 @@ def verify_provenance(stmt, expect):
         if got_repo != expect["repository"]:
             errs.append("source repository mismatch: provenance=%r expected=%r" % (got_repo, expect["repository"]))
     if expect.get("platform"):
-        if platform != expect["platform"]:
-            errs.append("platform mismatch: provenance=%r expected=%r" % (platform, expect["platform"]))
+        observed = platform or platform_hint
+        if observed != expect["platform"]:
+            errs.append("platform mismatch: provenance=%r index=%r expected=%r"
+                        % (platform, platform_hint, expect["platform"]))
     return errs
 
 
@@ -262,7 +296,10 @@ def main(argv=None):
             with open(args.dump_statement, "w", encoding="utf-8") as fh:
                 json.dump(stmt, fh, indent=2)
             dumped = True
-        errs = verify_provenance(stmt, expect) if item["kind"] == "provenance" else verify_sbom(stmt, expect)
+        expect_for_item = dict(expect)
+        expect_for_item["subject_digests"] = item.get("platform_digests") or []
+        errs = (verify_provenance(stmt, expect_for_item, item.get("platform", ""))
+                if item["kind"] == "provenance" else verify_sbom(stmt, expect))
         entry = {
             "kind": item["kind"],
             "attestation_manifest": item["attestation_manifest"],
