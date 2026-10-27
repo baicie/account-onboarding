@@ -209,6 +209,8 @@ def main(argv=None):
     ap.add_argument("--expect-repository", default="")
     ap.add_argument("--expect-platform", default="")
     ap.add_argument("--out", default="")
+    ap.add_argument("--dump-statement", default="",
+                    help="write the first provenance statement here (forgery tests)")
     args = ap.parse_args(argv)
 
     expect = {
@@ -253,8 +255,13 @@ def main(argv=None):
     if not sboms:
         report["errors"].append("no sbom attestation for %s" % args.digest)
 
+    dumped = False
     for item in items:
         stmt = item["statement"]
+        if args.dump_statement and item["kind"] == "provenance" and not dumped:
+            with open(args.dump_statement, "w", encoding="utf-8") as fh:
+                json.dump(stmt, fh, indent=2)
+            dumped = True
         errs = verify_provenance(stmt, expect) if item["kind"] == "provenance" else verify_sbom(stmt, expect)
         entry = {
             "kind": item["kind"],
