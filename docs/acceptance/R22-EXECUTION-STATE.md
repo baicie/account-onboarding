@@ -37,6 +37,7 @@ never claims a gate that has no evidence. Update it in place.
 | BuildKit SLSA provenance (Phase 4) | **implemented, CI verification pending**: scripts/verify_buildkit_provenance.py reads the registry (index -> attestation manifests -> in-toto statements) and checks subject/builder/invocation/source/platform/SPDX; 15/15 offline negatives; tests/r22/buildkit_provenance.sh builds once with --provenance=mode=max --sbom=true into a throwaway registry, verifies, pulls by digest, then attacks the claim (wrong commit/repo/platform/subject, forged statement, unsigned build, rebuild). TRUSTED_BUILD_VERIFIED is explicitly NOT claimed (no signature issuer verification) |
 
 | Phase 3/4 CI iteration 1 | running-restore 31/33 (retention section was not isolated: only 2 snapshots existed in CI, so the policy had nothing to prune) - fixed by giving retention its own directory; provenance 14/17 (all negatives pass; the positive verifier exited without writing its report, so the evidence file was missing) - the verifier now always writes a report and dumps the traceback |
+| v0.1 Sandbox RC | **FROZEN** - product code 7f7c3da (tree 7fa6a1a), final HEAD verified on 70ca189, record docs/acceptance/R22-V0.1-SANDBOX-RC.md; independent review pending; release_authorized=false |
 ## Known failing / open items
 
 | Item | State | Next action |
