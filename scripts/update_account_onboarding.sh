@@ -332,7 +332,9 @@ short_sha() { printf "%s" "${1:0:12}"; }
 
 build_image() {
   local sha
-  sha="$1" tag="account-onboarding:local-$(short_sha "$1")"
+  local sha="$1" ver tag
+  ver="$(printf %s "${ONBOARD_BUILD_VERSION:-0.1.0}" | tr . -)"
+  tag="account-onboarding:local=$(short_sha "$1")-$ver"
   log "building $tag from $sha"
   local args=(--build-arg "VERSION=${ONBOARD_BUILD_VERSION:-0.1.0}" --build-arg "COMMIT=$sha" --build-arg "GOPROXY=$GO_PROXY")
   [ -n "$APT_MIRROR" ] && args+=(--build-arg "APT_MIRROR=$APT_MIRROR")
@@ -445,6 +447,7 @@ do_deploy() {
   build_image "$TARGET_SHA"
   write_overrides "$IMAGE_TAG"
   if [ "$DRY_RUN" != "1" ]; then
+    prepare_deploy
     compose_valid
     materialize_secrets "$IMAGE_TAG"
   fi
