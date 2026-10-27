@@ -109,6 +109,7 @@ jobs:
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
       ONBOARD_DOMAINS: ${{ vars.ONBOARD_DOMAINS || 'moonbyte.test' }}
+      GHCR_MIRROR: ${{ vars.GHCR_MIRROR || 'ghcr.nju.edu.cn' }}
       SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       SSH_PASSWORD: ${{ secrets.DEPLOY_SSH_PASSWORD }}
     steps:
@@ -151,7 +152,7 @@ jobs:
           remote() {
             "${SSH[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' -- \
               "${IMAGE}" "${{ needs.build.outputs.tag }}" "${{ needs.build.outputs.digest }}" \
-              "${CONTAINER}" "${DEPLOY_DIR}" "${HOST_PORT}" "${ONBOARD_DOMAINS}" "${COMPOSE_B64}" \
+              "${CONTAINER}" "${DEPLOY_DIR}" "${HOST_PORT}" "${ONBOARD_DOMAINS}" "${COMPOSE_B64}" "${GHCR_MIRROR}" \
               < deploy/release/remote-deploy.sh
           }
           # Retry only connection-level failures (ssh exits 255); a failing deployment
