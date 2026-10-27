@@ -94,6 +94,8 @@ test.describe('deterministic operator matrix', () => {
       await a.goto(url);
       await b.goto(url);
       await expect(a.locator('body')).toContainText('RESOLVED');
+      await expect(a.locator('form[action$="/resolve"]')).toHaveCount(0);
+      await expect(a.locator('text=This operation is not currently resolvable.')).toBeVisible();
       await expect(b.locator('body')).toContainText('RESOLVED');
       const auditRows = a.locator('h2:has-text("Audit history") + table tbody tr');
       await expect(auditRows).toHaveCount(1);

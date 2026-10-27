@@ -271,3 +271,22 @@ func TestInvalidExternalAndAlertFiltersAre400(t *testing.T) {
 		}
 	}
 }
+
+func TestAlertDetailDistinguishesNotFoundAndInvalid(t *testing.T) {
+	e := newEnv(t, nil)
+	loginUISession(t, e)
+	for path, want := range map[string]int{
+		"/ui/alerts/outbox/bad":               http.StatusBadRequest,
+		"/ui/alerts/outbox/al-does-not-exist": http.StatusNotFound,
+	} {
+		resp, err := e.client.Get(e.ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Fatalf("%s = %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+}
