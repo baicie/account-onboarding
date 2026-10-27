@@ -106,7 +106,11 @@ for _ in $(seq 1 60); do
   [ "$phase" = "Running" ] && [ "$ready" = "true" ] && break
   sleep 2
 done
-[ "$(kubectl -n r22-kind get pod r22-onboard -o jsonpath='{.status.phase}')" = "Running" ] || { kubectl -n r22-kind describe pod r22-onboard; fail "pod not running"; }
+if [ "$(kubectl -n r22-kind get pod r22-onboard -o jsonpath='{.status.phase}')" != "Running" ]; then
+  kubectl -n r22-kind logs r22-onboard -c materialize 2>&1 || true
+  kubectl -n r22-kind describe pod r22-onboard | tail -80
+  fail "pod not running"
+fi
 ok "kind pod running with projected secret"
 
 # Verify the materialized target inside the app container (no content output).
