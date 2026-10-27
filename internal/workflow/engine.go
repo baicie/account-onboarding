@@ -216,6 +216,11 @@ func (e *Engine) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// A maintenance window must not mutate state behind the
+				// restore: skip the sweep until the engine resumes.
+				if e.paused.Load() {
+					continue
+				}
 				ids, err := e.store.SweepDeadlines(ctx, 50)
 				if err != nil {
 					e.log.ErrorContext(ctx, "deadline sweep failed", "error", err)

@@ -27,3 +27,7 @@ tests/browser/playwright-report/
 tests/browser/browser-evidence.json
 tests/browser/playwright-results.json
 browser-evidence/
+
+# Python bytecode from local tooling runs
+__pycache__/
+*.pyc

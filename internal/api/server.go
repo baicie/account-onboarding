@@ -150,7 +150,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ui/runs/{id}/cancel", s.uiAuth(s.handleCancelUI))
 	mux.HandleFunc("GET /ui/static/app.css", s.handleCSS)
 
-	return s.securityHeaders(s.requestLogger(s.recoverer(s.maintenanceGate(s.rateLimit(mux)))))
+	return s.securityHeaders(s.requestLogger(s.recoverer(s.rateLimit(s.maintenanceGate(mux)))))
 }
 
 // ---------------------------------------------------------------------------
