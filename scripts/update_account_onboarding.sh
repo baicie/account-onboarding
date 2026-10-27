@@ -193,11 +193,23 @@ compose_valid() {
 }
 
 # ---- sqlite helpers ---------------------------------------------------------------
+as_root() { # run a read-only host check when the runtime directory is 0700:10001
+  if [ "$(id -u)" = "0" ]; then "$@"
+  elif sudo -n true >/dev/null 2>&1; then sudo -n "$@"
+  else return 1; fi
+}
+
+db_file_exists() { [ -f "$1" ] || as_root test -f "$1"; }
+db_file_nonempty() { [ -s "$1" ] || as_root test -s "$1"; }
+db_file_owner() { stat -c %u "$1" 2>/dev/null || stat -f %u "$1" 2>/dev/null || as_root stat -c %u "$1" 2>/dev/null || as_root stat -f %u "$1"; }
+db_file_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null || as_root stat -c %a "$1" 2>/dev/null || as_root stat -f %Lp "$1"; }
+
 sqlite_user_version() { # MAX(schema_migrations.version); non-zero when unreadable/empty
   local f="$1"
-  [ -f "$f" ] || return 1
+  db_file_exists "$f" || return 1
   command -v python3 >/dev/null 2>&1 || { warn "python3 is required to read the schema version"; return 1; }
-  python3 - "$f" <<'PYEOF'
+  if [ -r "$f" ]; then
+    python3 - "$f" <<'PYEOF'
 import sqlite3, sys
 try:
     db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
@@ -209,6 +221,20 @@ if not row or row[0] is None:
 print(int(row[0]))
 sys.exit(0)
 PYEOF
+  else
+    as_root python3 - "$f" <<'PYEOF'
+import sqlite3, sys
+try:
+    db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
+    row = db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
+except Exception:
+    sys.exit(1)
+if not row or row[0] is None:
+    sys.exit(1)
+print(int(row[0]))
+sys.exit(0)
+PYEOF
+  fi
 }
 
 detect_existing_container() {
@@ -227,13 +253,13 @@ check_data_safety() {
   # Unconditional, first: the marker is written next to the target database path before
   # the publish step, so it matters for a first install, for a database without a
   # container and for a running container alike.
-  if [ -e "$DATA/state.sqlite.restore-in-progress" ]; then
+  if db_file_exists "$DATA/state.sqlite.restore-in-progress"; then
     die "a restore marker is present at $DATA/state.sqlite.restore-in-progress; finish or clear the interrupted restore before deploying" 3
   fi
   c="$(detect_existing_container)"
   if [ -z "$c" ]; then
     log "no existing container: first install path"
-    if [ -f "$DATA/state.sqlite" ]; then
+    if db_file_exists "$DATA/state.sqlite"; then
       log "found a database with no container; it will be reused (not recreated)"
     fi
     return 0
@@ -248,14 +274,14 @@ check_data_safety() {
     dir="$(dirname "$current_secrets")"
     [ "$dir" = "$SECRETS" ] || warn "existing container mounts secrets from $dir, this run uses $SECRETS"
   fi
-  if [ -f "$DATA/state.sqlite" ] && [ ! -s "$DATA/state.sqlite" ]; then
+  if db_file_exists "$DATA/state.sqlite" && ! db_file_nonempty "$DATA/state.sqlite"; then
     die "$DATA/state.sqlite exists but is empty; refusing to deploy over a truncated database" 3
   fi
 }
 
 check_schema_compat() {
   local db="$DATA/state.sqlite" v
-  [ -f "$db" ] || { log "no database yet: first install"; return 0; }
+  db_file_exists "$db" || { log "no database yet: first install"; return 0; }
   if v="$(sqlite_user_version "$db")"; then
     log "current database schema version: $v"
     if [ -f "$STATE" ] && grep -q "\"schema_version\"" "$STATE" 2>/dev/null; then
@@ -304,7 +330,7 @@ ops_run() { # ops_run <backup|verify|restore> <args...>
 take_backup() {
   local ts dir snap man
   ts="$(date -u +%Y%m%dT%H%M%SZ)"; dir="$BACKUPS/$ts"
-  if [ ! -f "$DATA/state.sqlite" ]; then log "no database to back up (first install)"; return 0; fi
+  if ! db_file_exists "$DATA/state.sqlite"; then log "no database to back up (first install)"; return 0; fi
   if [ "$DRY_RUN" = "1" ]; then log "DRY-RUN would snapshot $DATA/state.sqlite into $dir"; return 0; fi
   mkdir -p "$RUNTIME/ops" "$dir"
   log "taking an encrypted snapshot in $dir"
@@ -441,7 +467,7 @@ do_build() {
 do_backup() {
   detect_docker
   take_backup
-  backup_is_usable || [ ! -f "$DATA/state.sqlite" ] || die "no usable snapshot after the backup step" 3
+  backup_is_usable || ! db_file_exists "$DATA/state.sqlite" || die "no usable snapshot after the backup step" 3
   log "backup-only complete"
 }
 
@@ -510,7 +536,7 @@ do_status() {
   log "container: $c"
   dk inspect "$c" --format "{{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} image={{.Config.Image}} id={{.Image}}"
   log "healthz: $(api_probe /healthz)  readyz: $(api_probe /readyz)"
-  if [ -f "$DATA/state.sqlite" ]; then log "database schema: $(sqlite_user_version "$DATA/state.sqlite" || echo unknown)"; fi
+  if db_file_exists "$DATA/state.sqlite"; then log "database schema: $(sqlite_user_version "$DATA/state.sqlite" || echo unknown)"; fi
 }
 
 ensure_data_owner() {
@@ -527,13 +553,13 @@ ensure_data_owner() {
 
 prepare_deploy() { # only for a real deploy or rollback, never build-only or preflight
   local owner mode f
-  owner="$(stat -c %u "$DATA" 2>/dev/null || stat -f %u "$DATA")"
+  owner="$(db_file_owner "$DATA")"
   [ "$owner" = "10001" ] || die "$DATA is owned by $owner, not 10001; refusing to start" 2
-  mode="$(stat -c %a "$DATA" 2>/dev/null || stat -f %Lp "$DATA")"
+  mode="$(db_file_mode "$DATA")"
   case "$mode" in 700|750) ;; *) die "$DATA mode $mode is too permissive; expected 0700" 2 ;; esac
   for f in state.sqlite state.sqlite-wal state.sqlite-shm; do
-    [ -e "$DATA/$f" ] || continue
-    owner="$(stat -c %u "$DATA/$f" 2>/dev/null || stat -f %u "$DATA/$f")"
+    db_file_exists "$DATA/$f" || continue
+    owner="$(db_file_owner "$DATA/$f")"
     [ "$owner" = "10001" ] || die "$DATA/$f is owned by $owner, not 10001; fix the ownership explicitly (this script does not rewrite existing data files)" 3
   done
   log "data directory ready for uid 10001 (mode $mode)"
