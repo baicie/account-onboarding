@@ -84,12 +84,13 @@ jobs:
       - name: Second deploy builds a distinguishable image, snapshots and records it
         run: |
           set -euo pipefail
-          A_ID="$(docker inspect account-onboarding --format '{{.Image}}')"
+          CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
+          A_ID="$(docker inspect "$CID" --format '{{.Image}}')"
           echo "IMAGE_A=$A_ID" >> "$GITHUB_ENV"
           ONBOARD_BUILD_VERSION=0.1.1-e2e bash scripts/update_account_onboarding.sh --deploy --offline \
             --expected-sha="$GITHUB_SHA" --root="$ROOT" \
             --go-proxy=https://proxy.golang.org,direct --host-port=18788
-          B_ID="$(docker inspect account-onboarding --format '{{.Image}}')"
+          B_ID="$(docker inspect "$CID" --format '{{.Image}}')"
           echo "IMAGE_B=$B_ID" >> "$GITHUB_ENV"
           echo "image A=$A_ID image B=$B_ID"
           test "$A_ID" != "$B_ID"
@@ -102,7 +103,8 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/update_account_onboarding.sh --rollback --root="$ROOT"
-          C_ID="$(docker inspect account-onboarding --format '{{.Image}}')"
+          CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
+          C_ID="$(docker inspect "$CID" --format '{{.Image}}')"
           echo "after rollback image=$C_ID expected=$IMAGE_A"
           test "$C_ID" = "$IMAGE_A"
           test "$C_ID" != "$IMAGE_B"
