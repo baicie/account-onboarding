@@ -372,8 +372,15 @@ state_num()   { sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" "$STATE" 2>/dev/nul
 
 # ---- health ----------------------------------------------------------------------
 api_probe() { # api_probe <path> -> http code, token taken from a file so it never reaches argv
-  local path="$1" token="$SECRETS/onboard_admin_token" code
-  if [ -f "$token" ]; then
+  local path="$1" token="" candidate code
+  # The materialized directory is intentionally 0700 and owned by the runtime
+  # UID, so the deploying user may not be able to read it. The source token is
+  # the same credential and is readable by the deployer; prefer it, then fall
+  # back to the materialized copy.
+  for candidate in "$SECRETS_SRC/onboard_admin_token" "$SECRETS/onboard_admin_token"; do
+    if [ -r "$candidate" ]; then token="$candidate"; break; fi
+  done
+  if [ -n "$token" ]; then
     local hdr; hdr="$(mktemp)"
     printf "Authorization: Bearer %s\n" "$(cat "$token")" > "$hdr"; chmod 600 "$hdr"
     code="$(curl -s -o /dev/null -m 5 -w "%{http_code}" -H @"$hdr" "http://127.0.0.1:$HOST_PORT$path" || true)"
@@ -539,7 +546,7 @@ dump_diagnostics() {
   compose ps -a 2>&1 || true
   if [ -n "$c" ]; then
     dk inspect "$c" --format "exit={{.State.ExitCode}} restarts={{.RestartCount}} status={{.State.Status}} ports={{.HostConfig.PortBindings}}" 2>&1 || true
-    dk logs --no-color --tail 60 "$c" 2>&1 || true
+    dk logs --tail 60 "$c" 2>&1 || true
   fi
   ls -ln "$DATA" 2>&1 || true
   ls -ln "$SECRETS" 2>&1 || true

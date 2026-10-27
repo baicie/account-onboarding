@@ -69,7 +69,16 @@ echo "/dev/root         100000000 1000000  99000000       2% /"
 STUB
 cat > "$STUB/curl" <<'STUB'
 #!/usr/bin/env bash
-case "$*" in *healthz*) echo "${STUB_HEALTHZ:-200}" ;; *readyz*) echo "${STUB_READYZ:-200}" ;; *) echo 200 ;; esac
+case "$*" in
+  *readyz*)
+    if [ "${STUB_REQUIRE_AUTH:-0}" = "1" ]; then
+      case "$*" in *"-H @"*) echo "${STUB_READYZ:-200}" ;; *) echo 401 ;; esac
+    else
+      echo "${STUB_READYZ:-200}"
+    fi ;;
+  *healthz*) echo "${STUB_HEALTHZ:-200}" ;;
+  *) echo 200 ;;
+esac
 STUB
 chmod +x "$STUB"/*
 
@@ -81,7 +90,7 @@ mkroot() { # fresh root + fixture; clears every per-case env override
   printf "ARG GOLANG_IMAGE=golang:stub@sha256:stub\nFROM scratch\n" > "$ROOT/app/Dockerfile"
   cp "$REPO/deploy/compose.yaml" "$ROOT/app/deploy/compose.yaml"
   unset STUB_DIRTY STUB_FETCH_RC STUB_HEAD STUB_TARGET STUB_CONTAINER STUB_MOUNT_DATA STUB_MOUNT_SECRETS
-  unset STUB_CONFIG_RC STUB_BUILD_RC STUB_RUN_RC STUB_INFO_RC STUB_UP_RC STUB_EXIT_CODE STUB_RESTARTS
+  unset STUB_CONFIG_RC STUB_BUILD_RC STUB_RUN_RC STUB_INFO_RC STUB_UP_RC STUB_EXIT_CODE STUB_RESTARTS STUB_REQUIRE_AUTH
 }
 run() { ( PATH="$STUB:/usr/bin:/bin" ONBOARD_RETRY_SLEEP=0 "$SCRIPT" "$@" ) >"$LOG" 2>&1; RC=$?; }
 want() { # want <name> <rc> [needle]
@@ -109,6 +118,7 @@ if grep -q DOCKER_RUN "$LOG"; then bad "build-only materialized secrets"; else o
 mkroot; run --deploy --dry-run --root="$ROOT"; want "dry-run deploy ok" 0 "DRY-RUN"
 if grep -q COMPOSE_UP "$LOG"; then bad "dry-run started a container"; else ok "dry-run started nothing"; fi
 mkroot; run --status --root="$ROOT"; want "status without state ok" 0 "no deployment state"
+mkroot; STUB_CONTAINER=account-onboarding STUB_REQUIRE_AUTH=1 run --status --root="$ROOT"; want "status authenticates readiness with the source token" 0 "readyz: 200"
 mkroot; run --rollback --root="$ROOT"; want "rollback without state refused" 1 "nothing to roll back"
 mkroot; run --backup-only --root="$ROOT"; want "backup-only without a database is a no-op" 0 "no database to back up"
 mkroot; : > "$ROOT/runtime/data/state.sqlite"; STUB_RUN_RC=1 run --backup-only --root="$ROOT"; want "backup failure aborts" 3 "backup failed"
