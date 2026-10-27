@@ -42,6 +42,7 @@ jobs:
         env:
           PLAYWRIGHT_CHANNEL: ""
           BROWSER_EVIDENCE_PATH: ${{ github.workspace }}/browser-evidence/browser-evidence.json
+          ONBOARD_BROWSER_MATRIX: "1"
         run: |
           mkdir -p browser-evidence
           bash tests/browser/run.sh

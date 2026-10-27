@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -71,7 +72,7 @@ func TestAlertsPageUsesDurableOutboxAndResolve(t *testing.T) {
 func TestRunsFilterAndRunIDRedirect(t *testing.T) {
 	e := newEnv(t, nil)
 	csrf := loginUISession(t, e)
-	resp, err := e.client.Get(e.ts.URL + "/ui/?status=FAILED&template=no-such-template")
+	resp, err := e.client.Get(e.ts.URL + "/ui/?status=FAILED_TERMINAL&template=sandbox-email-verify-oidc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,5 +178,96 @@ func TestRunIDLookupRedirectsToRunDetail(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/ui/runs/"+run.ID {
 		t.Fatalf("lookup = %d location=%q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+func TestInvalidRunFilterAndCursorAre400(t *testing.T) {
+	e := newEnv(t, nil)
+	loginUISession(t, e)
+	for _, path := range []string{
+		"/ui/?status=NOPE",
+		"/ui/?template=does-not-exist",
+		"/ui/?cursor=" + strings.Repeat("x", 600),
+		"/ui/?cursor=not-base64",
+	} {
+		resp, err := e.client.Get(e.ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s = %d, want 400", path, resp.StatusCode)
+		}
+	}
+}
+
+func TestRunsCursorPaginationNoDuplicates(t *testing.T) {
+	e := newEnv(t, nil)
+	for i := 0; i < 55; i++ {
+		if _, _, err := e.store.CreateRun(t.Context(), storage.CreateRunParams{
+			ID: security.NewID(), OwnerID: "operator", Template: fmt.Sprintf("t-%02d", i),
+			Mode: "sandbox-e2e", IdempotencyKey: fmt.Sprintf("r22-page-%02d", i),
+			ProviderSnapshotJSN: `{}`, RequestFingerprint: "fp",
+			DeadlineMS: time.Now().Add(time.Hour).UnixMilli(), Steps: []storage.StepSeed{{Name: "validate"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loginUISession(t, e)
+	resp, err := e.client.Get(e.ts.URL + "/ui/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "Next page") {
+		t.Fatal("first page has no next cursor")
+	}
+	m := regexp.MustCompile(`cursor=([^"&]+)`).FindStringSubmatch(string(body))
+	if len(m) != 2 {
+		t.Fatalf("no cursor in first page: %s", body)
+	}
+	seen := map[string]bool{}
+	for _, id := range regexp.MustCompile(`/ui/runs/([^"]+)`).FindAllStringSubmatch(string(body), -1) {
+		seen[id[1]] = true
+	}
+	resp, err = e.client.Get(e.ts.URL + "/ui/?cursor=" + m[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	body2, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("second page = %d", resp.StatusCode)
+	}
+	for _, id := range regexp.MustCompile(`/ui/runs/([^"]+)`).FindAllStringSubmatch(string(body2), -1) {
+		if seen[id[1]] {
+			t.Fatalf("duplicate run %s across pages", id[1])
+		}
+		seen[id[1]] = true
+	}
+	if len(seen) < 51 {
+		t.Fatalf("saw %d runs, expected >50", len(seen))
+	}
+}
+
+func TestInvalidExternalAndAlertFiltersAre400(t *testing.T) {
+	e := newEnv(t, nil)
+	loginUISession(t, e)
+	for _, path := range []string{"/ui/ops/external?status=NOPE", "/ui/alerts/outbox?status=NOPE", "/ui/alerts/outbox/bad"} {
+		resp, err := e.client.Get(e.ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		want := http.StatusBadRequest
+		if path == "/ui/alerts/outbox/bad" {
+			want = http.StatusBadRequest
+		}
+		if resp.StatusCode != want {
+			t.Fatalf("%s = %d, want %d", path, resp.StatusCode, want)
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -48,20 +49,29 @@ func parseInt64Form(r *http.Request, key string) (int64, error) {
 
 func (s *Server) handleOpsExternalPage(w http.ResponseWriter, r *http.Request) {
 	info, _ := authInfoFrom(r)
-	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	status := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
 	provider := strings.TrimSpace(r.URL.Query().Get("provider"))
 	runID := strings.TrimSpace(r.URL.Query().Get("run_id"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if msg := validateExternalFilters(status, provider, runID, cursor); msg != "" {
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
 	page, err := s.Store.ListExternalOperations(r.Context(), storage.ExternalOperationFilter{
 		Status: status, Provider: provider, RunID: runID, Limit: 50, Cursor: cursor,
 	})
 	if err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			http.Error(w, "invalid pagination cursor", http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "could not load external operations", http.StatusInternalServerError)
 		return
 	}
 	data := opsExternalPage{
 		pageData: pageData{Title: "Reconciliation", Version: Version, CSRFToken: info.CSRF,
-			SignedIn: true, Actor: info.Actor},
+			SignedIn: true, Actor: info.Actor, Error: r.URL.Query().Get("error"),
+			Notice: r.URL.Query().Get("notice")},
 		Status: status, Provider: provider, RunID: runID, NextCursor: page.NextCursor,
 		TotalNeeds: page.TotalNeedsReconciliation, StatusCount: page.StatusCounts,
 		HasNext: page.NextCursor != "",
@@ -111,12 +121,32 @@ func (s *Server) handleOpsExternalResolveUI(w http.ResponseWriter, r *http.Reque
 		back.Set("run_id", v)
 	}
 	if err != nil {
-		back.Set("error", errs.SummaryOf(err))
+		if errors.Is(err, storage.ErrConflict) {
+			back.Set("error", "conflict: operation version changed or is already resolved; reload before retrying")
+		} else {
+			back.Set("error", errs.SummaryOf(err))
+		}
 		http.Redirect(w, r, "/ui/ops/external?"+back.Encode(), http.StatusSeeOther)
 		return
 	}
 	back.Set("notice", "review recorded")
 	http.Redirect(w, r, "/ui/ops/external?"+back.Encode(), http.StatusSeeOther)
+}
+
+func validateExternalFilters(status, provider, runID, cursor string) string {
+	if len(status) > 64 || len(provider) > 128 || len(runID) > 128 || len(cursor) > 512 {
+		return "filter or cursor is too long"
+	}
+	if status != "" {
+		for _, st := range []string{storage.ExternalPrepared, storage.ExternalInFlight, storage.ExternalConfirmed,
+			storage.ExternalOutcomeUnknown, storage.ExternalReconciliationReq, storage.ExternalFailedDefinite, storage.ExternalResolved} {
+			if status == st {
+				return ""
+			}
+		}
+		return "unknown external operation status filter"
+	}
+	return ""
 }
 
 type auditRow struct {
@@ -156,7 +186,8 @@ func (s *Server) handleOpsExternalDetail(w http.ResponseWriter, r *http.Request)
 	}
 	data := opsExternalDetailPage{
 		pageData: pageData{Title: "Operation " + op.OperationKey, Version: Version, CSRFToken: info.CSRF,
-			SignedIn: true, Actor: info.Actor},
+			SignedIn: true, Actor: info.Actor, Error: r.URL.Query().Get("error"),
+			Notice: r.URL.Query().Get("notice")},
 		Op: op, ReturnStatus: r.URL.Query().Get("status"),
 		ReturnProvider: r.URL.Query().Get("provider"), ReturnCursor: r.URL.Query().Get("cursor"),
 		ReturnRunID: r.URL.Query().Get("run_id"),

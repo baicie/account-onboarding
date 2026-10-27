@@ -3,6 +3,7 @@ package api
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -295,8 +296,16 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	statusFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
 	templateFilter := strings.TrimSpace(r.URL.Query().Get("template"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if msg := s.validateRunFilters(statusFilter, templateFilter, cursor); msg != "" {
+		s.renderDashboardError(w, http.StatusBadRequest, msg)
+		return
+	}
 	runs, err := s.Store.ListRuns(r.Context(), storage.RunListFilter{Status: statusFilter, Template: templateFilter, Limit: 50, Cursor: cursor})
 	if err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			s.renderDashboardError(w, http.StatusBadRequest, "invalid pagination cursor")
+			return
+		}
 		http.Error(w, "could not load runs", http.StatusInternalServerError)
 		return
 	}
@@ -360,6 +369,45 @@ func pickEnabled(catalog []provider.Descriptor, kind provider.Kind) string {
 		}
 	}
 	return ""
+}
+
+func (s *Server) validateRunFilters(status, template, cursor string) string {
+	if len(status) > 64 || len(template) > 128 || len(cursor) > 512 {
+		return "filter or cursor is too long"
+	}
+	if status != "" {
+		valid := false
+		for _, st := range state.AllRunStates {
+			if string(st) == status {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return "unknown run status filter"
+		}
+	}
+	if template != "" {
+		if _, ok := s.Engine.Template(template); !ok {
+			return "unknown template filter"
+		}
+	}
+	return ""
+}
+
+func (s *Server) renderDashboardError(w http.ResponseWriter, status int, message string) {
+	info, _ := authInfoFrom(&http.Request{})
+	_ = info
+	templates := make([]templateRow, 0, 4)
+	for _, t := range s.Engine.Templates() {
+		templates = append(templates, templateRow{Name: t.Name, Mode: t.Mode, Steps: len(t.Steps)})
+	}
+	if err := s.pages["dashboard"].render(w, status, dashboardPage{
+		pageData:  pageData{Title: "Runs", Version: s.Version, Error: message},
+		Templates: templates, Providers: s.Registry.Catalog(),
+	}); err != nil {
+		s.Log.Error("render dashboard error", "error", err)
+	}
 }
 
 func (s *Server) handleRunPage(w http.ResponseWriter, r *http.Request) {

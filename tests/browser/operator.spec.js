@@ -75,8 +75,8 @@ test('runs filters remain in URL and empty state is explicit', async ({ page }) 
   await page.click('#run-filters button[type=submit]');
   await expect(page).toHaveURL(/status=/);
   await expect(page).toHaveURL(/template=sandbox-email-verify-oidc/);
-  await page.goto('/ui/?status=FAILED&template=no-such-template');
-  await expect(page.locator('text=No runs yet')).toBeVisible();
+  await page.goto('/ui/?status=CANCELLED&template=sandbox-email-verify-oidc');
+  await expect(page.locator('td', { hasText: 'No runs yet' })).toBeVisible();
 });
 
 test('run detail shows steps and event timeline', async ({ page }) => {

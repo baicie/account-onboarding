@@ -24,13 +24,19 @@ export ONBOARD_DOMAINS=moonbyte.test
 export ONBOARD_POLL_INTERVAL=200ms
 export ONBOARD_TICK_INTERVAL=50ms
 export ONBOARD_LOG_LEVEL=warn
+export ONBOARD_LOGIN_RATE_LIMIT_PER_MINUTE=1000
 export PLAYWRIGHT_CHANNEL="${PLAYWRIGHT_CHANNEL-chrome}"
 export ONBOARD_BROWSER_BASE_URL="http://127.0.0.1:$PORT"
 export ONBOARD_TEST_ADMIN_TOKEN="$(cat "$WORK/admin.token")"
+export ONBOARD_BROWSER_FIXTURES="$WORK/browser-fixtures.json"
+if [ "${ONBOARD_BROWSER_MATRIX:-0}" = "1" ]; then
+  (cd "$ROOT" && go build -trimpath -o "$WORK/browser-seed" ./tests/browser/seed)
+  "$WORK/browser-seed"
+fi
 (cd "$ROOT" && go build -trimpath -o "$WORK/onboardd" ./cmd/onboardd)
 "$WORK/onboardd" >"$WORK/onboardd.log" 2>&1 &
 PID=$!
-for _ in $(seq 1 100); do curl -sf -m 2 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
+for _ in $(seq 1 300); do curl -sf -m 2 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
 curl -sf -m 3 "http://127.0.0.1:$PORT/healthz" >/dev/null
 cd "$ROOT/tests/browser"
 if [ ! -d node_modules ]; then npm install --no-audit --no-fund >/dev/null; fi

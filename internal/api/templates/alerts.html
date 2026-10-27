@@ -55,13 +55,13 @@
   <td class="small err">{{.LastError}}</td>
   <td>
     {{if eq .Status "PENDING"}}
-    <form method="post" action="/ui/alerts/outbox/resolve" class="inline">
+    <form method="post" action="/ui/alerts/outbox/resolve" class="inline" onsubmit="return confirm('Resolve all active outbox rows for this rule? Delivered/Dead Letter history is not changed.');">
       <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
       <input type="hidden" name="rule" value="{{.Rule}}">
       <button type="submit">Resolve</button>
     </form>
     {{else if eq .Status "RETRY_PENDING"}}
-    <form method="post" action="/ui/alerts/outbox/resolve" class="inline">
+    <form method="post" action="/ui/alerts/outbox/resolve" class="inline" onsubmit="return confirm('Resolve all active outbox rows for this rule? Delivered/Dead Letter history is not changed.');">
       <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
       <input type="hidden" name="rule" value="{{.Rule}}">
       <button type="submit">Resolve</button>

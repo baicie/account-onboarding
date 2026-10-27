@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -53,6 +55,20 @@ func toAlertRow(it storage.AlertOutboxItem) alertRow {
 func (s *Server) handleAlertsPage(w http.ResponseWriter, r *http.Request) {
 	info, _ := authInfoFrom(r)
 	status := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
+	if status != "" {
+		valid := false
+		for _, st := range []string{storage.AlertOutboxPending, storage.AlertOutboxInFlight,
+			storage.AlertOutboxRetryPending, storage.AlertOutboxDelivered, storage.AlertOutboxDeadLetter, storage.AlertOutboxResolved} {
+			if status == st {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			http.Error(w, "unknown alert outbox status filter", http.StatusBadRequest)
+			return
+		}
+	}
 	offset := 0
 	if v := strings.TrimSpace(r.URL.Query().Get("offset")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 100000 {
@@ -99,9 +115,18 @@ func (s *Server) handleAlertsPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAlertDetail(w http.ResponseWriter, r *http.Request) {
 	info, _ := authInfoFrom(r)
 	id := r.PathValue("id")
+	if len(id) > 128 || !strings.HasPrefix(id, "al-") {
+		http.Error(w, "invalid alert id", http.StatusBadRequest)
+		return
+	}
 	it, err := s.Store.GetAlertOutbox(r.Context(), id)
 	if err != nil {
-		http.NotFound(w, r)
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		s.Log.Error("get alert outbox", "error", err)
+		http.Error(w, "could not load alert outbox", http.StatusInternalServerError)
 		return
 	}
 	deliveries, err := s.Store.ListAlertDeliveries(r.Context(), id)
@@ -221,8 +246,8 @@ func (s *Server) handleAlertDispatchUI(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAlertResolveUI(w http.ResponseWriter, r *http.Request) {
 	info, _ := authInfoFrom(r)
 	rule := strings.TrimSpace(r.FormValue("rule"))
-	if rule == "" {
-		s.alertRedirect(w, r, url.Values{"error": {"resolve requires a rule"}})
+	if rule == "" || len(rule) > 128 {
+		s.alertRedirect(w, r, url.Values{"error": {"resolve requires a rule of at most 128 bytes"}})
 		return
 	}
 	n, err := s.Store.ResolveAlertOutbox(r.Context(), rule, time.Now().UTC().UnixMilli())
@@ -253,8 +278,8 @@ func errsSummary(err error) string {
 func (s *Server) handleAlertRearmUI(w http.ResponseWriter, r *http.Request) {
 	info, _ := authInfoFrom(r)
 	rule := strings.TrimSpace(r.FormValue("rule"))
-	if rule == "" {
-		s.alertRedirect(w, r, url.Values{"error": {"re-arm requires a rule"}})
+	if rule == "" || len(rule) > 128 {
+		s.alertRedirect(w, r, url.Values{"error": {"re-arm requires a rule of at most 128 bytes"}})
 		return
 	}
 	n, err := s.Store.RearmAlertOutbox(r.Context(), rule, time.Now().UTC().UnixMilli())
