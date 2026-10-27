@@ -34,6 +34,7 @@ cleanup() {
   local rc=$?
   docker rm -f "$APP" >/dev/null 2>&1
   docker rm -f "$APP2" >/dev/null 2>&1
+  docker run --rm --platform "$PLATFORM" --user 0:0 -v "$WORK:/w" --entrypoint rm "$IMG" -rf /w/data /w/backups /w/dst /w/src >/dev/null 2>&1
   docker image rm "$IMG" >/dev/null 2>&1
   if docker ps -a --format '{{.Names}}' | grep -qx "$APP"; then echo "cleanup: app container left" >&2; CLEAN_RC=1; fi
   if docker images --format '{{.Repository}}:{{.Tag}}' | grep -qx "$IMG"; then echo "cleanup: image left" >&2; CLEAN_RC=1; fi
@@ -51,9 +52,9 @@ api() {
   local port="$1" method="$2" path="$3" body=""
   if [ "$#" -ge 4 ]; then body="$4"; fi
   if [ -n "$body" ]; then
-    curl -s -m 10 -o "$WORK/resp.json" -w '%{http_code}' -X "$method" -H @"$WORK/hdr.cfg" -H 'Content-Type: application/json' -d "$body" "http://127.0.0.1:$port$path"
+    curl -s -m 10 -o "$WORK/resp.json" -w '%{http_code}' -X "$method" -H @"$WORK/headers.txt" -H 'Content-Type: application/json' -d "$body" "http://127.0.0.1:$port$path"
   else
-    curl -s -m 10 -o "$WORK/resp.json" -w '%{http_code}' -X "$method" -H @"$WORK/hdr.cfg" "http://127.0.0.1:$port$path"
+    curl -s -m 10 -o "$WORK/resp.json" -w '%{http_code}' -X "$method" -H @"$WORK/headers.txt" "http://127.0.0.1:$port$path"
   fi
 }
 wait_ready() {
@@ -65,8 +66,15 @@ wait_ready() {
   done
   return 1
 }
+create_run() { # create_run <port> <idempotency-key> -> http code
+  local port="$1" key="$2" body
+  body='{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth","sandbox_provider":"fake-sandbox","idempotency_key":"'"$key"'"}'
+  curl -s -m 20 -o "$WORK/resp.json" -w '%{http_code}' -X POST \
+    -H @"$WORK/headers.txt" -H "Idempotency-Key: $key" -H 'Content-Type: application/json' \
+    -d "$body" "http://127.0.0.1:$port/v1/runs"
+}
 run_id_of() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("id") or d.get("run",{}).get("id",""))' "$WORK/resp.json" 2>/dev/null; }
-snap_of() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("snapshot") or d.get("path") or "")' "$WORK/bak.json" 2>/dev/null; }
+snap_of() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("snapshot_path") or d.get("snapshot") or d.get("path") or "")' "$WORK/bak.json" 2>/dev/null; }
 
 echo "=== ARM64 full acceptance ==="
 docker buildx version >/dev/null 2>&1 || fail "buildx missing"
@@ -83,6 +91,8 @@ echo "host_arch=$host_arch runtime_arch=$runtime_arch image=$IMG commit=$COMMIT"
 [ -z "$EVIDENCE" ] || printf 'host_arch=%s\nruntime_arch=%s\nimage=%s\ncommit=%s\nplatform=%s\n' "$host_arch" "$runtime_arch" "$IMG" "$COMMIT" "$PLATFORM" >"$EVIDENCE/arm64.txt"
 
 mkdir -p "$WORK/src" "$WORK/dst" "$WORK/data" "$WORK/backups"
+docker run --rm --platform "$PLATFORM" --user 0:0 -v "$WORK/data:/app/data" -v "$WORK/backups:/app/backups" \
+  --entrypoint chown "$IMG" 10001:10001 /app/data /app/backups >/dev/null 2>&1 || true
 python3 - "$WORK/src/onboarding_master_key" "$WORK/src/onboard_admin_token" <<'PY'
 import os, sys
 open(sys.argv[1], 'wb').write(os.urandom(32))
@@ -97,7 +107,7 @@ mat_mode="$(docker run --rm --platform "$PLATFORM" --user 0:0 -v "$WORK/dst:/run
 [ "$mat_mode" = "400 10001:10001" ] && ok "secret materialized inside the arm64 container (0400 10001:10001)" || bad "materialized mode: $mat_mode"
 if grep -qF "$(cat "$WORK/src/onboard_admin_token")" "$WORK/mat.log"; then bad "materializer logged the secret"; else ok "materializer logged no secret value"; fi
 
-printf 'header = "Authorization: Bearer %s"\n' "$(cat "$WORK/src/onboard_admin_token")" >"$WORK/hdr.cfg"
+printf 'Authorization: Bearer %s\n' "$(cat "$WORK/src/onboard_admin_token")" >"$WORK/headers.txt"
 
 start_app() {
   docker run -d --platform "$PLATFORM" --name "$1" --user 10001:10001 --read-only \
@@ -119,8 +129,7 @@ if in_app sh -c 'touch /app/readonly-probe' >/dev/null 2>&1; then bad "root file
 in_app sh -c 'ls /app/data/state.sqlite' >/dev/null 2>&1 && ok "SQLite database created inside the arm64 container" || bad "no database file"
 in_app sh -c 'ls /app/data | grep -q state.sqlite-wal' >/dev/null 2>&1 && ok "SQLite WAL file present" || bad "no WAL file"
 
-create_body='{"template":"handle_management","domain":"moonbyte.test","desired_username":"arm64probe","idempotency_key":"arm64-'$SUFFIX'"}'
-code="$(api "$PORT" POST /v1/runs "$create_body")"
+code="$(create_run "$PORT" "arm64-$SUFFIX")"
 case "$code" in 200|201|202) ok "run created through the arm64 service (HTTP $code)";; *) bad "run create HTTP $code: $(head -c 160 "$WORK/resp.json")";; esac
 RUN_ID="$(run_id_of)"
 [ -n "$RUN_ID" ] && ok "run id returned" || bad "no run id in the response"
@@ -181,7 +190,7 @@ fi
 in_app backup -db /app/data/state.sqlite -out-dir /app/backups -encrypt -keyring /run/secrets/onboarding_master_key >"$WORK/bak2.json" 2>/dev/null
 SNAP2="$(snap_of)"
 if [ -n "$SNAP2" ]; then
-  api "$PORT" POST /v1/runs '{"template":"handle_management","domain":"moonbyte.test","desired_username":"rollbackprobe","idempotency_key":"rb-'$SUFFIX'"}' >/dev/null
+  create_run "$PORT" "rb-$SUFFIX" >/dev/null
   NEW_RUN="$(run_id_of)"
   docker rm -f "$APP" >/dev/null 2>&1
   if in_app restore -snapshot "$SNAP2" -target /app/data/state.sqlite -live-db /app/data/state.sqlite -keyring /run/secrets/onboarding_master_key -force -keep-old >"$WORK/rb.json" 2>"$WORK/rb.err"; then
