@@ -26,6 +26,7 @@ never claims a gate that has no evidence. Update it in place.
 | Kind rotation identity | `tests/r22/kind_secret.sh`: digest before/after, credential accepted/rejected, master key unchanged, symlink-escape negative (4 assertion fixes in `c39105f`) |
 | ACL regression | `posix-acl` job success (script unchanged) |
 | Merge dry run | `scripts/r22_merge_dryrun.sh`: 16/16 merges, no conflicts, merged tree `9c854ce` identical to the accepted tip tree, `go build` / `go vet` / `go test ./...` exit 0; evidence `docs/acceptance/evidence/r22/merge-dryrun.txt` |
+| ARM64 full acceptance (iteration 3, run 40460938065) | 18 checks green: aarch64 runtime, non-root, read-only rootfs, SQLite+WAL in-container, run create (202), external ops, outbox, audit, SIGKILL recovery, run persistence. Open: /app/backups was not mounted into the read-only container, so the in-container backup failed with EROFS (fix pushed) |
 | ARM64 full acceptance | `tests/r22/arm64_full.sh` + `tests/r22/Dockerfile.arm64test` + `r22-arm64-full` workflow: in-container migration, WAL, runs, outbox, backup, verify, restore, wrong key, corrupt snapshot, SIGKILL, rollback, cleanup |
 | Historical schema5 replay | `tests/r22/historical_backup.sh`: real schema5 source (commit `3796047`) built and run, its own backup tool, current restore + migration |
 
