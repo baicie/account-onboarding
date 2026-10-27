@@ -43,6 +43,7 @@ metadata:
 spec:
   securityContext:
     seccompProfile: {type: RuntimeDefault}
+    fsGroup: 10001
   initContainers:
     - name: materialize
       image: r22-candidate:local
@@ -50,8 +51,9 @@ spec:
       command: ["/bin/sh","-c"]
       args: ["exec /app/scripts/materialize_secrets.sh --source-dir /run/secrets-source --target-dir /run/secrets --uid 10001 --gid 10001 --allow-k8s-projection"]
       securityContext:
-        runAsUser: 0
-        runAsGroup: 0
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
         allowPrivilegeEscalation: false
         capabilities: {drop: ["ALL"]}
       volumeMounts:
