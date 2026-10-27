@@ -17,13 +17,21 @@
 <tr><th>Created / updated</th><td>{{fmtUnix .Item.CreatedAtMS}} / {{fmtUnix .Item.UpdatedAtMS}}</td></tr>
 </tbody>
 </table>
-{{if or (eq .Item.Status "PENDING") (eq .Item.Status "RETRY_PENDING")}}
+{{if or (eq .Item.Status "PENDING") (eq .Item.Status "RETRY_PENDING") (eq .Item.Status "IN_FLIGHT")}}
 <form method="post" action="/ui/alerts/outbox/resolve" class="inline">
   <input type="hidden" name="csrf" value="{{.CSRFToken}}">
   <input type="hidden" name="rule" value="{{.Item.Rule}}">
   <button type="submit">Resolve active rows for this rule</button>
 </form>
 <p class="muted small">Resolve closes active rows. It does not re-send and does not re-arm delivery history.</p>
+{{end}}
+{{if or (eq .Item.Status "DELIVERED") (eq .Item.Status "DEAD_LETTER")}}
+<form method="post" action="/ui/alerts/outbox/rearm" class="inline" onsubmit="return confirm('Re-arm this rule? Delivery history is preserved.');">
+  <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+  <input type="hidden" name="rule" value="{{.Item.Rule}}">
+  <button type="submit">Re-arm</button>
+</form>
+<p class="muted small">Re-arm is separate from Resolve: it changes terminal rows to RESOLVED so a later Reconcile can enqueue a new alert.</p>
 {{end}}
 </section>
 <section class="card">

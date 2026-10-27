@@ -264,7 +264,8 @@ func (s *Store) ResolveAlertOutbox(ctx context.Context, rule string, nowMS int64
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
-		WHERE rule=? AND status != ?`, AlertOutboxResolved, nowMS, rule, AlertOutboxResolved)
+		WHERE rule=? AND status IN (?,?,?)`, AlertOutboxResolved, nowMS, rule,
+		AlertOutboxPending, AlertOutboxInFlight, AlertOutboxRetryPending)
 	if err != nil {
 		return 0, err
 	}
@@ -272,6 +273,23 @@ func (s *Store) ResolveAlertOutbox(ctx context.Context, rule string, nowMS int64
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
+	return n, nil
+}
+
+// RearmAlertOutbox is the explicit, separate state transition for terminal
+// delivery rows. Resolve deliberately only touches active rows; an operator
+// who wants a new active alert after DELIVERED/DEAD_LETTER must Re-arm.
+func (s *Store) RearmAlertOutbox(ctx context.Context, rule string, nowMS int64) (int64, error) {
+	if rule == "" {
+		return 0, errors.New("storage: alert rule required")
+	}
+	res, err := s.writeDB.ExecContext(ctx, `UPDATE alert_outbox SET status=?, lease_owner='', lease_expires_ms=0, updated_at_ms=?
+		WHERE rule=? AND status IN (?,?)`, AlertOutboxResolved, nowMS, rule,
+		AlertOutboxDelivered, AlertOutboxDeadLetter)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
 	return n, nil
 }
 

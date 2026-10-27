@@ -52,11 +52,15 @@ test('alerts outbox reconciles durable state and resolves without dispatch', asy
   await page.click('nav a[href="/ui/alerts/outbox"]');
   await expect(page.locator('h1')).toContainText('Alerts');
   await expect(page.locator('text=External alert transport is not configured')).toBeVisible();
+  await expect(page.locator('form[action="/ui/alerts/outbox/dispatch"] button')).toBeDisabled();
   await page.click('form[action="/ui/alerts/reconcile"] button');
   await expect(page.locator('.alert.notice')).toContainText('reconciled');
   await expect(page.locator('table')).toContainText('backup_verification_missing');
   await page.reload();
   await expect(page.locator('table')).toContainText('backup_verification_missing');
+  await page.locator('table a[href^="/ui/alerts/outbox/"]').first().click();
+  await expect(page.locator('h2', { hasText: 'Delivery history' })).toBeVisible();
+  await page.goBack();
   await page.locator('form[action="/ui/alerts/outbox/resolve"] button').first().click();
   await expect(page.locator('.alert.notice')).toContainText('resolved');
   await page.goto('/ui/alerts/outbox?status=RESOLVED');

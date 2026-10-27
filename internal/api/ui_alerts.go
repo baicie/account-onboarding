@@ -246,3 +246,22 @@ func errsSummary(err error) string {
 	}
 	return err.Error()
 }
+
+// handleAlertRearmUI is intentionally separate from Resolve: it turns
+// DELIVERED/DEAD_LETTER rows into RESOLVED so a later Reconcile may enqueue a
+// fresh active row. Delivery history is preserved and never rewritten.
+func (s *Server) handleAlertRearmUI(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	rule := strings.TrimSpace(r.FormValue("rule"))
+	if rule == "" {
+		s.alertRedirect(w, r, url.Values{"error": {"re-arm requires a rule"}})
+		return
+	}
+	n, err := s.Store.RearmAlertOutbox(r.Context(), rule, time.Now().UTC().UnixMilli())
+	if err != nil {
+		s.alertRedirect(w, r, url.Values{"error": {errsSummary(err)}})
+		return
+	}
+	_ = s.Store.Audit(r.Context(), info.Actor, "alert.rearm", "", map[string]any{"rule": rule, "rearmed": n})
+	s.alertRedirect(w, r, url.Values{"notice": {"re-armed " + strconv.FormatInt(n, 10) + " terminal row(s); delivery history preserved"}})
+}

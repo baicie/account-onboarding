@@ -66,7 +66,12 @@
       <input type="hidden" name="rule" value="{{.Rule}}">
       <button type="submit">Resolve</button>
     </form>
-    {{else if eq .Status "DEAD_LETTER"}}<span class="muted small">diagnose only; no automatic re-arm</span>
+    {{else if or (eq .Status "DELIVERED") (eq .Status "DEAD_LETTER")}}
+    <form method="post" action="/ui/alerts/outbox/rearm" class="inline" onsubmit="return confirm('Re-arm this rule? This changes terminal rows to RESOLVED so a later reconcile can enqueue a NEW alert. Delivery history is preserved.');">
+      <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="rule" value="{{.Rule}}">
+      <button type="submit">Re-arm</button>
+    </form>
     {{else}}{{if .DeliveryID}}<code class="small">{{short .DeliveryID}}</code>{{else}}—{{end}}{{end}}
   </td>
 </tr>

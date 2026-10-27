@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baicie/account-onboarding/internal/security"
 	"github.com/baicie/account-onboarding/internal/storage"
 )
 
@@ -107,5 +108,74 @@ func TestAlertDispatchFailsClosedWithoutTransport(t *testing.T) {
 	resp.Body.Close()
 	if !strings.Contains(string(body), "External alert transport is not configured") {
 		t.Fatal("fail-closed transport notice missing")
+	}
+}
+
+func TestResolveDoesNotRewriteDeliveredAndRearmIsExplicit(t *testing.T) {
+	e := newEnv(t, nil)
+	csrf := loginUISession(t, e)
+	now := time.Now().UnixMilli()
+	if _, err := e.store.EnqueueAlertOutbox(t.Context(), []storage.AlertOutboxInput{{
+		Fingerprint: "fp-delivered-r22", Rule: "delivered_rule", Severity: "warning", Message: "delivered",
+	}}, now); err != nil {
+		t.Fatal(err)
+	}
+	items, _, err := e.store.ClaimAlertOutbox(t.Context(), "test-owner", 1, time.Minute, now)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("claim: %v %d", err, len(items))
+	}
+	if err := e.store.CompleteAlertOutbox(t.Context(), items[0].DeliveryID, "test-owner", true, now+1, 0, 200, "", 3); err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"csrf": {csrf}, "rule": {"delivered_rule"}}
+	post := func(path string) {
+		req, _ := http.NewRequest(http.MethodPost, e.ts.URL+path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", e.ts.URL)
+		resp, err := e.client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST %s = %d", path, resp.StatusCode)
+		}
+	}
+	post("/ui/alerts/outbox/resolve")
+	it, err := e.store.GetAlertOutbox(t.Context(), items[0].ID)
+	if err != nil || it.Status != storage.AlertOutboxDelivered {
+		t.Fatalf("resolve rewrote delivered: %+v err=%v", it, err)
+	}
+	post("/ui/alerts/outbox/rearm")
+	it, err = e.store.GetAlertOutbox(t.Context(), items[0].ID)
+	if err != nil || it.Status != storage.AlertOutboxResolved {
+		t.Fatalf("rearm = %+v err=%v", it, err)
+	}
+	deliveries, err := e.store.ListAlertDeliveries(t.Context(), items[0].ID)
+	if err != nil || len(deliveries) != 1 || deliveries[0].Status != storage.AlertOutboxDelivered {
+		t.Fatalf("delivery history changed: %+v err=%v", deliveries, err)
+	}
+}
+
+func TestRunIDLookupRedirectsToRunDetail(t *testing.T) {
+	e := newEnv(t, nil)
+	run, _, err := e.store.CreateRun(t.Context(), storage.CreateRunParams{
+		ID: security.NewID(), OwnerID: "operator", Template: "sandbox-email-verify-oidc",
+		Mode: "sandbox-e2e", IdempotencyKey: "r22-run-lookup", ProviderSnapshotJSN: `{}`,
+		RequestFingerprint: "fp-r22", DeadlineMS: time.Now().Add(time.Hour).UnixMilli(),
+		Steps: []storage.StepSeed{{Name: "validate"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginUISession(t, e)
+	client := &http.Client{Jar: e.client.Jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Get(e.ts.URL + "/ui/?run=" + run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/ui/runs/"+run.ID {
+		t.Fatalf("lookup = %d location=%q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 }

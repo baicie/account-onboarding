@@ -131,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ui/alerts/reconcile", s.uiAuth(s.handleAlertReconcileUI))
 	mux.HandleFunc("POST /ui/alerts/outbox/dispatch", s.uiAuth(s.handleAlertDispatchUI))
 	mux.HandleFunc("POST /ui/alerts/outbox/resolve", s.uiAuth(s.handleAlertResolveUI))
+	mux.HandleFunc("POST /ui/alerts/outbox/rearm", s.uiAuth(s.handleAlertRearmUI))
 	mux.HandleFunc("GET /ui/ops/external", s.uiAuth(s.handleOpsExternalPage))
 	mux.HandleFunc("POST /ui/ops/external/{id}/resolve", s.uiAuth(s.handleOpsExternalResolveUI))
 	mux.HandleFunc("GET /ui/ops/external/{id}", s.uiAuth(s.handleOpsExternalDetail))

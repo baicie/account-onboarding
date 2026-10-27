@@ -74,11 +74,14 @@ func TestAlertOutboxDeliveredStaysDedupedUntilResolve(t *testing.T) {
 	if items, _, _ := s.ClaimAlertOutbox(ctx, "owner", 1, time.Minute, now+3); len(items) != 0 {
 		t.Fatalf("delivered alert reclaimed: %d", len(items))
 	}
-	if n, err := s.ResolveAlertOutbox(ctx, "delivered", now+4); err != nil || n != 1 {
-		t.Fatalf("resolve delivered = %d %v", n, err)
+	if n, err := s.ResolveAlertOutbox(ctx, "delivered", now+4); err != nil || n != 0 {
+		t.Fatalf("resolve must not mutate delivered = %d %v", n, err)
 	}
-	if n, err := s.EnqueueAlertOutbox(ctx, in, now+5); err != nil || n != 1 {
-		t.Fatalf("re-arm after resolve = %d %v", n, err)
+	if n, err := s.RearmAlertOutbox(ctx, "delivered", now+5); err != nil || n != 1 {
+		t.Fatalf("explicit rearm = %d %v", n, err)
+	}
+	if n, err := s.EnqueueAlertOutbox(ctx, in, now+6); err != nil || n != 1 {
+		t.Fatalf("re-enqueue after rearm = %d %v", n, err)
 	}
 }
 
