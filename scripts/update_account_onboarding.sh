@@ -112,9 +112,10 @@ git_in_app() { git -C "$APP" "$@"; }
 git_fetch() {
   if [ "$NO_FETCH" = "1" ]; then log "skipping fetch (--no-fetch)"; return 0; fi
   if [ "$OFFLINE" = "1" ]; then log "offline: using the local checkout only"; return 0; fi
+  export GIT_TERMINAL_PROMPT=0 GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME="$FETCH_TIMEOUT"
   local attempt
   for attempt in $(seq 1 "$FETCH_RETRIES"); do
-    if timeout "$FETCH_TIMEOUT" git_in_app fetch --prune "$GIT_REMOTE" 2>&1; then return 0; fi
+    if git_in_app fetch --prune "$GIT_REMOTE" 2>&1; then return 0; fi
     warn "git fetch attempt $attempt/$FETCH_RETRIES failed"
     sleep "${ONBOARD_RETRY_SLEEP:-5}"
   done
@@ -272,10 +273,10 @@ materialize_secrets() {
     --entrypoint /bin/sh "$img" \
     -c "exec /app/scripts/materialize_secrets.sh --source-dir /src --target-dir /run/secrets --uid 10001 --gid 10001"
   for f in onboarding_master_key onboard_admin_token; do
-    [ -f "$SECRETS/$f" ] || die "materializer did not produce $SECRETS/$f" 2
-    [ -L "$SECRETS/$f" ] && die "$SECRETS/$f is a symlink; the service refuses those" 2
-    local mode; mode="$(stat -c "%a" "$SECRETS/$f" 2>/dev/null || stat -f "%Lp" "$SECRETS/$f")"
-    case "$mode" in 400|600) ;; *) die "$SECRETS/$f must be 0400 or 0600, got $mode" 2 ;; esac
+    dk run --rm --user 0:0 -v "$SECRETS:/run/secrets:ro" --entrypoint /bin/ls "$img" -l "/run/secrets/$f" >/dev/null \
+      || die "materialized secret $f is missing from the service mount" 2
+    mode="$(dk run --rm --user 0:0 -v "$SECRETS:/run/secrets:ro" --entrypoint /usr/bin/stat "$img" -c %a "/run/secrets/$f" 2>/dev/null | tr -d '[:space:]')"
+    case "$mode" in 400|600) ;; *) die "materialized secret $f has mode $mode, expected 0400" 2 ;; esac
   done
 }
 
