@@ -1,0 +1,39 @@
+=== historical schema5 replay (old commit 3796047d3b0bec785bb5671c8fe6cabfd61655ee) ===
+PASS historical source checked out at 3796047
+PASS historical tree carries migration 0005
+PASS historical tree has no 0006 migration (schema5)
+PASS historical binary built from source
+PASS current binary and operator tools built
+PASS historical service runs and is ready (schema5)
+PASS historical run 1 created (HTTP 202)
+PASS historical run 2 created (HTTP 202)
+PASS historical run list readable
+PASS historical audit readable
+PASS historical external operations readable
+PASS historical run detail readable
+PASS historical run events readable
+historical counts: runs=2 audit=3 external_ops=2 events=17
+PASS historical database runs in WAL mode
+PASS historical console session created
+PASS historical database file present after shutdown
+PASS historical tool produced a snapshot
+PASS historical snapshot schema_version is 5
+PASS current tooling restored the historical snapshot
+PASS current service starts on the restored database and migrates 5 -> 6
+PASS restored run list readable
+PASS run count preserved (2)
+PASS original run id still resolves after migration
+PASS run events still resolve after migration
+PASS event count preserved (17)
+PASS audit readable after migration
+PASS every historical audit entry still present (3 -> 6)
+PASS external operations readable after migration
+PASS external operation count preserved (2)
+PASS schema6 outbox exists after migration (empty, no re-enqueue)
+PASS migrated database reports schema_version 6
+PASS wrong master key rejected
+PASS corrupt snapshot rejected
+PASS missing manifest rejected
+OLD_COMMIT=3796047d3b0bec785bb5671c8fe6cabfd61655ee OLD_SCHEMA=5 NEW_SCHEMA=6 historic_runs=2 restored_runs=2
+HISTORICAL_BACKUP_PASS
+SUMMARY pass=34 fail=0

@@ -133,6 +133,13 @@ echo "historical counts: runs=$hist_runs audit=$hist_audit external_ops=$hist_op
 curl -s -m 10 -o /dev/null -c "$WORK/cookies.txt" -X POST -d "token=$(cat "$WORK/secrets/onboard_admin_token")" "http://127.0.0.1:$PORT/ui/login" || true
 if [ -s "$WORK/cookies.txt" ]; then ok "historical console session created"; else bad "no console session cookie"; fi
 
+api "$PORT" GET /v1/audit >/dev/null 2>&1
+python3 - "$WORK/resp.json" "$WORK/hist-audit-ids.json" <<'PY3'
+import json, sys
+d = json.load(open(sys.argv[1]))
+entries = d.get("entries") or d.get("audit") or d.get("items") or []
+json.dump(entries, open(sys.argv[2], "w"))
+PY3
 kill -TERM "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; APP_PID=""
 [ -f "$DB" ] && ok "historical database file present after shutdown" || fail "historical database missing"
 
@@ -141,7 +148,7 @@ kill -TERM "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; APP_PID=""
   || { cat "$WORK/old-backup.err"; fail "historical backup failed"; }
 SNAP="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("snapshot_path") or d.get("snapshot") or d.get("path") or "")' "$WORK/old-backup.json" 2>/dev/null)"
 [ -n "$SNAP" ] && [ -f "$SNAP" ] && ok "historical tool produced a snapshot" || { cat "$WORK/old-backup.json"; fail "historical snapshot missing"; }
-old_schema="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("schema_version") or "")' "$WORK/old-backup.json" 2>/dev/null)"
+old_schema="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("manifest") or {}).get("schema_version") or d.get("schema_version") or "")' "$WORK/old-backup.json" 2>/dev/null)"
 [ "$old_schema" = "5" ] && ok "historical snapshot schema_version is 5" || bad "historical snapshot schema_version was '$old_schema'"
 
 # Current tooling restores the historical snapshot into a fresh database.
@@ -166,7 +173,28 @@ if [ -n "$RUN1" ]; then
 fi
 code="$(api "$PORT2" GET /v1/audit)"; [ "$code" = "200" ] && ok "audit readable after migration" || bad "audit HTTP $code"
 new_audit="$(python3 -c 'import json;d=json.load(open("'"$WORK"'/resp.json"));print(len(d.get("entries") or d.get("audit") or d.get("items") or []))' 2>/dev/null)"
-[ -n "$hist_audit" ] && [ "$new_audit" = "$hist_audit" ] && ok "audit entry count preserved ($new_audit)" || bad "audit count changed: $hist_audit -> $new_audit"
+missing_audit="$(python3 - "$WORK/hist-audit-ids.json" "$WORK/resp.json" <<'PY2'
+import json, sys
+old = json.load(open(sys.argv[1]))
+new = json.load(open(sys.argv[2]))
+entries = new.get("entries") or new.get("audit") or new.get("items") or []
+have = set()
+for e in entries:
+    for cand in (e.get("id"), e.get("audit_id"), e.get("seq")):
+        if cand not in (None, ""):
+            have.add(str(cand))
+missing = 0
+for e in old:
+    for cand in (e.get("id"), e.get("audit_id"), e.get("seq")):
+        if cand not in (None, ""):
+            if str(cand) not in have:
+                missing += 1
+            break
+print(missing)
+PY2
+)"
+if [ -z "$missing_audit" ]; then missing_audit=1; fi
+[ "$missing_audit" = "0" ] && ok "every historical audit entry still present ($hist_audit -> $new_audit)" || bad "$missing_audit historical audit entries missing"
 code="$(api "$PORT2" GET /v1/ops/external)"; [ "$code" = "200" ] && ok "external operations readable after migration" || bad "external ops HTTP $code"
 new_ops="$(python3 -c 'import json;d=json.load(open("'"$WORK"'/resp.json"));print(len(d.get("operations") or d.get("items") or d.get("external_operations") or []))' 2>/dev/null)"
 [ -n "$hist_ops" ] && [ "$new_ops" = "$hist_ops" ] && ok "external operation count preserved ($new_ops)" || bad "external op count changed: $hist_ops -> $new_ops"
@@ -175,7 +203,7 @@ code="$(api "$PORT2" GET /v1/ops/alerts/outbox)"; [ "$code" = "200" ] && ok "sch
 # The migrated database must report schema 6 through the current backup tool.
 "$WORK/cur-backup" -db "$NEWDB" -out-dir "$WORK/backups" -encrypt -keyring "$KEY" >"$WORK/cur-backup.json" 2>"$WORK/cur-backup.err" \
   || { cat "$WORK/cur-backup.err"; fail "current backup of the migrated database failed"; }
-new_schema="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("schema_version") or "")' "$WORK/cur-backup.json" 2>/dev/null)"
+new_schema="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("manifest") or {}).get("schema_version") or d.get("schema_version") or "")' "$WORK/cur-backup.json" 2>/dev/null)"
 [ "$new_schema" = "6" ] && ok "migrated database reports schema_version 6" || bad "migrated schema_version was '$new_schema'"
 
 # ---- failure modes ---------------------------------------------------------
