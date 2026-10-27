@@ -25,6 +25,8 @@ jobs:
         run: sudo bash tests/r15/secret_materialize.sh
       - name: Materializer fault injection (crash, signal, disk full, no lock)
         run: sudo bash tests/r22/materializer_fault.sh
+      - name: Materializer attack regression (journal traversal, revoke, reader window)
+        run: sudo bash tests/r22/materializer_attack.sh
       - name: No leftover target directories
         if: always()
         run: |
