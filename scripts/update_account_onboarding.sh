@@ -256,7 +256,6 @@ check_data_safety() {
 check_schema_compat() {
   local db="$DATA/state.sqlite" v
   [ -f "$db" ] || { log "no database yet: first install"; return 0; }
-  ensure_data_owner
   if v="$(sqlite_user_version "$db")"; then
     log "current database schema version: $v"
     if [ -f "$STATE" ] && grep -q "\"schema_version\"" "$STATE" 2>/dev/null; then
@@ -335,7 +334,7 @@ build_image() {
   local sha
   sha="$1" tag="account-onboarding:local-$(short_sha "$1")"
   log "building $tag from $sha"
-  local args=(--build-arg "VERSION=0.1.0" --build-arg "COMMIT=$sha" --build-arg "GOPROXY=$GO_PROXY")
+  local args=(--build-arg "VERSION=${ONBOARD_BUILD_VERSION:-0.1.0}" --build-arg "COMMIT=$sha" --build-arg "GOPROXY=$GO_PROXY")
   [ -n "$APT_MIRROR" ] && args+=(--build-arg "APT_MIRROR=$APT_MIRROR")
   run dk build "${args[@]}" -t "$tag" -f "$APP/Dockerfile" "$APP" || die "image build failed" 1
   IMAGE_TAG="$tag"
@@ -383,21 +382,23 @@ api_probe() { # api_probe <path> -> http code, token taken from a file so it nev
   printf "%s" "$code"
 }
 
-wait_healthy() {
-  local i code restarts
-  for i in $(seq 1 60); do
+wait_healthy() { # 0 healthy, non-zero otherwise; never exits the process
+  local code ready c restarts
+  code=""
+  for _ in $(seq 1 60); do
     code="$(api_probe /healthz)"
     [ "$code" = "200" ] && break
     sleep 2
   done
-  [ "$code" = "200" ] || die "the service did not become live on 127.0.0.1:$HOST_PORT/healthz (last http=$code)" 3
-  local ready; ready="$(api_probe /readyz)"
-  [ "$ready" = "200" ] || die "liveness is up but /readyz returned $ready; the service is not ready (business readiness requires the admin token and a migrated database)" 3
-  local c; c="$(detect_existing_container)"
-  [ -n "$c" ] || die "no container is running for this compose project" 3
+  if [ "$code" != "200" ]; then warn "liveness never came up on 127.0.0.1:$HOST_PORT/healthz (last http=$code)"; return 3; fi
+  ready="$(api_probe /readyz)"
+  if [ "$ready" != "200" ]; then warn "liveness is up but readiness returned $ready"; return 4; fi
+  c="$(detect_existing_container)"
+  if [ -z "$c" ]; then warn "no container is running for this compose project"; return 5; fi
   restarts="$(dk inspect "$c" --format "{{.RestartCount}}" 2>/dev/null || echo 0)"
-  [ "$restarts" -lt 5 ] || die "container restarted $restarts times; treating this as a crash loop" 3
+  if [ "" + D + "{restarts:-0}" -ge 5 ]; then warn "container restarted $restarts times (crash loop)"; return 6; fi
   log "healthy: liveness 200, readiness 200, restart count $restarts"
+  return 0
 }
 
 # ---- actions ---------------------------------------------------------------------
@@ -475,6 +476,7 @@ do_rollback() {
     die "database schema $current_schema is newer than the recorded $recorded_schema for the previous release; running the old binary on a migrated database is not a safe rollback. Restore the matching snapshot with internal/ops/cmd/restore during a maintenance window (destructive) or pass --allow-schema-forward after verifying compatibility" 3
   fi
   log "rolling back to $prev_image ($prev_sha)"
+  if [ "$DRY_RUN" != "1" ]; then prepare_deploy; fi
   write_overrides "$prev_image"
   compose_valid
   materialize_secrets "$prev_image"
@@ -503,14 +505,27 @@ do_status() {
 
 ensure_data_owner() {
   case "$(id -u)" in
-    0) chmod 0700 "$DATA" 2>/dev/null || true; chown 10001:10001 "$DATA" 2>/dev/null || true ;;
+    0) chmod 0700 "$DATA" && chown 10001:10001 "$DATA" || die "cannot set $DATA to 10001:10001" 2 ;;
     *) if sudo -n true >/dev/null 2>&1; then
-         sudo -n chmod 0700 "$DATA" 2>/dev/null || true
-         sudo -n chown 10001:10001 "$DATA" 2>/dev/null || true
+         sudo -n chmod 0700 "$DATA" && sudo -n chown 10001:10001 "$DATA" || die "cannot set $DATA to 10001:10001 via sudo" 2
        else
-         warn "cannot set $DATA ownership to 10001:10001 (no root, no passwordless sudo)"
+         die "need root or passwordless sudo to give $DATA to uid 10001; refusing to start a container that cannot write its database" 2
        fi ;;
   esac
+}
+
+prepare_deploy() { # only for a real deploy or rollback, never build-only or preflight
+  local owner mode f
+  owner="$(stat -c %u "$DATA" 2>/dev/null || stat -f %u "$DATA")"
+  [ "$owner" = "10001" ] || die "$DATA is owned by $owner, not 10001; refusing to start" 2
+  mode="$(stat -c %a "$DATA" 2>/dev/null || stat -f %Lp "$DATA")"
+  case "$mode" in 700|750) ;; *) die "$DATA mode $mode is too permissive; expected 0700" 2 ;; esac
+  for f in state.sqlite state.sqlite-wal state.sqlite-shm; do
+    [ -e "$DATA/$f" ] || continue
+    owner="$(stat -c %u "$DATA/$f" 2>/dev/null || stat -f %u "$DATA/$f")"
+    [ "$owner" = "10001" ] || die "$DATA/$f is owned by $owner, not 10001; fix the ownership explicitly (this script does not rewrite existing data files)" 3
+  done
+  log "data directory ready for uid 10001 (mode $mode)"
 }
 
 dump_diagnostics() {

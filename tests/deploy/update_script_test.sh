@@ -91,7 +91,6 @@ want() { # want <name> <rc> [needle]
   if [ -n "${3:-}" ] && ! grep -qF -- "$3" "$LOG"; then bad "$1 (missing: $3)"; sed "s/^/    | /" "$LOG" | tail -12; return; fi
   ok "$1"
 }
-H=1111111111111111111111111111111111111111
 mkroot; run --nonsense; want "unknown argument rejected" 1 "unknown argument"
 mkroot; run --offline --build-only --root="$ROOT"; want "offline without sha rejected" 1 "requires --expected-sha"
 mkroot; STUB_DIRTY=1 run --preflight --root="$ROOT"; want "dirty worktree refused" 2 "worktree is dirty"
