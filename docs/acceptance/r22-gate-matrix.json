@@ -1,0 +1,18 @@
+{"schema":1,"release_authorized":false,"gates":[
+{"id":"admin-ui-alerts","status":"PASS","scope":"local+CI browser"},
+{"id":"runs-ui","status":"PASS","scope":"filters/cursor/lookup"},
+{"id":"external-operations-ui","status":"PARTIAL","scope":"run filter; full matrix not run"},
+{"id":"browser-full-matrix","status":"NOT_RUN"},
+{"id":"two-browser-context-resolve","status":"NOT_RUN"},
+{"id":"browser-real-sandbox","status":"NOT_RUN"},
+{"id":"docker-secret","status":"NOT_RUN"},
+{"id":"k8s-projected-secret","status":"NOT_RUN"},
+{"id":"acl-secret","status":"NOT_RUN"},
+{"id":"arm64-full-emulated","status":"NOT_RUN"},
+{"id":"arm64-full-native","status":"BLOCKED"},
+{"id":"historical-backup","status":"NOT_RUN"},
+{"id":"trusted-build-provenance","status":"NOT_RUN"},
+{"id":"pr-merge-dryrun","status":"NOT_RUN"},
+{"id":"trusted-workflow-definition","status":"BLOCKED"},
+{"id":"publish-revalidation","status":"PASS","scope":"logic+tests; publish skipped"},
+{"id":"live-ghcr-release-production","status":"NOT_RUN"}]}
