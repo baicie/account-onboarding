@@ -1,0 +1,48 @@
+name: r22-deployment-matrix
+
+on:
+  push:
+    branches: [feat/r22-product-first-final-acceptance]
+  pull_request:
+    branches: [feat/r22-product-first-final-acceptance]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-secret:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Real Docker secret materialization
+        run: bash tests/r22/docker_secret.sh
+
+  posix-acl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install ACL tools
+        run: sudo apt-get update && sudo apt-get install -y acl util-linux
+      - name: Kubernetes projection path unit checks
+        run: bash tests/r22/k8s_projection_test.sh
+      - name: Real POSIX ACL acceptance
+        run: sudo bash tests/r22/acl_secret.sh
+
+  kind-projected-secret:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: {go-version: "1.25.x", cache: true}
+      - name: Install Kind and kubectl
+        run: |
+          set -euo pipefail
+          go install sigs.k8s.io/kind@v0.24.0
+          sudo install -m 0755 "$(go env GOPATH)/bin/kind" /usr/local/bin/kind
+          curl -fsSLo /tmp/kubectl https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+      - name: Real Kind projected Secret
+        run: bash tests/r22/kind_secret.sh

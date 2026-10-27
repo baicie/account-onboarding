@@ -32,7 +32,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -trimpath \
 FROM ${RUNTIME_IMAGE} AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata bash util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 onboard \
     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard \
@@ -40,6 +40,8 @@ RUN apt-get update \
     && chown 10001:10001 /app/data
 
 COPY --from=build /out/onboardd /app/onboardd
+COPY scripts/materialize_secrets.sh /app/scripts/materialize_secrets.sh
+RUN chmod 0755 /app/scripts/materialize_secrets.sh
 
 WORKDIR /app
 USER 10001:10001
