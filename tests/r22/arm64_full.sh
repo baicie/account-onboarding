@@ -51,7 +51,7 @@ ops_run() { # run an operator tool against the same data/backup volumes
   local tool="$1"; shift
   docker run --rm --platform "$PLATFORM" --user 10001:10001 \
     -v "$WORK/data:/app/data" -v "$WORK/backups:/app/backups" -v "$WORK/dst:/run/secrets:ro" \
-    --entrypoint "$tool" "$IMG" "$@"
+    -v "$WORK/hostkeys:/hostkeys:ro" --entrypoint "$tool" "$IMG" "$@"
 }
 in_app() { docker exec "$APP" "$@"; }
 api() {
@@ -95,7 +95,7 @@ create_run() { # create_run <port> <idempotency-key> -> http code
     -d "$body" "http://127.0.0.1:$port/v1/runs"
 }
 run_id_of() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("id") or d.get("run",{}).get("id",""))' "$WORK/resp.json" 2>/dev/null; }
-snap_of() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("snapshot_path") or d.get("snapshot") or d.get("path") or "")' "$WORK/bak.json" 2>/dev/null; }
+snap_of() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("snapshot_path") or d.get("snapshot") or d.get("path") or "")' "$1" 2>/dev/null; }
 
 echo "=== ARM64 full acceptance ==="
 docker buildx version >/dev/null 2>&1 || fail "buildx missing"
@@ -111,7 +111,7 @@ host_arch="$(docker version --format '{{.Server.Arch}}' 2>/dev/null)"
 echo "host_arch=$host_arch runtime_arch=$runtime_arch image=$IMG commit=$COMMIT"
 [ -z "$EVIDENCE" ] || printf 'host_arch=%s\nruntime_arch=%s\nimage=%s\ncommit=%s\nplatform=%s\n' "$host_arch" "$runtime_arch" "$IMG" "$COMMIT" "$PLATFORM" >"$EVIDENCE/arm64.txt"
 
-mkdir -p "$WORK/src" "$WORK/dst" "$WORK/data" "$WORK/backups"
+mkdir -p "$WORK/src" "$WORK/dst" "$WORK/data" "$WORK/backups" "$WORK/hostkeys"
 docker run --rm --platform "$PLATFORM" --user 0:0 -v "$WORK/data:/app/data" -v "$WORK/backups:/app/backups" \
   --entrypoint chown "$IMG" 10001:10001 /app/data /app/backups >/dev/null 2>&1 || true
 python3 - "$WORK/src/onboarding_master_key" "$WORK/src/onboard_admin_token" <<'PY'
@@ -174,7 +174,7 @@ fi
 
 in_app backup -db /app/data/state.sqlite -out-dir /app/backups -encrypt -keyring /run/secrets/onboarding_master_key >"$WORK/bak.json" 2>"$WORK/bak.err" \
   || { cat "$WORK/bak.err"; bad "in-container backup failed"; }
-SNAP="$(snap_of)"
+SNAP="$(snap_of "$WORK/bak.json")"
 [ -n "$SNAP" ] && ok "encrypted backup created inside the arm64 container" || bad "backup produced no snapshot: $(head -c 120 "$WORK/bak.json")"
 if [ -n "$SNAP" ]; then
   if in_app verify -snapshot "$SNAP" -keyring /run/secrets/onboarding_master_key >"$WORK/verify.json" 2>"$WORK/verify.err"; then
@@ -195,9 +195,9 @@ if [ -n "$SNAP" ]; then
   else docker logs "$APP2" 2>&1 | tail -20; bad "restored database failed to boot"; fi
   docker rm -f "$APP2" >/dev/null 2>&1
 
-  python3 -c 'import os,sys;open(sys.argv[1],"wb").write(os.urandom(32))' "$WORK/backups/wrong.key"
-  chmod 0444 "$WORK/backups/wrong.key"
-  if in_app verify -snapshot "$SNAP" -keyring /app/backups/wrong.key >/dev/null 2>&1; then
+  python3 -c 'import os,sys;open(sys.argv[1],"wb").write(os.urandom(32))' "$WORK/hostkeys/wrong.key"
+  chmod 0444 "$WORK/hostkeys/wrong.key"
+  if ops_run verify -snapshot "$SNAP" -keyring /hostkeys/wrong.key >/dev/null 2>&1; then
     bad "verify accepted a wrong master key"; else ok "verify rejects a wrong master key"; fi
   in_app sh -c "printf corrupt | dd of='$SNAP' bs=1 seek=64 conv=notrunc status=none" >/dev/null 2>&1
   if in_app verify -snapshot "$SNAP" -keyring /run/secrets/onboarding_master_key >/dev/null 2>&1; then
@@ -210,7 +210,7 @@ if [ -n "$SNAP" ]; then
 fi
 
 in_app backup -db /app/data/state.sqlite -out-dir /app/backups -encrypt -keyring /run/secrets/onboarding_master_key >"$WORK/bak2.json" 2>/dev/null
-SNAP2="$(snap_of)"
+SNAP2="$(snap_of "$WORK/bak2.json")"
 if [ -n "$SNAP2" ]; then
   create_run "$PORT" "rb-$SUFFIX" >/dev/null
   NEW_RUN="$(run_id_of)"
