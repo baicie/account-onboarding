@@ -799,12 +799,14 @@ func TestErrorMapping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := newFakeKeycloak(t, testRealm, testClientID)
-			a, sec := newTestAdapter(t, f, func(c *Config) {
-				if tc.timeout > 0 {
-					c.Timeout = tc.timeout
-				}
-			})
+			a, sec := newTestAdapter(t, f, nil)
 			handle := register(t, a, "onboard-mapping", "mapping@moonbyte.top")
+			if tc.timeout > 0 {
+				// Apply the short timeout only to the validation call: a cold CI
+				// runner may legitimately spend >100ms registering the user.
+				a.timeout = tc.timeout
+				a.api.Timeout = tc.timeout
+			}
 			cred := seedCredential(t, f, sec, handle.SubjectID, "mapping-token", time.Now().Add(time.Hour))
 			f.mu.Lock()
 			tc.mutate(f)
