@@ -192,7 +192,15 @@ recover_transaction() {
         echo "materialize: transaction backup entry is not a regular file; refusing to recover" >&2
         return 1
       fi
-      mv -f -- "$BAK/$name" "$DST/$name" || return 1
+      # The backup is a hard link to the previous live inode. When the live name
+      # still points at that inode the install never happened, so dropping the extra
+      # link is the restore; mv between two names of the same file is refused by
+      # GNU mv. Any other case means the live name was replaced and is swapped back.
+      if [ -f "$DST/$name" ] && [ "$BAK/$name" -ef "$DST/$name" ]; then
+        rm -f -- "$BAK/$name" || return 1
+      else
+        mv -f -- "$BAK/$name" "$DST/$name" || return 1
+      fi
     fi
   done
   for name in $installed; do

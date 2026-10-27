@@ -65,6 +65,20 @@ if [ -n "$FAIL_CAT_AT" ] && [ "$n" = "$FAIL_CAT_AT" ]; then
 fi
 exec '"$REAL_CAT"' "$@"'
 
+write_shim ln '#!/bin/sh
+last=""; prev=""
+for a in "$@"; do
+  case "$a" in -*) continue ;; esac
+  prev="$last"; last="$a"
+done
+case "$last" in
+  */.materialize.txn/backup/*)
+    if [ -n "$FAIL_BACKUP_NAME" ] && [ "$(basename "$last")" = "$FAIL_BACKUP_NAME" ] && [ ! -e "$SHIM_STATE/bkfired" ]; then
+      : >"$SHIM_STATE/bkfired"; echo "shim: refusing the backup hard link" >&2; exit 1
+    fi ;;
+esac
+exec /bin/ln "$@"'
+
 write_shim chmod '#!/bin/sh
 last=""
 for a in "$@"; do last="$a"; done
