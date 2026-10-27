@@ -181,17 +181,21 @@ fi
 skip "interrupted restore (SIGKILL mid-restore): no deterministic injection point without fault seams in the ops tool"
 
 # ---- retention -------------------------------------------------------------
-for n in 1 2; do
-  "$WORK/backup" -db "$DB" -out-dir "$WORK/backups" -encrypt -keyring "$KEY" >"$WORK/bak-$n.json" 2>/dev/null || fail "backup $n"
+# Retention runs against its own directory: the earlier steps already put
+# snapshots there, and a policy test must not depend on that count.
+RET_DIR="$WORK/retention-snaps"  # the retention binary is $WORK/retention
+mkdir -p "$RET_DIR"
+for n in 1 2 3; do
+  "$WORK/backup" -db "$DB" -out-dir "$RET_DIR" -encrypt -keyring "$KEY" >"$WORK/bak-$n.json" 2>/dev/null || fail "backup $n"
   sleep 1
 done
-before="$(find "$WORK/backups" -maxdepth 1 -name 'state-*.sqlite.enc' | wc -l | tr -d ' ')"
-newest="$(find "$WORK/backups" -maxdepth 1 -name 'state-*.sqlite.enc' -print0 | xargs -0 ls -t 2>/dev/null | head -1)"
+before="$(find "$RET_DIR" -maxdepth 1 -name 'state-*.sqlite.enc' | wc -l | tr -d ' ')"
+newest="$(find "$RET_DIR" -maxdepth 1 -name 'state-*.sqlite.enc' -print0 | xargs -0 ls -t 2>/dev/null | head -1)"
 [ "$before" -ge 3 ] && ok "snapshot directory holds $before snapshots before retention" || bad "unexpected snapshot count $before"
 
-"$WORK/retention" -dir "$WORK/backups" -max-count 2 -min-valid 1 -keyring "$KEY" >"$WORK/retention.json" 2>"$WORK/retention.err" \
+"$WORK/retention" -dir "$RET_DIR" -max-count 2 -min-valid 1 -keyring "$KEY" >"$WORK/retention.json" 2>"$WORK/retention.err" \
   || { cat "$WORK/retention.err"; cat "$WORK/retention.json"; fail "retention"; }
-after="$(find "$WORK/backups" -maxdepth 1 -name 'state-*.sqlite.enc' | wc -l | tr -d ' ')"
+after="$(find "$RET_DIR" -maxdepth 1 -name 'state-*.sqlite.enc' | wc -l | tr -d ' ')"
 [ "$after" = "2" ] && ok "retention kept exactly the policy count ($after)" || bad "retention kept $after snapshots"
 [ -e "$newest" ] && ok "retention kept the newest recovery point" || bad "retention deleted the newest snapshot"
 report="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("report_path",""))' "$WORK/retention.json" 2>/dev/null)"
@@ -206,8 +210,8 @@ sys.exit(0 if deleted >= 1 and kept >= 1 else 1)
 PY
 [ "$?" -eq 0 ] && ok "retention report shows both keeps and deletes" || bad "retention report inconsistent"
 
-"$WORK/retention" -dir "$WORK/backups" -max-count 1 -min-valid 3 -keyring "$KEY" >"$WORK/retention2.json" 2>/dev/null || true
-floor_kept="$(find "$WORK/backups" -maxdepth 1 -name 'state-*.sqlite.enc' | wc -l | tr -d ' ')"
+"$WORK/retention" -dir "$RET_DIR" -max-count 1 -min-valid 3 -keyring "$KEY" >"$WORK/retention2.json" 2>/dev/null || true
+floor_kept="$(find "$RET_DIR" -maxdepth 1 -name 'state-*.sqlite.enc' | wc -l | tr -d ' ')"
 [ "$floor_kept" = "2" ] && ok "minimum-valid floor protects the remaining recovery points" || bad "floor violated: $floor_kept snapshots left"
 
 kill -TERM "$PID" 2>/dev/null; wait "$PID" 2>/dev/null; PID=""

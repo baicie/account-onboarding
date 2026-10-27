@@ -32,7 +32,7 @@ SKIP interrupted restore (SIGKILL mid-restore): no deterministic injection point
 PASS snapshot directory holds 3 snapshots before retention
 PASS retention kept exactly the policy count (2)
 PASS retention kept the newest recovery point
-PASS retention audit report written (retention-20261027T074611Z.json)
+PASS retention audit report written (retention-20261027T081355Z.json)
 retention: scanned=3 valid=3 kept=2 deleted=1 min_valid=1
 PASS retention report shows both keeps and deletes
 PASS minimum-valid floor protects the remaining recovery points

@@ -289,5 +289,42 @@ def main(argv=None):
     return 0 if report["status"] == "PROVENANCE_VERIFIED" else 1
 
 
+def run_main(argv=None):
+    """Run main() but never leave the caller without evidence."""
+    out = ""
+    try:
+        ns, _unknown = _peek_args(argv)
+        out = ns
+    except Exception:  # noqa: BLE001 - best effort only
+        out = ""
+    try:
+        return main(argv)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - report, never crash silently
+        import traceback
+        report = {"status": "FAIL", "errors": ["verifier crashed: %s" % exc],
+                  "traceback": traceback.format_exc(), "trusted_build_verified": False}
+        print(json.dumps(report, indent=2))
+        if out:
+            try:
+                with open(out, "w", encoding="utf-8") as fh:
+                    json.dump(report, fh, indent=2)
+            except OSError:
+                pass
+        return 1
+
+
+def _peek_args(argv):
+    """Return the --out path from argv without consuming it."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    for i, a in enumerate(args):
+        if a == "--out" and i + 1 < len(args):
+            return args[i + 1], True
+        if a.startswith("--out="):
+            return a.split("=", 1)[1], True
+    return "", False
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_main())

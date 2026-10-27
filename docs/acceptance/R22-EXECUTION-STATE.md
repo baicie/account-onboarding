@@ -36,6 +36,7 @@ never claims a gate that has no evidence. Update it in place.
 | Backup retention (Phase 3) | **implemented and tested**: newest valid + -min-valid floor always survive, delete only when it verifies, pair-consistent delete, atomic JSON audit report; 9 unit tests + E2E retention checks |
 | BuildKit SLSA provenance (Phase 4) | **implemented, CI verification pending**: scripts/verify_buildkit_provenance.py reads the registry (index -> attestation manifests -> in-toto statements) and checks subject/builder/invocation/source/platform/SPDX; 15/15 offline negatives; tests/r22/buildkit_provenance.sh builds once with --provenance=mode=max --sbom=true into a throwaway registry, verifies, pulls by digest, then attacks the claim (wrong commit/repo/platform/subject, forged statement, unsigned build, rebuild). TRUSTED_BUILD_VERIFIED is explicitly NOT claimed (no signature issuer verification) |
 
+| Phase 3/4 CI iteration 1 | running-restore 31/33 (retention section was not isolated: only 2 snapshots existed in CI, so the policy had nothing to prune) - fixed by giving retention its own directory; provenance 14/17 (all negatives pass; the positive verifier exited without writing its report, so the evidence file was missing) - the verifier now always writes a report and dumps the traceback |
 ## Known failing / open items
 
 | Item | State | Next action |
