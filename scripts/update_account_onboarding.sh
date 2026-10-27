@@ -396,7 +396,7 @@ wait_healthy() { # 0 healthy, non-zero otherwise; never exits the process
   c="$(detect_existing_container)"
   if [ -z "$c" ]; then warn "no container is running for this compose project"; return 5; fi
   restarts="$(dk inspect "$c" --format "{{.RestartCount}}" 2>/dev/null || echo 0)"
-  if [ "" + D + "{restarts:-0}" -ge 5 ]; then warn "container restarted $restarts times (crash loop)"; return 6; fi
+  if [ "${restarts:-0}" -ge 5 ]; then warn "container restarted $restarts times (crash loop)"; return 6; fi
   log "healthy: liveness 200, readiness 200, restart count $restarts"
   return 0
 }

@@ -79,15 +79,34 @@ jobs:
           test -s "$ROOT/runtime/data/state.sqlite"
           head -c 15 "$ROOT/runtime/data/state.sqlite" | grep -q "SQLite format 3"
 
-      - name: Second deploy takes a verified snapshot and records the previous image
+      - name: Second deploy builds a distinguishable image, snapshots and records it
         run: |
           set -euo pipefail
-          bash scripts/update_account_onboarding.sh --deploy --offline \
+          A_ID="$(docker inspect account-onboarding --format '{{.Image}}')"
+          echo "IMAGE_A=$A_ID" >> "$GITHUB_ENV"
+          ONBOARD_BUILD_VERSION=0.1.1-e2e bash scripts/update_account_onboarding.sh --deploy --offline \
             --expected-sha="$GITHUB_SHA" --root="$ROOT" \
             --go-proxy=https://proxy.golang.org,direct --host-port=18788
+          B_ID="$(docker inspect account-onboarding --format '{{.Image}}')"
+          echo "IMAGE_B=$B_ID" >> "$GITHUB_ENV"
+          echo "image A=$A_ID image B=$B_ID"
+          test "$A_ID" != "$B_ID"
           snap="$(ls -1 "$ROOT"/backups/*/*.enc | head -1)"
           test -n "$snap"
+          ls -1 "$ROOT"/backups/*/*.manifest.json | head -1
           grep -q "previous_image" "$ROOT/deploy/deployment-state.json"
+
+      - name: Rollback really returns to image A and stays healthy
+        run: |
+          set -euo pipefail
+          bash scripts/update_account_onboarding.sh --rollback --root="$ROOT"
+          C_ID="$(docker inspect account-onboarding --format '{{.Image}}')"
+          echo "after rollback image=$C_ID expected=$IMAGE_A"
+          test "$C_ID" = "$IMAGE_A"
+          test "$C_ID" != "$IMAGE_B"
+          bash scripts/update_account_onboarding.sh --status --root="$ROOT" | tee rollback-status.log
+          grep -q "healthz: 200" rollback-status.log
+          grep -q "readyz: 200" rollback-status.log
 
       - name: Failure injection - a wrong SHA must be refused before anything changes
         run: |
@@ -145,4 +164,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: docker compose -p account-onboarding down --remove-orphans || true
+        run: |
+          set -euo pipefail
+          docker compose -p account-onboarding down --remove-orphans
+          test -z "$(docker ps -aq --filter name=account-onboarding)"
