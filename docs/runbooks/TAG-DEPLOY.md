@@ -21,35 +21,34 @@ deploy. The workflow is `.github/workflows/deploy-release.yml`; the server side 
 It does not create tags, does not touch other containers on the host, and does not
 configure TLS or DNS.
 
-## One-time host bootstrap
+## What the deploy needs on the host
 
-Run once as the deploy user (`ubuntu` here) on `82.156.234.84`:
+Nothing has to be prepared by hand. On the first deploy the remote script creates
+`/opt/account-onboarding/{data,secrets,secrets-src}`, generates the master keyring and
+the admin token **on the host** (`openssl rand`, root-owned 0444 projection) and
+materializes them into the 0400 files the service accepts. They never leave the host and
+the job never prints them.
 
-```bash
-sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2 curl
-sudo usermod -aG docker "$USER"     # or keep using passwordless sudo
+Requirements:
 
-sudo mkdir -p /opt/account-onboarding/{data,secrets,secrets-src}
-sudo chown -R "$USER": /opt/account-onboarding
-sudo chmod 0700 /opt/account-onboarding/secrets
+- `docker` with the compose v2 plugin, and either the deploy user in the `docker` group
+  or passwordless sudo (the script checks both and fails with a clear message).
+- `openssl` and `curl` on the host.
+- The GHCR package must be readable from the host: either make it public, or store a
+  `read:packages` token in `/opt/account-onboarding/.ghcr-token` (mode 0600) so the
+  script can log in before pulling.
 
-# Secrets stay on this host. 32 random bytes for the keyring, a long random token.
-sudo sh -c 'openssl rand 32 > /opt/account-onboarding/secrets-src/onboarding_master_key'
-sudo sh -c 'openssl rand -hex 32 > /opt/account-onboarding/secrets-src/onboard_admin_token'
-sudo chown root:root /opt/account-onboarding/secrets-src/*
-sudo chmod 0444 /opt/account-onboarding/secrets-src/*
-```
-
-If the GHCR package is private, create a PAT with `read:packages` and store it on the
-host so pulls work without putting a token in GitHub:
+To read the generated admin token later:
 
 ```bash
-printf "%s" "<PAT>" | sudo tee /opt/account-onboarding/.ghcr-token >/dev/null
-sudo chmod 0600 /opt/account-onboarding/.ghcr-token
+sudo cat /opt/account-onboarding/secrets/onboard_admin_token
 ```
 
-Reverse proxy: the app is published on `127.0.0.1:18788` only. Point the existing
-ingress (Caddy/nginx) at it for TLS; nothing else is exposed.
+Optional: to pin the values instead of generating them, write
+`onboarding_master_key` (32 raw bytes) and `onboard_admin_token` into
+`/opt/account-onboarding/secrets-src/` with mode 0444 before the first deploy. The
+script keeps existing files and only generates what is missing, so re-deploys never
+rotate a key by accident.
 
 ## GitHub configuration
 

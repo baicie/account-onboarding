@@ -30,21 +30,38 @@ else
 fi
 dk() { "${DOCKER[@]}" "$@"; }
 
-# ---- preflight: fail before touching anything ---------------------------------
+# ---- bootstrap: directories + secret projection (generated here, once) ---------
+# Nothing has to be prepared by hand: this script creates the directories and, on
+# the first deploy, generates the two secrets on the host itself. They never leave
+# the host and are never echoed.
+if [ "$(id -u)" = "0" ]; then
+  as_root() { "$@"; }
+elif sudo -n true >/dev/null 2>&1; then
+  as_root() { sudo -n "$@"; }
+else
+  echo "ERROR: need root or passwordless sudo on the host to own the secret directory" >&2
+  exit 1
+fi
+as_root mkdir -p "$DATA" "$SECRETS" "$SECRETS_SRC"
+as_root chmod 0700 "$SECRETS"
+if ! as_root test -f "$SECRETS_SRC/onboarding_master_key"; then
+  echo "==> generating the master keyring on the host"
+  as_root sh -c "openssl rand 32 > $SECRETS_SRC/onboarding_master_key"
+fi
+if ! as_root test -f "$SECRETS_SRC/onboard_admin_token"; then
+  echo "==> generating the admin token on the host"
+  as_root sh -c "openssl rand -hex 32 > $SECRETS_SRC/onboard_admin_token"
+fi
 for f in onboarding_master_key onboard_admin_token; do
-  if [ ! -f "$SECRETS_SRC/$f" ]; then
-    echo "ERROR: missing $SECRETS_SRC/$f (provision it once, see docs/runbooks/TAG-DEPLOY.md)" >&2
-    exit 1
-  fi
-  mode=$(stat -c "%a" "$SECRETS_SRC/$f" 2>/dev/null || stat -f "%Lp" "$SECRETS_SRC/$f")
+  as_root chown root:root "$SECRETS_SRC/$f"
+  as_root chmod 0444 "$SECRETS_SRC/$f"
+  mode=$(as_root stat -c "%a" "$SECRETS_SRC/$f" 2>/dev/null || as_root stat -f "%Lp" "$SECRETS_SRC/$f")
   if [ "$mode" != "444" ]; then
-    echo "ERROR: $SECRETS_SRC/$f must be mode 0444 (it is $mode); the materializer refuses writable sources" >&2
+    echo "ERROR: $SECRETS_SRC/$f must be 0444 (it is $mode)" >&2
     exit 1
   fi
 done
 [ -f "$COMPOSE" ] || { echo "ERROR: compose file $COMPOSE missing" >&2; exit 1; }
-mkdir -p "$DATA" "$SECRETS"
-chmod 0700 "$SECRETS"
 if ! dk image inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
   if [ -f "$DIR/.ghcr-token" ]; then
     echo "==> pulling with the host-stored registry token"
