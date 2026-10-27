@@ -115,11 +115,11 @@ compose_up() { # compose_up <tag>
   if [ "${DOCKER[0]}" = "sudo" ]; then
     sudo -n env IMAGE_REPO="$IMAGE" IMAGE_TAG="$tag" CONTAINER_NAME="$CONTAINER" \
       HOST_PORT="$HOST_PORT" HOST_DIR="$DIR" ONBOARD_DOMAINS="$DOMAINS" \
-      docker compose -p "$CONTAINER" -f "$COMPOSE" up -d --remove-orphans
+      docker compose -p "$CONTAINER" -f "$COMPOSE" up -d --remove-orphans --force-recreate
   else
     IMAGE_REPO="$IMAGE" IMAGE_TAG="$tag" CONTAINER_NAME="$CONTAINER" \
       HOST_PORT="$HOST_PORT" HOST_DIR="$DIR" ONBOARD_DOMAINS="$DOMAINS" \
-      docker compose -p "$CONTAINER" -f "$COMPOSE" up -d --remove-orphans
+      docker compose -p "$CONTAINER" -f "$COMPOSE" up -d --remove-orphans --force-recreate
   fi
 }
 
