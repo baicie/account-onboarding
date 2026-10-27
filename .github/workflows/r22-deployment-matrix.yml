@@ -33,6 +33,30 @@ jobs:
           echo "leftover_temp_dirs=$leftovers"
           test "$leftovers" -eq 0
 
+  running-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: {go-version: "1.25.x", cache: true}
+      - name: Build operator binaries
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/r22bin
+          go build -o /tmp/r22bin/onboardd ./cmd/onboardd
+          go build -o /tmp/r22bin/backup ./internal/ops/cmd/backup
+          go build -o /tmp/r22bin/restore ./internal/ops/cmd/restore
+          go build -o /tmp/r22bin/verify ./internal/ops/cmd/verify
+          go build -o /tmp/r22bin/retention ./internal/ops/cmd/retention
+      - name: Unit tests (maintenance gate and retention policy)
+        run: |
+          set -euo pipefail
+          go test ./internal/api/ -run Maintenance -count=1
+          go test ./internal/ops/ -run 'Retention|IsSnapshotFile' -count=1
+      - name: Running restore and backup retention (root, disk-full included)
+        run: sudo env R22_BIN_DIR=/tmp/r22bin bash tests/r22/running_restore.sh
+
   docker-secret:
     runs-on: ubuntu-latest
     timeout-minutes: 30

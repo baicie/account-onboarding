@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/baicie/account-onboarding/internal/errs"
@@ -44,6 +45,10 @@ type Engine struct {
 	log       *slog.Logger
 	templates map[string]*Template
 	now       func() time.Time
+
+	// paused stops new step claims during a maintenance window. In-flight steps
+	// finish; any lease they hold waits for the next probe after Resume.
+	paused atomic.Bool
 
 	lifecycleMu sync.Mutex
 	lifecycle   engineLifecycle
@@ -286,6 +291,21 @@ func (e *Engine) Stop() error {
 	return result
 }
 
+// Pause stops new step claims for a maintenance window. In-flight steps are
+// allowed to finish; their leases are honoured again (or reclaimed if expired)
+// after Resume.
+func (e *Engine) Pause() {
+	e.paused.Store(true)
+}
+
+// Resume restarts step claiming.
+func (e *Engine) Resume() {
+	e.paused.Store(false)
+}
+
+// Paused reports whether step claiming is suspended.
+func (e *Engine) Paused() bool { return e.paused.Load() }
+
 func (e *Engine) workerLoop(ctx context.Context, worker int) {
 	ticker := time.NewTicker(e.cfg.TickInterval)
 	defer ticker.Stop()
@@ -312,6 +332,9 @@ func (e *Engine) workerLoop(ctx context.Context, worker int) {
 
 // Tick claims and executes at most one step. It reports whether work was done.
 func (e *Engine) Tick(ctx context.Context) (bool, error) {
+	if e.paused.Load() {
+		return false, nil
+	}
 	claim, err := e.store.ClaimNext(ctx, storage.ClaimRequest{
 		Owner:            e.cfg.InstanceID,
 		LeaseTTL:         e.cfg.LeaseTTL,

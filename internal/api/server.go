@@ -53,6 +53,11 @@ type Server struct {
 
 	generalLimiter *rateLimiter
 	loginLimiter   *rateLimiter
+
+	// Maintenance window (planned restore) state and in-flight accounting.
+	maint          *maintenanceState
+	inFlight       atomic.Int64
+	writesInFlight atomic.Int64
 }
 
 // New builds the HTTP server.
@@ -70,6 +75,7 @@ func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 		redactor = security.NewRedactor()
 	}
 	return &Server{
+		maint:               &maintenanceState{},
 		Cfg:                 cfg,
 		Store:               store,
 		Engine:              engine,
@@ -111,6 +117,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/ops/external/{id}/resolve", s.apiAuth(true, true, s.handleResolveExternalOperation))
 	mux.HandleFunc("GET /v1/ops/external/{id}/audit", s.apiAuth(false, true, s.handleExternalOperationAudit))
 	mux.HandleFunc("GET /v1/ops/metrics", s.apiAuth(false, true, s.handleOpsMetrics))
+	// Planned-maintenance window used by the running-restore protocol.
+	mux.HandleFunc("GET /v1/maintenance", s.apiAuth(false, true, s.handleMaintenanceState))
+	mux.HandleFunc("POST /v1/maintenance/enter", s.apiAuth(true, true, s.handleMaintenanceEnter))
+	mux.HandleFunc("POST /v1/maintenance/exit", s.apiAuth(true, true, s.handleMaintenanceExit))
 	mux.HandleFunc("GET /v1/ops/alerts", s.apiAuth(false, true, s.handleOpsAlerts))
 	mux.HandleFunc("GET /v1/ops/alerts/queue", s.apiAuth(false, true, s.handleOpsAlertQueue))
 	mux.HandleFunc("POST /v1/ops/alerts/drain", s.apiAuth(true, true, s.handleOpsAlertDrain))
@@ -140,7 +150,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ui/runs/{id}/cancel", s.uiAuth(s.handleCancelUI))
 	mux.HandleFunc("GET /ui/static/app.css", s.handleCSS)
 
-	return s.securityHeaders(s.requestLogger(s.recoverer(s.rateLimit(mux))))
+	return s.securityHeaders(s.requestLogger(s.recoverer(s.maintenanceGate(s.rateLimit(mux)))))
 }
 
 // ---------------------------------------------------------------------------
@@ -532,6 +542,13 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 
 // handleReadyz verifies DB writability, schema version, WAL mode and key setup.
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if active, reason, _ := s.maint.status(); active {
+		w.Header().Set("Retry-After", "30")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"ready": false, "maintenance": true, "reason": reason,
+		})
+		return
+	}
 	health, err := s.Store.Health(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "database unavailable"})

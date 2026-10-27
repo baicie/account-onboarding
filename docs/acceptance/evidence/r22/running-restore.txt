@@ -1,0 +1,40 @@
+=== running restore + retention ===
+PASS binaries built
+PASS service started on a fresh database
+PASS run 1 created (HTTP 202)
+PASS run 2 created (HTTP 202)
+PASS run list readable
+runs_before=2
+PASS encrypted snapshot taken before maintenance
+PASS maintenance enter accepted
+enter: True True True
+PASS maintenance window is active, drained and workers are paused
+PASS write rejected during maintenance (HTTP 503)
+PASS rejection carries Retry-After: 30
+PASS reads still served during maintenance
+PASS readiness reports the maintenance window
+PASS maintenance enter is audited
+PASS service stopped for the maintenance window (database closed)
+PASS database file present while stopped
+PASS snapshot restored over the live database path
+PASS replaced database kept as state.sqlite.pre-restore-*
+PASS service started again after the restore
+PASS readiness green after restart (window is process local)
+PASS run list readable after the restore
+PASS restored database has the same run count (2)
+PASS writes are accepted again after the window (202)
+PASS restore rejects a wrong master key
+PASS wrong-key restore left no target
+PASS verify rejects a tampered snapshot
+PASS restore rejects a tampered snapshot
+SKIP disk full: requires root on Linux
+SKIP interrupted restore (SIGKILL mid-restore): no deterministic injection point without fault seams in the ops tool
+PASS snapshot directory holds 3 snapshots before retention
+PASS retention kept exactly the policy count (2)
+PASS retention kept the newest recovery point
+PASS retention audit report written (retention-20261027T074611Z.json)
+retention: scanned=3 valid=3 kept=2 deleted=1 min_valid=1
+PASS retention report shows both keeps and deletes
+PASS minimum-valid floor protects the remaining recovery points
+RUNNING_RESTORE_RETENTION_PASS
+SUMMARY pass=32 fail=0 skip=2
