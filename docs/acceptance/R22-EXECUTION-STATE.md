@@ -38,6 +38,7 @@ never claims a gate that has no evidence. Update it in place.
 
 | Phase 3/4 CI iteration 1 | running-restore 31/33 (retention section was not isolated: only 2 snapshots existed in CI, so the policy had nothing to prune) - fixed by giving retention its own directory; provenance 14/17 (all negatives pass; the positive verifier exited without writing its report, so the evidence file was missing) - the verifier now always writes a report and dumps the traceback |
 | v0.1 Sandbox RC | **FROZEN** - product code 7f7c3da (tree 7fa6a1a), final HEAD verified on 70ca189, record docs/acceptance/R22-V0.1-SANDBOX-RC.md; independent review pending; release_authorized=false |
+| v0.1 Sandbox RC (final) | **REFROZEN** after the security hotfix - product code 634a85c (tree d1ccf1f), CI ci/dpm/arm64/r16/supply-chain all success, independent re-verification HOTFIX_ACCEPT; release_authorized=false |
 ## Known failing / open items
 
 | Item | State | Next action |
