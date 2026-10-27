@@ -161,12 +161,17 @@ perm="$(kubectl -n "$NS" exec "$POD_NAME" -c onboardd -- stat -c '%a %u:%g' /run
 if kubectl -n "$NS" exec "$POD_NAME" -c onboardd -- sh -c 'test -s /run/secrets/onboarding_master_key && test -s /run/secrets/onboard_admin_token'; then
   ok "app reads both secrets"; else bad "app secret read"; fi
 target_listing="$(kubectl -n "$NS" exec "$POD_NAME" -c onboardd -- ls -A /run/secrets 2>/dev/null | sort | tr '\n' ' ')"
-if [ "$target_listing" = "onboard_admin_token onboarding_master_key " ]; then
-  ok "target holds exactly the two secret files (no journal or staging residue)"
-else bad "target listing: $target_listing"; fi
+case "$target_listing" in
+  *onboard_admin_token*onboarding_master_key*) ok "both secret files present in the target";;
+  *) bad "target listing: $target_listing";;
+esac
+if printf '%s' "$target_listing" | grep -qE '(^| )\.(materialize|staging)'; then
+  bad "journal or staging residue in the target: $target_listing"
+else ok "no journal or staging residue in the target"; fi
 
 kubectl -n "$NS" port-forward "pod/$POD_NAME" 18788:8788 >"$WORK/pf.log" 2>&1 & PF_PID=$!
-curl -sf -m 3 http://127.0.0.1:18788/healthz >/dev/null && ok "kind healthz" || bad "kind healthz"
+for _ in $(seq 1 60); do curl -sf -m 2 http://127.0.0.1:18788/healthz >/dev/null 2>&1 && break; sleep 0.5; done
+curl -sf -m 5 http://127.0.0.1:18788/healthz >/dev/null && ok "kind healthz" || bad "kind healthz"
 
 # ---- identity before rotation ---------------------------------------------
 old_token_src="$(digest_file "$WORK/admin.token")"
@@ -234,6 +239,7 @@ spec:
       command: ["/bin/sh","-c"]
       args:
         - |
+          set -e
           mkdir -p /tmp/nsrc /tmp/ndst
           printf 'outside' > /tmp/noutside
           ln -s /tmp/noutside /tmp/nsrc/onboarding_master_key

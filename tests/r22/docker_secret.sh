@@ -19,8 +19,11 @@ cleanup() {
   if docker ps -a --format '{{.Names}}' | grep -qx "$C1"; then echo "cleanup: container $C1 still present" >&2; CLEAN_RC=1; fi
   if docker volume ls --format '{{.Name}}' | grep -qx "$VOL"; then echo "cleanup: volume $VOL still present" >&2; CLEAN_RC=1; fi
   if docker images --format '{{.Repository}}:{{.Tag}}' | grep -qx "$IMG"; then echo "cleanup: image $IMG still present" >&2; CLEAN_RC=1; fi
-  chmod -R u+rwx "$WORK" 2>/dev/null
+  # The materialized target is 0700 and owned by the runtime UID, so the runner
+  # user cannot remove it without the privilege the materializer itself used.
+  chmod -R u+rwX "$WORK" 2>/dev/null
   rm -rf "$WORK" 2>/dev/null
+  if [ -d "$WORK" ]; then sudo -n rm -rf "$WORK" 2>/dev/null; fi
   if [ -d "$WORK" ]; then echo "cleanup: work dir still present" >&2; CLEAN_RC=1; fi
   if [ "$rc" -ne 0 ]; then echo "test exit=$rc cleanup_exit=$CLEAN_RC" >&2; exit "$rc"; fi
   if [ "$CLEAN_RC" -ne 0 ]; then echo "CLEANUP_FAILED" >&2; exit 1; fi
@@ -108,15 +111,21 @@ docker restart "$C1" >/dev/null
 wait_health && ok "rotation restart health" || { docker logs "$C1" 2>&1 | tail -20; bad "rotation restart health"; }
 
 # ---- interrupted transaction replay ---------------------------------------
-mkdir -p "$WORK/dst/.materialize.txn/backup"
-printf 'killed-run-old-token\n' >"$WORK/dst/.materialize.txn/backup/onboard_admin_token"
-printf 'B onboard_admin_token %s\n' "$(printf 'B onboard_admin_token' | sha256sum | cut -d' ' -f1 | cut -c1-16)" >"$WORK/dst/.materialize.txn/journal"
-printf 'killed-run-partial\n' >"$WORK/dst/onboard_admin_token"
+# The target is 0700 and owned by the runtime UID, so the killed-run state has to
+# be recreated as root inside a container, exactly as a killed materializer
+# leaves it behind.
+docker run --rm --user 0:0 -v "$WORK/dst:/run/secrets" --entrypoint /bin/sh "$IMG" -c '
+  mkdir -p /run/secrets/.materialize.txn/backup
+  printf "killed-run-old-token\n" > /run/secrets/.materialize.txn/backup/onboard_admin_token
+  printf "B onboard_admin_token %s\n" "$(printf "B onboard_admin_token" | sha256sum | cut -d" " -f1 | cut -c1-16)" > /run/secrets/.materialize.txn/journal
+  printf "killed-run-partial\n" > /run/secrets/onboard_admin_token
+' || fail "cannot create the interrupted transaction fixture"
 materialize >"$WORK/recover.log" 2>&1 || { cat "$WORK/recover.log"; fail "recovery materialize"; }
 [ "$(digest_in_image onboard_admin_token)" = "$TOKEN_SRC_NEW" ] && ok "interrupted transaction replayed before installing the new set" || bad "recovery left the wrong token"
-if [ -e "$WORK/dst/.materialize.txn" ]; then bad "transaction directory survived recovery"; else ok "transaction directory removed after recovery"; fi
-stale="$(find "$WORK/dst" -maxdepth 1 -name '.staging.*' | wc -l | tr -d ' ')"
-[ "$stale" = "0" ] && ok "no staging directory left behind" || bad "$stale staging directories left"
+if docker run --rm --user 0:0 -v "$WORK/dst:/run/secrets:ro" --entrypoint /bin/sh "$IMG" -c 'test -e /run/secrets/.materialize.txn'; then
+  bad "transaction directory survived recovery"; else ok "transaction directory removed after recovery"; fi
+if docker run --rm --user 0:0 -v "$WORK/dst:/run/secrets:ro" --entrypoint /bin/sh "$IMG" -c 'ls -A /run/secrets' | grep -q '^\.staging\.'; then
+  bad "staging directory left behind"; else ok "no staging directory left behind"; fi
 
 # ---- negatives -------------------------------------------------------------
 cp "$WORK/src/onboarding_master_key" "$WORK/src/onboarding_master_key.bad"
