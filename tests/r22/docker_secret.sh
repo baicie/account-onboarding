@@ -9,7 +9,8 @@ cleanup() {
   [ -z "$C1" ] || docker rm -f "$C1" >/dev/null 2>&1 || true
   docker volume rm r22-data >/dev/null 2>&1 || true
   docker image rm "$IMG" >/dev/null 2>&1 || true
-  rm -rf "$WORK"
+  chmod -R u+rwx "$WORK" 2>/dev/null || sudo -n chmod -R u+rwx "$WORK" 2>/dev/null || true
+  rm -rf "$WORK" 2>/dev/null || sudo -n rm -rf "$WORK" 2>/dev/null || true
   exit "$rc"
 }
 trap cleanup EXIT
@@ -58,7 +59,7 @@ if docker logs r22-app 2>&1 | grep -qF "$(cat "$WORK/src/onboard_admin_token")";
 
 docker restart r22-app >/dev/null
 for _ in $(seq 1 100); do curl -sf -m 2 "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
-curl -sf -m 3 "http://127.0.0.1:$port/healthz" >/dev/null && ok "restart health" || bad "restart health"
+if ! curl -sf -m 3 "http://127.0.0.1:$port/healthz" >/dev/null; then docker logs r22-app 2>&1 | tail -30; bad "restart health"; else ok "restart health"; fi
 
 # Rotation: write a new token at 0444, rematerialize, restart, verify old value
 # is gone from the target and the app still starts.
@@ -70,7 +71,7 @@ materialize >/dev/null || fail "rotation materialize"
 if docker run --rm --user 10001:10001 -v "$WORK/dst:/run/secrets:ro" --entrypoint /bin/sh "$IMG" -c 'grep -q "$1" /run/secrets/onboard_admin_token' _ "$old_token" >/dev/null 2>&1; then bad "old secret remained"; else ok "rotation replaced old secret"; fi
 docker restart r22-app >/dev/null
 for _ in $(seq 1 100); do curl -sf -m 2 "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
-curl -sf -m 3 "http://127.0.0.1:$port/healthz" >/dev/null && ok "rotation restart health" || bad "rotation restart health"
+if ! curl -sf -m 3 "http://127.0.0.1:$port/healthz" >/dev/null; then docker logs r22-app 2>&1 | tail -30; bad "rotation restart health"; else ok "rotation restart health"; fi
 
 # Negative: writable source must be rejected and old target preserved.
 cp "$WORK/src/onboarding_master_key" "$WORK/src/onboarding_master_key.bad"

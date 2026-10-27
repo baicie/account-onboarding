@@ -91,7 +91,9 @@ spec:
         sources:
           - secret:
               name: onboarding-secrets
-              defaultMode: 0444
+              items:
+                - {key: onboarding_master_key, path: onboarding_master_key, mode: 0444}
+                - {key: onboard_admin_token, path: onboard_admin_token, mode: 0444}
     - name: materialized
       emptyDir: {medium: Memory}
     - name: data
