@@ -1,52 +1,128 @@
 #!/usr/bin/env bash
-# Failure-scenario tests for scripts/update_account_onboarding.sh (deterministic, no docker).
+# Failure-scenario suite for scripts/update_account_onboarding.sh.
+# Deterministic: isolated ROOT, isolated env, isolated log per case, no docker, no network.
 set -uo pipefail
-REPO="$(cd "$(dirname "$0")/../.." && pwd)"; SCRIPT="$REPO/scripts/update_account_onboarding.sh"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-STUB="$TMP/bin"; mkdir -p "$STUB"; PASS=0; FAIL=0; RC=0; LOG="$TMP/last.log"; N=0
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT="$REPO/scripts/update_account_onboarding.sh"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+STUB="$TMP/bin"; mkdir -p "$STUB"
+PASS=0; FAIL=0; N=0; RC=0; LOG=""
 ok() { PASS=$((PASS+1)); printf "PASS %s\n" "$1"; }
 bad() { FAIL=$((FAIL+1)); printf "FAIL %s\n" "$1"; }
-printf "%s\n" "#!/usr/bin/env bash" '[ "$1" = "-C" ] && shift 2' 'case "$1" in' \
-  '  status) [ "${D-0}" = "1" ] && echo " M x"; exit 0 ;;' \
-  '  fetch) shift; exit "${F-0}" ;;' \
-  '  rev-parse) case "$2" in origin/main) echo "${T-1111111111111111111111111111111111111111}" ;; *) echo "${H-1111111111111111111111111111111111111111}" ;; esac; exit 0 ;;' \
-  '  cat-file) exit 0 ;; merge-base) exit 0 ;; merge) exit 0 ;;' \
-  'esac; exit 0' > "$STUB/git"
-printf "%s\n" "#!/usr/bin/env bash" 'if [ "$1" = info ]; then exit "${DI-0}"; fi' \
-  'if [ "$1" = compose ] && [ "$2" = version ]; then exit 0; fi' \
-  'if [ "$1" = compose ]; then case "$*" in *\"config --quiet\"*) exit "${CF-0}" ;; *\"up -d\"*) echo STUB_UP ;; esac; exit 0; fi' \
-  'if [ "$1" = ps ]; then [ -n "${CN-}" ] && echo "$CN"; exit 0; fi' \
-  'if [ "$1" = inspect ]; then case "$*" in *\"{{range .Mounts}}\"*) case "$*" in *\"/app/data\"*) echo "${MD-}" ;; *) echo ;; esac ;; *) echo 0 ;; esac; exit 0; fi' \
-  'if [ "$1" = image ]; then echo sha256:stub; exit 0; fi' \
-  'if [ "$1" = build ]; then exit "${BD-0}"; fi' \
-  'if [ "$1" = run ]; then exit "${RN-0}"; fi' \
-  'exit 0' > "$STUB/docker"
-printf "#!/usr/bin/env bash\nshift 2\nexec \"\$@\"\n" > "$STUB/timeout"
-printf "#!/usr/bin/env bash\necho hdr\necho x\n" > "$STUB/df"
-printf "#!/usr/bin/env bash\necho 200\n" > "$STUB/curl"
-chmod +x "$STUB"/*
-mkroot() { N=$((N+1)); ROOT="$TMP/r$N"; mkdir -p "$ROOT/app/.git" "$ROOT/runtime/data" "$ROOT/runtime/secrets-src" "$ROOT/backups" "$ROOT/deploy" "$ROOT/logs"; printf k > "$ROOT/runtime/secrets-src/onboarding_master_key"; printf t > "$ROOT/runtime/secrets-src/onboard_admin_token"; }
-run() { ( PATH="$STUB:/usr/bin:/bin" ONBOARD_RETRY_SLEEP=0 "$SCRIPT" "$@" ) >"$LOG" 2>&1; RC=$?; }
-want() { if [ "$RC" != "$2" ]; then bad "$1 rc=$RC want=$2"; sed -n 1,3p "$LOG" | sed "s/^/    /"; elif [ -n "${3-}" ] && ! grep -qF -- "$3" "$LOG"; then bad "$1 missing:$3"; else ok "$1"; fi; }
 
+# ---- docker stub: parses the compose flag list properly --------------------------
+cat > "$STUB/docker" <<'STUB'
+#!/usr/bin/env bash
+cmd="$1"; shift || true
+if [ "$cmd" = "info" ]; then exit "${STUB_INFO_RC:-0}"; fi
+if [ "$cmd" = "ps" ]; then [ -n "${STUB_CONTAINER:-}" ] && echo "$STUB_CONTAINER"; exit 0; fi
+if [ "$cmd" = "inspect" ]; then
+  args="$*"
+  case "$args" in
+    *"/app/data"*) echo "${STUB_MOUNT_DATA:-}"; exit 0 ;;
+    *"/run/secrets"*) echo "${STUB_MOUNT_SECRETS:-}"; exit 0 ;;
+    *"{{.Id}}"*) echo "sha256:stubimage"; exit 0 ;;
+    *ExitCode*) echo "exit=${STUB_EXIT_CODE:-0} restarts=${STUB_RESTARTS:-0}"; exit 0 ;;
+  esac
+  echo "exit=0 restarts=0"; exit 0
+fi
+if [ "$cmd" = "image" ]; then echo "sha256:stubimage"; exit 0; fi
+if [ "$cmd" = "build" ]; then exit "${STUB_BUILD_RC:-0}"; fi
+if [ "$cmd" = "run" ]; then echo "DOCKER_RUN"; exit "${STUB_RUN_RC:-0}"; fi
+if [ "$cmd" != "compose" ]; then echo "stub: unimplemented docker command: $cmd" >&2; exit 127; fi
+# compose: walk the arguments to find the subcommand, ignoring flag values
+sub=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|-f|--env-file|--project-name|--file) shift 2; continue ;;
+    -*) shift; continue ;;
+    *) sub="$1"; break ;;
+  esac
+done
+case "$sub" in
+  version) exit 0 ;;
+  config) [ "${2:-}" = "--quiet" ] && exit "${STUB_CONFIG_RC:-0}"; echo "services: {onboarding: {}}"; exit "${STUB_CONFIG_RC:-0}" ;;
+  up) echo "COMPOSE_UP"; exit "${STUB_UP_RC:-0}" ;;
+  ps) echo "account-onboarding running"; exit 0 ;;
+  logs) echo "stub logs"; exit 0 ;;
+  *) echo "stub: unimplemented compose subcommand: $sub" >&2; exit 127 ;;
+esac
+STUB
+cat > "$STUB/git" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = "-C" ] && shift 2
+sub="${1:-}"; shift || true
+case "$sub" in
+  status) [ "${STUB_DIRTY:-0}" = "1" ] && echo " M changed"; exit 0 ;;
+  fetch) exit "${STUB_FETCH_RC:-0}" ;;
+  rev-parse) case "${1:-}" in origin/main) echo "${STUB_TARGET:-1111111111111111111111111111111111111111}" ;; *) echo "${STUB_HEAD:-1111111111111111111111111111111111111111}" ;; esac; exit 0 ;;
+  cat-file) exit 0 ;; merge-base) exit 0 ;; merge) exit 0 ;;
+  *) echo "stub: unimplemented git command: $sub" >&2; exit 127 ;;
+esac
+STUB
+printf "#!/usr/bin/env bash\nshift 2\nexec \"\$@\"\n" > "$STUB/timeout"
+cat > "$STUB/df" <<'STUB'
+#!/usr/bin/env bash
+echo "Filesystem     1024-blocks    Used Available Capacity Mounted on"
+echo "/dev/root         100000000 1000000  99000000       2% /"
+STUB
+cat > "$STUB/curl" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in *healthz*) echo "${STUB_HEALTHZ:-200}" ;; *readyz*) echo "${STUB_READYZ:-200}" ;; *) echo 200 ;; esac
+STUB
+chmod +x "$STUB"/*
+
+mkroot() { # fresh root + fixture; clears every per-case env override
+  N=$((N+1)); ROOT="$TMP/r$N"; LOG="$TMP/log$N.txt"
+  mkdir -p "$ROOT/app/.git" "$ROOT/app/deploy" "$ROOT/runtime/data" "$ROOT/runtime/secrets-src" "$ROOT/backups" "$ROOT/deploy" "$ROOT/logs"
+  printf k > "$ROOT/runtime/secrets-src/onboarding_master_key"
+  printf t > "$ROOT/runtime/secrets-src/onboard_admin_token"
+  printf "ARG GOLANG_IMAGE=golang:stub@sha256:stub\nFROM scratch\n" > "$ROOT/app/Dockerfile"
+  cp "$REPO/deploy/compose.yaml" "$ROOT/app/deploy/compose.yaml"
+  unset STUB_DIRTY STUB_FETCH_RC STUB_HEAD STUB_TARGET STUB_CONTAINER STUB_MOUNT_DATA STUB_MOUNT_SECRETS
+  unset STUB_CONFIG_RC STUB_BUILD_RC STUB_RUN_RC STUB_INFO_RC STUB_UP_RC STUB_EXIT_CODE STUB_RESTARTS
+}
+run() { ( PATH="$STUB:/usr/bin:/bin" ONBOARD_RETRY_SLEEP=0 "$SCRIPT" "$@" ) >"$LOG" 2>&1; RC=$?; }
+want() { # want <name> <rc> [needle]
+  if [ "$RC" != "$2" ]; then
+    bad "$1 (rc=$RC want=$2)"; sed "s/^/    | /" "$LOG" | tail -12; return
+  fi
+  if [ -n "${3:-}" ] && ! grep -qF -- "$3" "$LOG"; then bad "$1 (missing: $3)"; sed "s/^/    | /" "$LOG" | tail -12; return; fi
+  ok "$1"
+}
+H=1111111111111111111111111111111111111111
 mkroot; run --nonsense; want "unknown argument rejected" 1 "unknown argument"
 mkroot; run --offline --build-only --root="$ROOT"; want "offline without sha rejected" 1 "requires --expected-sha"
-mkroot; D=1 run --preflight --root="$ROOT"; want "dirty worktree refused" 2 "worktree is dirty"
-mkroot; F=1 run --preflight --root="$ROOT"; want "fetch failure not silently ignored" 2 "cannot reach the git remote"
-mkroot; T=2222222222222222222222222222222222222222 run --preflight --expected-sha=3333333333333333333333333333333333333333 --root="$ROOT"; want "sha mismatch refused" 2 "not the required"
+mkroot; STUB_DIRTY=1 run --preflight --root="$ROOT"; want "dirty worktree refused" 2 "worktree is dirty"
+mkroot; STUB_FETCH_RC=1 run --preflight --root="$ROOT"; want "fetch failure not silently ignored" 2 "cannot reach the git remote"
+mkroot; STUB_TARGET=2222222222222222222222222222222222222222 run --preflight --expected-sha=3333333333333333333333333333333333333333 --root="$ROOT"; want "expected-sha mismatch refused" 2 "not the required"
+mkroot; : > "$ROOT/runtime/data/state.sqlite.restore-in-progress"; run --preflight --root="$ROOT"; want "marker blocks a first install" 3 "restore marker is present"
+mkroot; : > "$ROOT/runtime/data/state.sqlite"; : > "$ROOT/runtime/data/state.sqlite.restore-in-progress"; run --preflight --root="$ROOT"; want "marker blocks a database without a container" 3 "restore marker is present"
+mkroot; : > "$ROOT/runtime/data/state.sqlite.restore-in-progress"; STUB_CONTAINER=account-onboarding STUB_MOUNT_DATA="$ROOT/runtime/data" run --preflight --root="$ROOT"; want "marker blocks a running instance" 3 "restore marker is present"
+mkroot; STUB_CONTAINER=account-onboarding STUB_MOUNT_DATA=/elsewhere/data run --preflight --root="$ROOT"; want "data mount mismatch refused" 3 "Refusing to start on an empty directory"
 mkroot; printf "services: {}\n" > "$ROOT/deploy/compose.override.yml"; run --build-only --root="$ROOT"; want "hand-written override preserved" 3 "not generated by this script"
-mkroot; : > "$ROOT/runtime/data/state.sqlite.restore-in-progress"; run --preflight --root="$ROOT"; want "restore marker blocks deploy" 3 "restore marker"
-mkroot; CN=account-onboarding MD=/elsewhere/data run --preflight --root="$ROOT"; want "data mount mismatch refused" 3 "Refusing to start on an empty directory"
-mkroot; CF=1 run --build-only --root="$ROOT"; want "invalid compose refused" 2 "compose configuration is invalid"
-mkroot; run --backup-only --root="$ROOT"; want "backup-only without a database is a no-op" 0 "no database to back up"
-mkroot; : > "$ROOT/runtime/data/state.sqlite"; RN=1 run --backup-only --root="$ROOT"; want "backup failure aborts" 3 "backup failed"
-mkroot; BD=1 run --build-only --root="$ROOT"; want "build failure aborts" 1 "image build failed"
+mkroot; STUB_CONFIG_RC=1 run --build-only --root="$ROOT"; want "invalid compose refused" 2 "compose configuration is invalid"
+mkroot; STUB_BUILD_RC=1 run --build-only --root="$ROOT"; want "build failure aborts" 1 "image build failed"
 mkroot; run --root="$ROOT"; want "default action is build-only" 0 "nothing was deployed"
-if grep -q STUB_UP "$LOG"; then bad "default action touched the service"; else ok "default action left the service alone"; fi
+if grep -q COMPOSE_UP "$LOG"; then bad "default action touched the service"; else ok "default action left the service alone"; fi
+if grep -q DOCKER_RUN "$LOG"; then bad "build-only materialized secrets"; else ok "build-only did not touch the secret set"; fi
 mkroot; run --deploy --dry-run --root="$ROOT"; want "dry-run deploy ok" 0 "DRY-RUN"
-if grep -q STUB_UP "$LOG"; then bad "dry-run started a container"; else ok "dry-run started nothing"; fi
+if grep -q COMPOSE_UP "$LOG"; then bad "dry-run started a container"; else ok "dry-run started nothing"; fi
 mkroot; run --status --root="$ROOT"; want "status without state ok" 0 "no deployment state"
 mkroot; run --rollback --root="$ROOT"; want "rollback without state refused" 1 "nothing to roll back"
+mkroot; run --backup-only --root="$ROOT"; want "backup-only without a database is a no-op" 0 "no database to back up"
+mkroot; : > "$ROOT/runtime/data/state.sqlite"; STUB_RUN_RC=1 run --backup-only --root="$ROOT"; want "backup failure aborts" 3 "backup failed"
+mkroot; printf "not a database" > "$ROOT/runtime/data/state.sqlite"; printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5\n}\n' > "$ROOT/deploy/deployment-state.json"; run --rollback --root="$ROOT"; want "corrupt database fails the schema read" 3 "cannot read the schema version"
+mkroot; python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (5,), (6,)])
+db.commit(); db.close()
+PY
+printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5\n}\n' > "$ROOT/deploy/deployment-state.json"
+run --rollback --root="$ROOT"; want "schema 6 refuses rollback to a schema 5 release" 3 "not a safe rollback"
 printf "\nSUMMARY pass=%d fail=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo DEPLOY_TOOLING_TESTS_PASS || echo DEPLOY_TOOLING_TESTS_FAIL
 [ "$FAIL" -eq 0 ]
