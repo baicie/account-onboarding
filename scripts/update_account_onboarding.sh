@@ -1,0 +1,496 @@
+#!/usr/bin/env bash
+# Single-host Docker Compose deployment tool for Account Onboarding.
+#
+# Default action is --build-only: it never recreates a container. Only an explicit
+# --deploy (or --rollback) changes the running service, and every state change is
+# preceded by a verified encrypted SQLite snapshot.
+#
+# Layout under --root (default /opt/account-onboarding):
+#   app/      git checkout          runtime/data/    SQLite + WAL
+#   runtime/secrets/  materialized 0400 files
+#   backups/  encrypted snapshots   deploy/          generated override + state
+#   logs/     deployment logs
+set -euo pipefail
+
+PROG="$(basename "$0")"
+ROOT="/opt/account-onboarding"
+ACTION="build"
+OFFLINE=0
+DRY_RUN=0
+NO_FETCH=0
+EXPECTED_SHA=""
+HOST_PORT="8788"
+GO_PROXY="${ONBOARD_GO_PROXY:-https://mirrors.tencent.com/go/,https://goproxy.cn,direct}"
+APT_MIRROR="${ONBOARD_APT_MIRROR:-}"
+ALLOW_SCHEMA_FORWARD=0
+GIT_REMOTE="origin"
+GIT_BRANCH="main"
+FETCH_TIMEOUT=60
+FETCH_RETRIES=3
+
+usage() {
+  cat <<USAGE
+Usage: $PROG [--preflight|--build-only|--deploy|--status|--rollback|--backup-only]
+                    [--offline] [--expected-sha=SHA] [--dry-run] [--no-fetch]
+                    [--root=DIR] [--host-port=PORT] [--go-proxy=URL] [--apt-mirror=HOST]
+                    [--allow-schema-forward]
+
+  --preflight    check git state, docker, compose, paths, mounts, secrets, disk
+  --build-only   resolve SHA, verify it, build account-onboarding:local-<short-sha> (default)
+  --deploy       preflight + snapshot + verify + compose up --force-recreate + health
+  --status       print the recorded deployment state and the live service state
+  --rollback     restore the previous image (binary rollback only; schema checked)
+  --backup-only  take and verify an encrypted snapshot, change nothing else
+  --offline      no network: requires --expected-sha with a full 40-char commit
+  --expected-sha full commit SHA that build and deploy must both use
+  --dry-run      print every command instead of running it
+
+Exit codes: 0 ok, 1 usage/runtime error, 2 preflight refusal, 3 refused for data safety.
+USAGE
+}
+
+log()  { printf "%s %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+warn() { printf "%s WARN %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
+die()  { local code="${2:-1}"; printf "%s ERROR %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >&2; exit "$code"; }
+run()  { if [ "$DRY_RUN" = "1" ]; then log "DRY-RUN would run: $*"; else "$@"; fi; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --preflight) ACTION="preflight" ;;
+    --build-only) ACTION="build" ;;
+    --deploy) ACTION="deploy" ;;
+    --status) ACTION="status" ;;
+    --rollback) ACTION="rollback" ;;
+    --backup-only) ACTION="backup" ;;
+    --offline) OFFLINE=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    --no-fetch) NO_FETCH=1 ;;
+    --allow-schema-forward) ALLOW_SCHEMA_FORWARD=1 ;;
+    --expected-sha=*) EXPECTED_SHA="${1#*=}" ;;
+    --root=*) ROOT="${1#*=}" ;;
+    --host-port=*) HOST_PORT="${1#*=}" ;;
+    --go-proxy=*) GO_PROXY="${1#*=}" ;;
+    --apt-mirror=*) APT_MIRROR="${1#*=}" ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; die "unknown argument: $1" 1 ;;
+  esac
+  shift
+done
+
+case "$ROOT" in
+  /*) ;;
+  *) die "--root must be an absolute path" 1 ;;
+esac
+case "$ROOT" in
+  *..*) die "--root must not contain .." 1 ;;
+esac
+if [ -L "$ROOT" ]; then die "$ROOT is a symlink; refusing to deploy through it" 3; fi
+APP="$ROOT/app"; RUNTIME="$ROOT/runtime"; DATA="$RUNTIME/data"; SECRETS_SRC="$RUNTIME/secrets-src"
+SECRETS="$RUNTIME/secrets"; BACKUPS="$ROOT/backups"; DEPLOY="$ROOT/deploy"; LOGS="$ROOT/logs"
+STATE="$DEPLOY/deployment-state.json"; OVERRIDE="$DEPLOY/compose.override.yml"
+BASE_COMPOSE="$DEPLOY/compose.base.yml"
+MARKER="# managed-by: scripts/update_account_onboarding.sh -- generated file, edits are overwritten"
+
+mkdir -p "$BACKUPS" "$DEPLOY" "$LOGS" "$DATA" "$SECRETS" "$SECRETS_SRC" 2>/dev/null || true
+if [ "$DRY_RUN" != "1" ]; then
+  exec > >(tee -a "$LOGS/deploy-$(date -u +%Y%m%dT%H%M%SZ).log") 2>&1
+fi
+
+# ---- docker access ---------------------------------------------------------------
+detect_docker() {
+  command -v docker >/dev/null 2>&1 || die "docker not found" 2
+  if docker info >/dev/null 2>&1; then DOCKER=(docker)
+  elif sudo -n true >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then DOCKER=(sudo -n docker)
+  else die "no docker access (add the user to the docker group or provide passwordless sudo)" 2; fi
+  docker compose version >/dev/null 2>&1 || die "docker compose v2 plugin missing" 2
+}
+dk() { "${DOCKER[@]}" "$@"; }
+
+# ---- git -------------------------------------------------------------------------
+git_in_app() { git -C "$APP" "$@"; }
+
+git_fetch() {
+  if [ "$NO_FETCH" = "1" ]; then log "skipping fetch (--no-fetch)"; return 0; fi
+  if [ "$OFFLINE" = "1" ]; then log "offline: using the local checkout only"; return 0; fi
+  local attempt
+  for attempt in $(seq 1 "$FETCH_RETRIES"); do
+    if timeout "$FETCH_TIMEOUT" git_in_app fetch --prune "$GIT_REMOTE" 2>&1; then return 0; fi
+    warn "git fetch attempt $attempt/$FETCH_RETRIES failed"
+    sleep "${ONBOARD_RETRY_SLEEP:-5}"
+  done
+  die "cannot reach the git remote; refusing to claim anything is up to date (use --offline --expected-sha=<sha> to build a pinned commit)" 2
+}
+
+resolve_sha() {
+  local head target
+  head="$(git_in_app rev-parse HEAD)"
+  if [ "$OFFLINE" = "1" ]; then
+    case "$EXPECTED_SHA" in
+      "" ) die "--offline requires --expected-sha=<full 40-char commit>" 1 ;;
+      *[!0-9a-f]* ) die "--expected-sha must be lowercase hex" 1 ;;
+    esac
+    [ "${#EXPECTED_SHA}" -eq 40 ] || die "--offline requires a full 40-char SHA, got ${#EXPECTED_SHA} chars" 1
+    git_in_app cat-file -e "${EXPECTED_SHA}^{commit}" 2>/dev/null || die "commit $EXPECTED_SHA not present locally (offline build needs it in the checkout)" 2
+    [ "$head" = "$EXPECTED_SHA" ] || die "checkout is at $head but $EXPECTED_SHA was required" 2
+    TARGET_SHA="$EXPECTED_SHA"
+    return 0
+  fi
+  target="$(git_in_app rev-parse "$GIT_REMOTE/$GIT_BRANCH")"
+  if [ -n "$EXPECTED_SHA" ]; then
+    [ "${#EXPECTED_SHA}" -eq 40 ] || die "--expected-sha must be a full 40-char commit" 1
+    [ "$target" = "$EXPECTED_SHA" ] || die "$GIT_REMOTE/$GIT_BRANCH is $target, not the required $EXPECTED_SHA" 2
+  fi
+  TARGET_SHA="$target"
+  if [ "$head" != "$target" ]; then
+    git_in_app merge-base --is-ancestor "$head" "$target" 2>/dev/null || die "checkout $head has diverged from $GIT_REMOTE/$GIT_BRANCH $target; refusing to reset (reconcile manually)" 2
+    git_in_app merge-base --is-ancestor "$target" "$head" 2>/dev/null || {
+      [ -z "$(git_in_app status --porcelain)" ] || die "dirty worktree: commit or stash before updating" 2
+      run git_in_app merge --ff-only "$target"
+    }
+    [ "$DRY_RUN" = "1" ] || TARGET_SHA="$(git_in_app rev-parse HEAD)"
+  fi
+  [ "$TARGET_SHA" = "$(git_in_app rev-parse HEAD)" ] || [ "$DRY_RUN" = "1" ] || die "checkout did not move to $TARGET_SHA" 2
+}
+
+check_worktree() {
+  local dirty
+  dirty="$(git_in_app status --porcelain)"
+  if [ -n "$dirty" ]; then die "worktree is dirty; commit or stash first: $(printf "%s" "$dirty" | head -3 | tr \"\\n\" \" \")" 2; fi
+}
+
+# ---- compose ---------------------------------------------------------------------
+write_overrides() {
+  if [ -f "$OVERRIDE" ] && ! head -1 "$OVERRIDE" | grep -qF "managed-by: scripts/update_account_onboarding.sh"; then
+    die "$OVERRIDE exists and was not generated by this script; move it away first (refusing to overwrite a hand-written file)" 3
+  fi
+  if [ "$DRY_RUN" = "1" ]; then log "DRY-RUN would write $OVERRIDE"; return 0; fi
+  cp "$APP/deploy/compose.yaml" "$BASE_COMPOSE"
+  {
+    printf "%s\n" "$MARKER"
+    printf "services:\n"
+    printf "  onboarding:\n"
+    printf "    image: %s\n" "$1"
+    printf "    pull_policy: never\n"
+    printf "    volumes:\n"
+    printf "      - %s:/app/data\n" "$DATA"
+    printf "    ports:\n"
+    printf "      - 127.0.0.1:%s:8788\n" "$HOST_PORT"
+    printf "    secrets:\n"
+    printf "      - onboarding_master_key\n"
+    printf "      - onboard_admin_token\n"
+    printf "secrets:\n"
+    printf "  onboarding_master_key:\n    file: %s/onboarding_master_key\n" "$SECRETS"
+    printf "  onboard_admin_token:\n    file: %s/onboard_admin_token\n" "$SECRETS"
+  } > "$OVERRIDE.tmp"
+  mv -f "$OVERRIDE.tmp" "$OVERRIDE"
+}
+
+compose() { dk compose -p account-onboarding -f "$BASE_COMPOSE" -f "$OVERRIDE" --env-file /dev/null "$@"; }
+
+compose_valid() {
+  compose config --quiet 2>&1 || die "compose configuration is invalid (see docker compose config output above)" 2
+}
+
+# ---- sqlite helpers ---------------------------------------------------------------
+sqlite_user_version() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys;d=open(sys.argv[1],"rb").read(64);print(int.from_bytes(d[60:64],"big"))' "$f" 2>/dev/null && return 0
+  fi
+  if command -v od >/dev/null 2>&1; then
+    od -An -tu1 -j60 -N4 "$f" 2>/dev/null | awk '{print $1*16777216+$2*65536+$3*256+$4}' && return 0
+  fi
+  return 1
+}
+
+detect_existing_container() {
+  local name
+  name="$(dk ps -a --filter "label=com.docker.compose.project=account-onboarding" --format "{{.Names}}" 2>/dev/null | head -1)"
+  [ -z "$name" ] && name="$(dk ps -a --filter "name=^account-onboarding$" --format "{{.Names}}" 2>/dev/null | head -1)"
+  printf "%s" "$name"
+}
+
+inspect_mount() { # inspect_mount <container> <path>
+  dk inspect "$1" --format "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.Source}}{{end}}{{end}}" 2>/dev/null
+}
+
+check_data_safety() {
+  local c current_data current_secrets
+  c="$(detect_existing_container)"
+  if [ -z "$c" ]; then
+    log "no existing container: first install path"
+    if [ -f "$DATA/state.sqlite" ]; then
+      log "found a database with no container; it will be reused (not recreated)"
+    fi
+    return 0
+  fi
+  log "existing container: $c"
+  current_data="$(inspect_mount "$c" /app/data)"
+  current_secrets="$(inspect_mount "$c" /run/secrets/onboarding_master_key)"
+  if [ -n "$current_data" ] && [ "$current_data" != "$DATA" ]; then
+    die "the running container keeps its database at $current_data but this deployment points at $DATA. Refusing to start on an empty directory and call it a first install; move the data or pass --root matching the existing layout" 3
+  fi
+  if [ -n "$current_secrets" ]; then
+    local dir; dir="$(dirname "$current_secrets")"
+    [ "$dir" = "$SECRETS" ] || warn "existing container mounts secrets from $dir, this run uses $SECRETS"
+  fi
+  if [ -f "$DATA/state.sqlite" ] && [ ! -s "$DATA/state.sqlite" ]; then
+    die "$DATA/state.sqlite exists but is empty; refusing to deploy over a truncated database" 3
+  fi
+  if [ -e "$DATA/state.sqlite.restore-in-progress" ]; then
+    die "a restore marker is present next to the database; finish or clear the restore first" 3
+  fi
+}
+
+check_schema_compat() {
+  local db="$DATA/state.sqlite" v
+  [ -f "$db" ] || { log "no database yet: first install"; return 0; }
+  if v="$(sqlite_user_version "$db")"; then
+    log "current database schema version: $v"
+    if [ -f "$STATE" ] && grep -q "\"schema_version\"" "$STATE" 2>/dev/null; then
+      local recorded; recorded="$(sed -n 's/.*"schema_version": *\([0-9][0-9]*\).*/\1/p' "$STATE" | head -1)"
+      if [ -n "$recorded" ] && [ "$v" -gt "$recorded" ] && [ "$ALLOW_SCHEMA_FORWARD" != "1" ]; then
+        warn "database schema $v is newer than the recorded $recorded (an upgrade ran before)"
+      fi
+    fi
+  else
+    warn "cannot read the schema version from $db (continuing; the backup and health checks still guard the deploy)"
+  fi
+}
+
+# ---- secrets ---------------------------------------------------------------------
+materialize_secrets() {
+  local img="$1"
+  local f
+  for f in onboarding_master_key onboard_admin_token; do
+    [ -f "$SECRETS_SRC/$f" ] || die "missing $SECRETS_SRC/$f (create it with: openssl rand 32 > $SECRETS_SRC/$f)" 2
+  done
+  run dk run --rm --user 0:0 --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+    --security-opt no-new-privileges:true \
+    -v "$SECRETS_SRC:/src:ro" -v "$SECRETS:/run/secrets" \
+    --entrypoint /bin/sh "$img" \
+    -c "exec /app/scripts/materialize_secrets.sh --source-dir /src --target-dir /run/secrets --uid 10001 --gid 10001"
+  for f in onboarding_master_key onboard_admin_token; do
+    [ -f "$SECRETS/$f" ] || die "materializer did not produce $SECRETS/$f" 2
+    [ -L "$SECRETS/$f" ] && die "$SECRETS/$f is a symlink; the service refuses those" 2
+    local mode; mode="$(stat -c "%a" "$SECRETS/$f" 2>/dev/null || stat -f "%Lp" "$SECRETS/$f")"
+    case "$mode" in 400|600) ;; *) die "$SECRETS/$f must be 0400 or 0600, got $mode" 2 ;; esac
+  done
+}
+
+# ---- backup ----------------------------------------------------------------------
+ops_image() { sed -n "s/^ARG GOLANG_IMAGE=//p" "$APP/Dockerfile" | head -1; }
+
+ops_run() { # ops_run <backup|verify|restore> <args...>
+  local tool="$1"; shift
+  local img; img="$(ops_image)"
+  [ -n "$img" ] || die "cannot read ARG GOLANG_IMAGE from the Dockerfile" 2
+  run dk run --rm -e CGO_ENABLED=1 -e "GOPROXY=$GO_PROXY" \
+    -v "$APP:/src:ro" -v "$BACKUPS:/backups" -v "$DATA:/data:ro" -v "$SECRETS:/secrets:ro" -v "$RUNTIME/ops:/out" \
+    -w /src "$img" sh -ec "go build -o /out/ops-$tool ./internal/ops/cmd/$tool && /out/ops-$tool $*"
+}
+
+take_backup() {
+  local ts dir snap man
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"; dir="$BACKUPS/$ts"
+  if [ ! -f "$DATA/state.sqlite" ]; then log "no database to back up (first install)"; return 0; fi
+  if [ "$DRY_RUN" = "1" ]; then log "DRY-RUN would snapshot $DATA/state.sqlite into $dir"; return 0; fi
+  mkdir -p "$RUNTIME/ops" "$dir"
+  log "taking an encrypted snapshot in $dir"
+  ops_run backup -db /data/state.sqlite -out-dir "/backups/$ts" -encrypt -keyring /secrets/onboarding_master_key \
+    || die "backup failed; refusing to continue" 3
+  snap="$(ls -1 "$dir"/*.enc 2>/dev/null | head -1)"
+  [ -n "$snap" ] || die "backup produced no encrypted snapshot in $dir" 3
+  man="$snap.manifest.json"
+  log "verifying $(basename "$snap")"
+  ops_run verify -snapshot "/backups/$ts/$(basename "$snap")" -manifest "/backups/$ts/$(basename "$man")" \
+    -keyring /secrets/onboarding_master_key || die "snapshot verification failed; refusing to continue" 3
+  printf "%s" "$ts" > "$BACKUPS/LATEST"
+  log "backup ok: $snap"
+}
+
+backup_is_usable() {
+  local ts; ts="$(cat "$BACKUPS/LATEST" 2>/dev/null || true)"
+  [ -n "$ts" ] || return 1
+  ls -1 "$BACKUPS/$ts"/*.enc >/dev/null 2>&1 || return 1
+  ls -1 "$BACKUPS/$ts"/*.manifest.json >/dev/null 2>&1 || return 1
+}
+
+# ---- build -----------------------------------------------------------------------
+short_sha() { printf "%s" "${1:0:12}"; }
+
+build_image() {
+  local sha="$1" tag="account-onboarding:local-$(short_sha "$1")"
+  log "building $tag from $sha"
+  local args=(--build-arg "VERSION=0.1.0" --build-arg "COMMIT=$sha" --build-arg "GOPROXY=$GO_PROXY")
+  [ -n "$APT_MIRROR" ] && args+=(--build-arg "APT_MIRROR=$APT_MIRROR")
+  run dk build "${args[@]}" -t "$tag" -f "$APP/Dockerfile" "$APP" || die "image build failed" 1
+  IMAGE_TAG="$tag"
+  if [ "$DRY_RUN" = "1" ]; then IMAGE_ID="dry-run"; return 0; fi
+  IMAGE_ID="$(dk image inspect "$tag" --format "{{.Id}}")" || die "built image $tag not found" 1
+  log "image id: $IMAGE_ID"
+}
+
+# ---- state -----------------------------------------------------------------------
+write_state() { # write_state <image_tag> <image_id> <sha> <schema_version> [previous_image] [previous_sha]
+  [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would record $1 $3"; return 0; }
+  local ts; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local prev_image="${5:-}" prev_sha="${6:-}" prev_schema="${7:-}"
+  {
+    printf "{\n"
+    printf "  \"image\": \"%s\",\n" "$1"
+    printf "  \"image_id\": \"%s\",\n" "$2"
+    printf "  \"commit\": \"%s\",\n" "$3"
+    printf "  \"schema_version\": %s,\n" "${4:-0}"
+    printf "  \"deployed_at\": \"%s\",\n" "$ts"
+    printf "  \"root\": \"%s\",\n" "$ROOT"
+    printf "  \"host_port\": %s,\n" "$HOST_PORT"
+    printf "  \"previous_image\": \"%s\",\n" "$prev_image"
+    printf "  \"previous_commit\": \"%s\",\n" "$prev_sha"
+    printf "  \"previous_schema_version\": %s\n" "${prev_schema:-0}"
+    printf "}\n"
+  } > "$STATE.tmp"
+  mv -f "$STATE.tmp" "$STATE"
+}
+
+state_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$STATE" 2>/dev/null | head -1; }
+state_num()   { sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" "$STATE" 2>/dev/null | head -1; }
+
+# ---- health ----------------------------------------------------------------------
+api_probe() { # api_probe <path> -> http code, token taken from a file so it never reaches argv
+  local path="$1" token="$SECRETS/onboard_admin_token" code
+  if [ -f "$token" ]; then
+    local hdr; hdr="$(mktemp)"
+    printf "Authorization: Bearer %s\n" "$(cat "$token")" > "$hdr"; chmod 600 "$hdr"
+    code="$(curl -s -o /dev/null -m 5 -w "%{http_code}" -H @"$hdr" "http://127.0.0.1:$HOST_PORT$path" || true)"
+    rm -f "$hdr"
+  else
+    code="$(curl -s -o /dev/null -m 5 -w "%{http_code}" "http://127.0.0.1:$HOST_PORT$path" || true)"
+  fi
+  printf "%s" "$code"
+}
+
+wait_healthy() {
+  local i code restarts
+  for i in $(seq 1 60); do
+    code="$(api_probe /healthz)"
+    [ "$code" = "200" ] && break
+    sleep 2
+  done
+  [ "$code" = "200" ] || die "the service did not become live on 127.0.0.1:$HOST_PORT/healthz (last http=$code)" 3
+  local ready; ready="$(api_probe /readyz)"
+  [ "$ready" = "200" ] || die "liveness is up but /readyz returned $ready; the service is not ready (business readiness requires the admin token and a migrated database)" 3
+  local c; c="$(detect_existing_container)"
+  [ -n "$c" ] || die "no container is running for this compose project" 3
+  restarts="$(dk inspect "$c" --format "{{.RestartCount}}" 2>/dev/null || echo 0)"
+  [ "$restarts" -lt 5 ] || die "container restarted $restarts times; treating this as a crash loop" 3
+  log "healthy: liveness 200, readiness 200, restart count $restarts"
+}
+
+# ---- actions ---------------------------------------------------------------------
+do_preflight() {
+  detect_docker
+  [ -d "$APP/.git" ] || die "$APP is not a git checkout" 2
+  check_worktree
+  git_fetch
+  resolve_sha
+  log "target commit: $TARGET_SHA"
+  check_data_safety
+  check_schema_compat
+  [ -f "$SECRETS_SRC/onboarding_master_key" ] || die "missing $SECRETS_SRC/onboarding_master_key" 2
+  [ -f "$SECRETS_SRC/onboard_admin_token" ] || die "missing $SECRETS_SRC/onboard_admin_token" 2
+  local avail; avail="$(df -Pk "$ROOT" | awk "NR==2{print \$4}")"
+  [ "${avail:-0}" -gt 524288 ] || die "less than 512 MB free under $ROOT" 2
+  log "preflight ok (free ${avail}K, port 127.0.0.1:$HOST_PORT)"
+}
+
+do_build() {
+  do_preflight
+  build_image "$TARGET_SHA"
+  write_overrides "$IMAGE_TAG"
+  if [ "$DRY_RUN" != "1" ]; then
+    compose_valid
+    materialize_secrets "$IMAGE_TAG"
+  fi
+  log "build-only complete: $IMAGE_TAG ($IMAGE_ID) from $TARGET_SHA"
+  log "nothing was deployed; run --deploy to change the running service"
+}
+
+do_backup() {
+  detect_docker
+  take_backup
+  backup_is_usable || [ ! -f "$DATA/state.sqlite" ] || die "no usable snapshot after the backup step" 3
+  log "backup-only complete"
+}
+
+do_deploy() {
+  do_preflight
+  local prev_image prev_sha prev_schema
+  prev_image="$(state_field image || true)"; prev_sha="$(state_field commit || true)"
+  prev_schema="$(state_num schema_version || true)"
+  take_backup
+  build_image "$TARGET_SHA"
+  write_overrides "$IMAGE_TAG"
+  compose_valid
+  materialize_secrets "$IMAGE_TAG"
+[ "$DRY_RUN" = "1" ] || compose up -d --no-build --no-deps --force-recreate onboarding
+  [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would start the service"; return 0; }
+  if ! wait_healthy; then
+    warn "deployment is not healthy; keeping the database and evidence, the container is left as-is for inspection"
+    warn "to go back: $PROG --rollback (binary rollback; database restore is a separate, destructive decision)"
+    exit 3
+  fi
+  local schema; schema="$(sqlite_user_version "$DATA/state.sqlite" || echo 0)"
+  write_state "$IMAGE_TAG" "$IMAGE_ID" "$TARGET_SHA" "$schema" "$prev_image" "$prev_sha" "$prev_schema"
+  log "deployed $IMAGE_TAG from $TARGET_SHA (schema $schema)"
+}
+
+do_rollback() {
+  detect_docker
+  [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
+  local prev_image prev_sha recorded_schema current_schema
+  prev_image="$(state_field previous_image || true)"; prev_sha="$(state_field previous_commit || true)"
+  recorded_schema="$(state_num previous_schema_version || true)"
+  [ -n "$prev_image" ] || die "no previous image recorded; roll back by restoring a snapshot with the documented procedure" 1
+  current_schema="$(sqlite_user_version "$DATA/state.sqlite" || echo 0)"
+  if [ -n "$recorded_schema" ] && [ "$current_schema" -gt "$recorded_schema" ] && [ "$ALLOW_SCHEMA_FORWARD" != "1" ]; then
+    die "database schema $current_schema is newer than the recorded $recorded_schema for the previous release; running the old binary on a migrated database is not a safe rollback. Restore the matching snapshot with internal/ops/cmd/restore during a maintenance window (destructive) or pass --allow-schema-forward after verifying compatibility" 3
+  fi
+  log "rolling back to $prev_image ($prev_sha)"
+  write_overrides "$prev_image"
+  compose_valid
+  materialize_secrets "$prev_image"
+  [ "$DRY_RUN" = "1" ] || compose up -d --no-build --no-deps --force-recreate onboarding
+  [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would roll back"; return 0; }
+  wait_healthy || die "rollback target $prev_image is not healthy either; the database is untouched, inspect the logs" 3
+  write_state "$prev_image" "$(dk image inspect "$prev_image" --format "{{.Id}}")" "$prev_sha" "$current_schema" "" "" ""
+  log "rolled back to $prev_image"
+}
+
+do_status() {
+  if [ -f "$STATE" ]; then
+    log "recorded deployment state:"
+    cat "$STATE"
+  else
+    log "no deployment state recorded under $DEPLOY"
+  fi
+  detect_docker 2>/dev/null || { warn "docker unavailable: live state unknown"; return 0; }
+  local c; c="$(detect_existing_container)"
+  if [ -z "$c" ]; then log "no container for the account-onboarding compose project"; return 0; fi
+  log "container: $c"
+  dk inspect "$c" --format "{{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} image={{.Config.Image}} id={{.Image}}"
+  log "healthz: $(api_probe /healthz)  readyz: $(api_probe /readyz)"
+  if [ -f "$DATA/state.sqlite" ]; then log "database schema: $(sqlite_user_version "$DATA/state.sqlite" || echo unknown)"; fi
+}
+
+log "$PROG action=$ACTION root=$ROOT offline=$OFFLINE dry_run=$DRY_RUN"
+case "$ACTION" in
+  preflight) do_preflight ;;
+  build) do_build ;;
+  deploy) do_deploy ;;
+  backup) do_backup ;;
+  rollback) do_rollback ;;
+  status) do_status ;;
+  *) die "unhandled action $ACTION" 1 ;;
+esac
