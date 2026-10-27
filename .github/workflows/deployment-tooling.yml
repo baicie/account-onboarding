@@ -76,8 +76,10 @@ jobs:
       - name: The database actually exists and is a real SQLite file
         run: |
           set -euo pipefail
-          test -s "$ROOT/runtime/data/state.sqlite"
-          head -c 15 "$ROOT/runtime/data/state.sqlite" | grep -q "SQLite format 3"
+          # The runtime directory is intentionally 0700:10001; verify persisted
+          # state through the host root without loosening that boundary.
+          sudo test -s "$ROOT/runtime/data/state.sqlite"
+          sudo head -c 15 "$ROOT/runtime/data/state.sqlite" | grep -q "SQLite format 3"
 
       - name: Second deploy builds a distinguishable image, snapshots and records it
         run: |
@@ -145,8 +147,10 @@ jobs:
       - name: The database survived every step
         run: |
           set -euo pipefail
-          test -s "$ROOT/runtime/data/state.sqlite"
-          head -c 15 "$ROOT/runtime/data/state.sqlite" | grep -q "SQLite format 3"
+          # The runtime directory is intentionally 0700:10001; verify persisted
+          # state through the host root without loosening that boundary.
+          sudo test -s "$ROOT/runtime/data/state.sqlite"
+          sudo head -c 15 "$ROOT/runtime/data/state.sqlite" | grep -q "SQLite format 3"
           ls -1 "$ROOT"/backups/*/*.manifest.json | head -1
 
       - name: Collect evidence
