@@ -324,7 +324,7 @@ ops_run() { # ops_run <backup|verify|restore> <args...>
   [ -n "$img" ] || die "cannot read ARG GOLANG_IMAGE from the Dockerfile" 2
   run dk run --rm -e CGO_ENABLED=1 -e "GOPROXY=$GO_PROXY" \
     -v "$APP:/src:ro" -v "$BACKUPS:/backups" -v "$DATA:/data:ro" -v "$SECRETS:/secrets:ro" -v "$RUNTIME/ops:/out" \
-    -w /src "$img" sh -ec "go build -o /out/ops-$tool ./internal/ops/cmd/$tool && /out/ops-$tool $*"
+    -w /src "$img" sh -ec "go build -buildvcs=false -o /out/ops-$tool ./internal/ops/cmd/$tool && /out/ops-$tool $*"
 }
 
 take_backup() {
