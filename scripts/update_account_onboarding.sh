@@ -507,14 +507,15 @@ do_status() {
 }
 
 ensure_data_owner() {
-  case "$(id -u)" in
-    0) chmod 0700 "$DATA" && chown 10001:10001 "$DATA" || die "cannot set $DATA to 10001:10001" 2 ;;
-    *) if sudo -n true >/dev/null 2>&1; then
-         sudo -n chmod 0700 "$DATA" && sudo -n chown 10001:10001 "$DATA" || die "cannot set $DATA to 10001:10001 via sudo" 2
-       else
-         die "need root or passwordless sudo to give $DATA to uid 10001; refusing to start a container that cannot write its database" 2
-       fi ;;
-  esac
+  # install -d is atomic and idempotent; plain chown after chmod proved unreliable on
+  # some hosts, so the directory is created/owned in one step and then verified.
+  if [ "$(id -u)" = "0" ]; then
+    install -d -o 10001 -g 10001 -m 0700 "$DATA" || die "cannot prepare $DATA as root" 2
+  elif sudo -n true >/dev/null 2>&1; then
+    sudo -n install -d -o 10001 -g 10001 -m 0700 "$DATA" || die "cannot prepare $DATA via sudo" 2
+  else
+    die "need root or passwordless sudo to give $DATA to uid 10001; refusing to start a container that cannot write its database" 2
+  fi
 }
 
 prepare_deploy() { # only for a real deploy or rollback, never build-only or preflight
