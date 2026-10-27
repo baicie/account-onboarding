@@ -51,11 +51,12 @@ spec:
       command: ["/bin/sh","-c"]
       args: ["exec /app/scripts/materialize_secrets.sh --source-dir /run/secrets-source --target-dir /run/secrets --uid 10001 --gid 10001 --allow-k8s-projection"]
       securityContext:
-        runAsUser: 10001
-        runAsGroup: 10001
-        runAsNonRoot: true
+        runAsUser: 0
+        runAsGroup: 0
         allowPrivilegeEscalation: false
-        capabilities: {drop: ["ALL"]}
+        capabilities:
+          drop: ["ALL"]
+          add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
       volumeMounts:
         - {name: projected, mountPath: /run/secrets-source, readOnly: true}
         - {name: materialized, mountPath: /run/secrets}
