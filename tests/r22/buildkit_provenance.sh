@@ -56,12 +56,14 @@ docker info >/dev/null 2>&1 || fail "docker unavailable"
 docker buildx version >/dev/null 2>&1 || fail "buildx unavailable"
 echo "commit=$COMMIT repository=$REPO registry=$REGISTRY"
 
-docker run -d --name "$REG_NAME" -p "127.0.0.1:$REG_PORT:5000" registry:2 >/dev/null || fail "registry start"
+docker run -d --name "$REG_NAME" -p "$REG_PORT:5000" registry:2 >/dev/null || fail "registry start"
 for _ in $(seq 1 60); do curl -sf -m 2 "http://$REGISTRY/v2/" >/dev/null 2>&1 && break; sleep 0.5; done
 curl -sf -m 3 "http://$REGISTRY/v2/" >/dev/null || fail "registry not ready"
 ok "throwaway registry running at $REGISTRY"
 
-docker buildx create --name "$BUILDER" --driver docker-container >/dev/null || fail "buildx create"
+# The container driver runs BuildKit in its own container, so it must share the
+# host network to reach the throwaway registry on loopback.
+docker buildx create --name "$BUILDER" --driver docker-container --driver-opt network=host >/dev/null || fail "buildx create"
 docker buildx inspect --bootstrap "$BUILDER" >"$WORK/buildx.log" 2>&1 || { tail -20 "$WORK/buildx.log"; fail "buildx bootstrap"; }
 ok "buildx builder with attestation support is ready"
 
