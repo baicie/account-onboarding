@@ -27,9 +27,19 @@ done
 SRC_REAL="$(cd "$SRC" && pwd -P)"
 case "$DST" in /*) ;; *) echo "target must be an absolute private path" >&2; exit 2 ;; esac
 [ -L "$DST" ] && { echo "target must not be a symlink" >&2; exit 2; }
-mkdir -p "$DST"; chmod 0700 "$DST"
+mkdir -p "$DST"
+if ! chmod 0700 "$DST" 2>/dev/null; then
+  # Kubernetes emptyDir with fsGroup may be root:10001 mode 0770; that is
+  # private to the runtime group and acceptable only if "other" has no access.
+  read -r dmode duid dgid <<<"$(stat -c '%a %u %g' "$DST" 2>/dev/null || stat -f '%Lp %u %g' "$DST")"
+  (( (8#$dmode & 8#007) == 0 )) || { echo "target directory is not private" >&2; exit 1; }
+  [ -z "$UID_N" ] || [ "$duid" = "$UID_N" ] || [ "$dgid" = "$GID_N" ] || { echo "target directory owner/group mismatch" >&2; exit 1; }
+fi
 if [ -n "$UID_N" ] || [ -n "$GID_N" ]; then
-  chown "${UID_N:-$(id -u)}:${GID_N:-$(id -g)}" "$DST"
+  if ! chown "${UID_N:-$(id -u)}:${GID_N:-$(id -g)}" "$DST" 2>/dev/null; then
+    read -r _ duid dgid <<<"$(stat -c '%u %g' "$DST" 2>/dev/null || stat -f '%u %g' "$DST")"
+    [ "$duid" = "${UID_N:-$(id -u)}" ] || [ "$dgid" = "${GID_N:-$(id -g)}" ] || { echo "target directory chown failed" >&2; exit 1; }
+  fi
 fi
 # Serialize materializers. If flock is unavailable, fail closed rather than
 # racing on the same target.
@@ -106,8 +116,8 @@ for name in "${names[@]}"; do
   [ "$final_mode" = "400" ] || { echo "materialized mode is not 0400" >&2; exit 1; }
 done
 if [ -n "$UID_N" ] || [ -n "$GID_N" ]; then
-  chown "${UID_N:-$(id -u)}:${GID_N:-$(id -g)}" "$DST"
+  chown "${UID_N:-$(id -u)}:${GID_N:-$(id -g)}" "$DST" 2>/dev/null || true
 fi
-chmod 0700 "$DST"
+chmod 0700 "$DST" 2>/dev/null || true
 trap cleanup EXIT
 echo "materialized ${#names[@]} secret file(s) into private target"
