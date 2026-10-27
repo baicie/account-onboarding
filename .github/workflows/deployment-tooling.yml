@@ -122,7 +122,7 @@ jobs:
             --host-port=18788 > refuse.log 2>&1
           rc=$?
           set -e
-          echo "rc=$rc"; grep -q "not present locally" refuse.log -e "was required" refuse.log
+          echo "rc=$rc"; grep -q -e "not present locally" -e "was required" refuse.log
           test "$rc" -ne 0
           docker ps --filter name=account-onboarding --format "{{.Status}}" | grep -q "Up"
 
