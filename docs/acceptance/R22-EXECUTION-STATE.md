@@ -27,8 +27,9 @@ never claims a gate that has no evidence. Update it in place.
 | ACL regression | `posix-acl` job success (script unchanged) |
 | Merge dry run | `scripts/r22_merge_dryrun.sh`: 16/16 merges, no conflicts, merged tree `9c854ce` identical to the accepted tip tree, `go build` / `go vet` / `go test ./...` exit 0; evidence `docs/acceptance/evidence/r22/merge-dryrun.txt` |
 | ARM64 full iterations (real CI) | 1: image+arch ok, service could not write /app/data (bind mount owned by the runner) - fixed. 2: 5 checks, startup still not ready in 78s - wait raised. 3: 18 checks (aarch64, non-root, read-only rootfs, SQLite/WAL, run 202, outbox, audit, SIGKILL recovery, persistence), backup EROFS because /app/backups was not mounted - fixed. 4: 27 checks, four harness bugs (nested manifest field, wrong-key fixture in a 0700 target, rollback exec into a removed container) - fixed in cd3cabc |
-| ARM64 full acceptance (iteration 3, run 40460938065) | 18 checks green: aarch64 runtime, non-root, read-only rootfs, SQLite+WAL in-container, run create (202), external ops, outbox, audit, SIGKILL recovery, run persistence. Open: /app/backups was not mounted into the read-only container, so the in-container backup failed with EROFS (fix pushed) |
-| ARM64 full acceptance | `tests/r22/arm64_full.sh` + `tests/r22/Dockerfile.arm64test` + `r22-arm64-full` workflow: in-container migration, WAL, runs, outbox, backup, verify, restore, wrong key, corrupt snapshot, SIGKILL, rollback, cleanup |
+| ARM64 full (emulated) | **ARM64_FULL_EMULATED_PASS** - run 40462295245, 31/31 checks, real aarch64 runtime; evidence docs/acceptance/evidence/r22/arm64-full.txt |
+| ARM64 full iterations (CI history) | 1: service could not write /app/data (bind mount owned by the runner). 2: startup slower than 78s. 3: 18 checks, backup EROFS (/app/backups not mounted). 4: 27 checks, nested manifest field/dir ownership/exec into a removed container. 5: 28 checks, snap_of read the wrong backup and verified the deliberately corrupted file. 6: pass |
+| ARM64 native | **BLOCKED** - no native arm64 runner for this repository; never claimed |
 | Historical schema5 replay | `tests/r22/historical_backup.sh`: real schema5 source (commit `3796047`) built and run, its own backup tool, current restore + migration |
 
 ## Known failing / open items
