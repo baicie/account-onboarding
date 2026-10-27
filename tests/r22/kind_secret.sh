@@ -42,7 +42,6 @@ metadata:
   namespace: r22-kind
 spec:
   securityContext:
-    runAsNonRoot: true
     seccompProfile: {type: RuntimeDefault}
   initContainers:
     - name: materialize
@@ -65,6 +64,7 @@ spec:
       securityContext:
         runAsUser: 10001
         runAsGroup: 10001
+        runAsNonRoot: true
         readOnlyRootFilesystem: true
         allowPrivilegeEscalation: false
         capabilities: {drop: ["ALL"]}

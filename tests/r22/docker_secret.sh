@@ -58,6 +58,7 @@ grep -q "$(cat "$WORK/src/onboard_admin_token")" "$WORK/mat.log" && bad "secret 
 if docker logs r22-app 2>&1 | grep -qF "$(cat "$WORK/src/onboard_admin_token")"; then bad "secret in app log"; else ok "no secret in app log"; fi
 
 docker restart r22-app >/dev/null
+port="$(docker port r22-app 8788/tcp | head -1 | sed 's/.*://')"
 for _ in $(seq 1 100); do curl -sf -m 2 "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
 if ! curl -sf -m 3 "http://127.0.0.1:$port/healthz" >/dev/null; then docker logs r22-app 2>&1 | tail -30; bad "restart health"; else ok "restart health"; fi
 
@@ -70,6 +71,7 @@ mv "$WORK/src/onboard_admin_token.new" "$WORK/src/onboard_admin_token"
 materialize >/dev/null || fail "rotation materialize"
 if docker run --rm --user 10001:10001 -v "$WORK/dst:/run/secrets:ro" --entrypoint /bin/sh "$IMG" -c 'grep -q "$1" /run/secrets/onboard_admin_token' _ "$old_token" >/dev/null 2>&1; then bad "old secret remained"; else ok "rotation replaced old secret"; fi
 docker restart r22-app >/dev/null
+port="$(docker port r22-app 8788/tcp | head -1 | sed 's/.*://')"
 for _ in $(seq 1 100); do curl -sf -m 2 "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
 if ! curl -sf -m 3 "http://127.0.0.1:$port/healthz" >/dev/null; then docker logs r22-app 2>&1 | tail -30; bad "rotation restart health"; else ok "rotation restart health"; fi
 
