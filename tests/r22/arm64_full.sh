@@ -47,6 +47,12 @@ cleanup() {
   exit 0
 }
 trap cleanup EXIT
+ops_run() { # run an operator tool against the same data/backup volumes
+  local tool="$1"; shift
+  docker run --rm --platform "$PLATFORM" --user 10001:10001 \
+    -v "$WORK/data:/app/data" -v "$WORK/backups:/app/backups" -v "$WORK/dst:/run/secrets:ro" \
+    --entrypoint "$tool" "$IMG" "$@"
+}
 in_app() { docker exec "$APP" "$@"; }
 api() {
   local port="$1" method="$2" path="$3" body=""
@@ -174,7 +180,7 @@ if [ -n "$SNAP" ]; then
   if in_app verify -snapshot "$SNAP" -keyring /run/secrets/onboarding_master_key >"$WORK/verify.json" 2>"$WORK/verify.err"; then
     ok "backup verified inside the arm64 container (checksum, integrity, schema)"
   else cat "$WORK/verify.err"; bad "in-container verify failed"; fi
-  schema="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("schema_version") or d.get("schemaVersion") or "")' "$WORK/verify.json" 2>/dev/null)"
+  schema="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("manifest") or {}).get("schema_version") or d.get("schema_version") or d.get("schemaVersion") or "")' "$WORK/verify.json" 2>/dev/null)"
   [ "$schema" = "6" ] && ok "snapshot schema_version is 6" || bad "snapshot schema_version was not 6"
   if in_app restore -snapshot "$SNAP" -target /app/data/restored.sqlite -keyring /run/secrets/onboarding_master_key -force >"$WORK/restore.json" 2>"$WORK/restore.err"; then
     ok "restore into a new database succeeded inside the arm64 container"
@@ -189,9 +195,9 @@ if [ -n "$SNAP" ]; then
   else docker logs "$APP2" 2>&1 | tail -20; bad "restored database failed to boot"; fi
   docker rm -f "$APP2" >/dev/null 2>&1
 
-  python3 -c 'import os,sys;open(sys.argv[1],"wb").write(os.urandom(32))' "$WORK/dst/wrong.key"
-  chmod 0444 "$WORK/dst/wrong.key" 2>/dev/null
-  if in_app verify -snapshot "$SNAP" -keyring /run/secrets/wrong.key >/dev/null 2>&1; then
+  python3 -c 'import os,sys;open(sys.argv[1],"wb").write(os.urandom(32))' "$WORK/backups/wrong.key"
+  chmod 0444 "$WORK/backups/wrong.key"
+  if in_app verify -snapshot "$SNAP" -keyring /app/backups/wrong.key >/dev/null 2>&1; then
     bad "verify accepted a wrong master key"; else ok "verify rejects a wrong master key"; fi
   in_app sh -c "printf corrupt | dd of='$SNAP' bs=1 seek=64 conv=notrunc status=none" >/dev/null 2>&1
   if in_app verify -snapshot "$SNAP" -keyring /run/secrets/onboarding_master_key >/dev/null 2>&1; then
@@ -209,10 +215,10 @@ if [ -n "$SNAP2" ]; then
   create_run "$PORT" "rb-$SUFFIX" >/dev/null
   NEW_RUN="$(run_id_of)"
   docker rm -f "$APP" >/dev/null 2>&1
-  if in_app restore -snapshot "$SNAP2" -target /app/data/state.sqlite -live-db /app/data/state.sqlite -keyring /run/secrets/onboarding_master_key -force -keep-old >"$WORK/rb.json" 2>"$WORK/rb.err"; then
+  if ops_run restore -snapshot "$SNAP2" -target /app/data/state.sqlite -live-db /app/data/state.sqlite -keyring /run/secrets/onboarding_master_key -force -keep-old >"$WORK/rb.json" 2>"$WORK/rb.err"; then
     ok "rollback replay: snapshot restored over the live database"
   else cat "$WORK/rb.err"; bad "rollback restore failed"; fi
-  in_app sh -c 'ls /app/data/state.sqlite.pre-restore-*' >/dev/null 2>&1 && ok "rollback kept the replaced database" || bad "rollback did not keep the replaced database"
+  docker run --rm --platform "$PLATFORM" --user 10001:10001 -v "$WORK/data:/app/data" --entrypoint sh "$IMG" -c 'ls /app/data/state.sqlite.pre-restore-*' >/dev/null 2>&1 && ok "rollback kept the replaced database" || bad "rollback did not keep the replaced database"
   start_app "$APP" "$PORT" /app/data/state.sqlite
   if wait_ready "$PORT" "$APP"; then
     if [ -n "$RUN_ID" ]; then
