@@ -262,12 +262,12 @@ func TestRetentionDryRunChangesNothing(t *testing.T) {
 
 func TestIsSnapshotFile(t *testing.T) {
 	cases := map[string]bool{
-		"state-20260101T000000Z.sqlite":                   true,
-		"state-20260101T000000Z.sqlite.enc":               true,
-		"state-20260101T000000Z.sqlite.manifest.json":     false,
-		"state-20260101T000000Z.sqlite-wal":               false,
-		"retention-20260101T000000Z.json":                 false,
-		"other.sqlite":                                    false,
+		"state-20260101T000000Z.sqlite":               true,
+		"state-20260101T000000Z.sqlite.enc":           true,
+		"state-20260101T000000Z.sqlite.manifest.json": false,
+		"state-20260101T000000Z.sqlite-wal":           false,
+		"retention-20260101T000000Z.json":             false,
+		"other.sqlite":                                false,
 	}
 	for name, want := range cases {
 		if got := isSnapshotFile(name); got != want {
