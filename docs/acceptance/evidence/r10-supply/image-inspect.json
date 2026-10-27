@@ -1,0 +1,80 @@
+[
+    {
+        "Id": "sha256:64aa31453cfe8e5af77541e717ffc80fc71322919904a86c057029a0f490c94c",
+        "RepoTags": [
+            "account-onboarding:r8-supply"
+        ],
+        "RepoDigests": [],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-10-25T10:13:55.873273333Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "10001:10001",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "8788/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ONBOARD_LISTEN=0.0.0.0:8788",
+                "ONBOARD_DB_PATH=/app/data/state.sqlite",
+                "ONBOARD_MASTER_KEY_FILE=/run/secrets/onboarding_master_key"
+            ],
+            "Cmd": null,
+            "Healthcheck": {
+                "Test": [
+                    "CMD",
+                    "/app/onboardd",
+                    "healthcheck"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 5000000000,
+                "StartPeriod": 10000000000,
+                "Retries": 3
+            },
+            "Image": "",
+            "Volumes": {
+                "/app/data": {}
+            },
+            "WorkingDir": "/app",
+            "Entrypoint": [
+                "/app/onboardd"
+            ],
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 97884875,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/xmwf5q4ni4ttm65z7v8acwvdh/diff:/var/lib/docker/overlay2/558ih2bv17hz9fyp36keekwwy/diff:/var/lib/docker/overlay2/b95b4f25711e0507e3236bc3390ee2729d874257af984d9d47d3a97c14f1eb70/diff",
+                "MergedDir": "/var/lib/docker/overlay2/h5mr4rg6g2nq0nqkwmvg1exyd/merged",
+                "UpperDir": "/var/lib/docker/overlay2/h5mr4rg6g2nq0nqkwmvg1exyd/diff",
+                "WorkDir": "/var/lib/docker/overlay2/h5mr4rg6g2nq0nqkwmvg1exyd/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:9b35de7893378218e365c34c2c735fb0032a859112fb7345ca8ea73f9aa1db70",
+                "sha256:4a218dc3ca14049539bb4a8ac2aed4bc41c802e55464c3863aa63327ac6477ee",
+                "sha256:5ad31cf1932e59b163e1b8c23eec5521d8e78495c5122d243a46ddaed06792e1",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-10-25T10:13:56.215112969Z"
+        }
+    }
+]

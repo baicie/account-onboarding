@@ -88,6 +88,15 @@ func (e *Engine) stepPrepareMailbox(ctx context.Context, rc *RunContext) (Outcom
 		domain = e.cfg.Domains[0]
 	}
 	name := "onboard" + shortID(rc.Run.ID)
+	providerName := mp.Descriptor().Name
+	fingerprint := externalRequestFingerprint(providerName, name, domain)
+	// Write-ahead gate: acquire the durable IN_FLIGHT permit before ANY remote
+	// call. If this fails we must not call the provider; an ambiguous prior
+	// outcome blocks retries until an admin resolves it.
+	op, err := rc.beginExternalOperation(ctx, providerName, "mailbox.create", fingerprint)
+	if err != nil {
+		return Outcome{}, err
+	}
 	mb, err := mp.CreateAddress(ctx, provider.CreateAddressRequest{
 		Key:          rc.Run.ID,
 		Name:         name,
@@ -95,7 +104,19 @@ func (e *Engine) stepPrepareMailbox(ctx context.Context, rc *RunContext) (Outcom
 		EnablePrefix: false,
 	})
 	if err != nil {
+		status := ExternalCompletionStatus(err)
+		if cerr := rc.completeExternalOperation(ctx, op, status, string(errs.ClassOf(err))); cerr != nil {
+			// Leaving IN_FLIGHT is the conservative outcome; it blocks retries.
+			rc.Log.Error("external operation completion failed", "error", cerr, "status", status)
+		}
 		return Outcome{}, err
+	}
+	// Confirming the operation is part of the external-write contract. If this
+	// fails, the remote resource may exist but the local gate stays IN_FLIGHT
+	// (manual reconciliation), never an automatic retry.
+	if err := rc.completeExternalOperation(ctx, op, storage.ExternalConfirmed, ""); err != nil {
+		return Outcome{}, errs.Wrap(errs.ClassInternal, "external.operation",
+			"remote resource created but local confirmation failed", err)
 	}
 	out := rc.Success()
 	out.Resources = []storage.ResourceDraft{{

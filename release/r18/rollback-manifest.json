@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "candidate_commit": "73fc6aab011ebc445fa4dfd494e2112f3f8630bb",
+  "candidate_digest": "sha256:2172ff8263b95666d300671462afe984c20909d0fc4fa27b1651fdea64d2bdd9",
+  "schema_version": 6,
+  "rollback": "restore pre-upgrade encrypted backup with keyring, then deploy previous immutable image digest; old binaries must refuse schema 6",
+  "required_artifacts": [
+    "encrypted backup + manifest",
+    "keyring current/previous version",
+    "previous image digest"
+  ],
+  "constraints": [
+    "no destructive rollback without backup verification",
+    "schema downgrade not supported in place"
+  ]
+}

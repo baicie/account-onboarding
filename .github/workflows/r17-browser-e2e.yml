@@ -1,0 +1,62 @@
+name: r17-browser-e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - feat/r16-r17-final-sandbox-release-readiness
+      - feat/r18-final-release-candidate-closure
+      - feat/r19-trusted-release-full-acceptance
+      - feat/r20-final-product-release-closure
+      - feat/r21-autonomous-final-qualification
+      - feat/r22-product-first-final-acceptance
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: playwright chromium against real onboardd UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Install Playwright Chromium
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Browser artifact policy test
+        run: bash tests/browser/artifact_allowlist_test.sh
+
+      - name: Run real browser E2E
+        env:
+          PLAYWRIGHT_CHANNEL: ""
+          BROWSER_EVIDENCE_PATH: ${{ github.workspace }}/browser-evidence/browser-evidence.json
+          ONBOARD_BROWSER_MATRIX: "1"
+        run: |
+          mkdir -p browser-evidence
+          bash tests/browser/run.sh
+
+      - name: Enforce browser artifact allowlist
+        id: allowlist
+        if: always()
+        run: bash tests/browser/artifact_allowlist.sh browser-evidence
+
+      - name: Upload sanitized browser evidence
+        if: always() && steps.allowlist.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: r17-browser-evidence
+          path: browser-evidence/browser-evidence.json
+          retention-days: 7
+          if-no-files-found: error

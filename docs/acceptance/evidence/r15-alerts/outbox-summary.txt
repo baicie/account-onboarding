@@ -1,0 +1,8 @@
+Durable alert outbox R15:
+- schema 0006 alert_outbox + alert_deliveries
+- stable alert/delivery IDs, lease owner/expiry, attempt count
+- PENDING/IN_FLIGHT/RETRY_PENDING/DELIVERED/RESOLVED/DEAD_LETTER
+- claim/completion fencing, retry backoff, max attempts, resolve-vs-inflight
+- restart recovery of expired leases; history retained
+- webhook opt-in HTTPS exact allowlist, TLS, no redirect, HMAC, response cap, circuit breaker; loopback tests only
+- GET side-effect free; admin outbox status; dispatch returns fail-closed when transport unconfigured

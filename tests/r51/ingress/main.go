@@ -29,6 +29,14 @@ type options struct {
 	upstream   string
 	certFile   string
 	keyFile    string
+	// allowNonLoopback* are staging-only convenience flags: inside a private
+	// container network the ingress listens on 0.0.0.0 and reaches the app by
+	// service name. They stay false for the loopback TLS test fixture.
+	allowNonLoopbackListen   bool
+	allowNonLoopbackUpstream bool
+	allowedHosts             string
+	publicHTTPSPort          string
+	forwardedPort            string
 }
 
 func main() {
@@ -38,6 +46,11 @@ func main() {
 	flag.StringVar(&opt.upstream, "upstream", "http://127.0.0.1:18788", "loopback upstream base URL")
 	flag.StringVar(&opt.certFile, "cert", "", "server certificate PEM")
 	flag.StringVar(&opt.keyFile, "key", "", "server private key PEM")
+	flag.BoolVar(&opt.allowNonLoopbackListen, "allow-non-loopback-listen", false, "staging-only: allow 0.0.0.0 listeners inside a private container network")
+	flag.BoolVar(&opt.allowNonLoopbackUpstream, "allow-non-loopback-upstream", false, "staging-only: allow a non-loopback upstream service name")
+	flag.StringVar(&opt.allowedHosts, "allowed-host", "", "staging-only: comma-separated HTTPS Host allowlist (empty = allow any, loopback fixture behavior)")
+	flag.StringVar(&opt.publicHTTPSPort, "public-https-port", "", "staging-only: externally published HTTPS port used in HTTP->HTTPS redirects")
+	flag.StringVar(&opt.forwardedPort, "forwarded-port", "443", "X-Forwarded-Port value sent to the upstream")
 	flag.Parse()
 	if err := run(opt); err != nil {
 		fmt.Fprintln(os.Stderr, "ingress:", err)
@@ -46,17 +59,17 @@ func main() {
 }
 
 func run(opt options) error {
-	if err := requireLoopback(opt.listen); err != nil {
+	if err := checkAddress(opt.listen, opt.allowNonLoopbackListen); err != nil {
 		return fmt.Errorf("https listener: %w", err)
 	}
-	if err := requireLoopback(opt.httpListen); err != nil {
+	if err := checkAddress(opt.httpListen, opt.allowNonLoopbackListen); err != nil {
 		return fmt.Errorf("http listener: %w", err)
 	}
 	upstream, err := url.Parse(opt.upstream)
 	if err != nil || upstream.Scheme != "http" || upstream.Host == "" {
 		return fmt.Errorf("upstream must be an absolute http:// URL")
 	}
-	if err := requireLoopback(upstream.Host); err != nil {
+	if err := checkAddress(upstream.Host, opt.allowNonLoopbackUpstream); err != nil {
 		return fmt.Errorf("upstream: %w", err)
 	}
 	if opt.certFile == "" || opt.keyFile == "" {
@@ -67,18 +80,26 @@ func run(opt options) error {
 		return fmt.Errorf("load certificate: %w", err)
 	}
 
+	proxyHandler := newProxyHandler(upstream, opt.forwardedPort)
+	if opt.allowedHosts != "" {
+		proxyHandler = requireAllowedHost(proxyHandler, strings.Split(opt.allowedHosts, ","))
+	}
 	httpsSrv := &http.Server{
 		Addr:              opt.listen,
-		Handler:           newProxyHandler(upstream),
+		Handler:           proxyHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		TLSConfig: &tls.Config{
 			MinVersion:   tls.VersionTLS12,
 			Certificates: []tls.Certificate{cert},
 		},
 	}
+	redirectPort := portOf(opt.listen)
+	if opt.publicHTTPSPort != "" {
+		redirectPort = opt.publicHTTPSPort
+	}
 	httpSrv := &http.Server{
 		Addr:              opt.httpListen,
-		Handler:           newRedirectHandler(portOf(opt.listen)),
+		Handler:           newRedirectHandler(redirectPort),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -110,8 +131,36 @@ func run(opt options) error {
 	return nil
 }
 
+// requireAllowedHost rejects requests whose Host is not explicitly allowlisted.
+// It is opt-in for staging; the loopback TLS fixture keeps its historical
+// pass-through behavior.
+func requireAllowedHost(next http.Handler, allowed []string) http.Handler {
+	set := make(map[string]struct{}, len(allowed))
+	for _, h := range allowed {
+		h = strings.TrimSpace(strings.ToLower(h))
+		if h != "" {
+			set[h] = struct{}{}
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := strings.ToLower(r.Host)
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if _, ok := set[host]; !ok {
+			http.Error(w, "unknown host", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // newProxyHandler returns a handler that overwrites all forwarding headers.
-func newProxyHandler(upstream *url.URL) http.Handler {
+func newProxyHandler(upstream *url.URL, forwardedPort ...string) http.Handler {
+	xfpPort := "443"
+	if len(forwardedPort) > 0 && strings.TrimSpace(forwardedPort[0]) != "" {
+		xfpPort = strings.TrimSpace(forwardedPort[0])
+	}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(upstream)
@@ -126,7 +175,7 @@ func newProxyHandler(upstream *url.URL) http.Handler {
 			}
 			pr.Out.Header.Set("X-Forwarded-Proto", "https")
 			pr.Out.Header.Set("X-Forwarded-Host", pr.In.Host)
-			pr.Out.Header.Set("X-Forwarded-Port", "443")
+			pr.Out.Header.Set("X-Forwarded-Port", xfpPort)
 			if ip, _, err := net.SplitHostPort(pr.In.RemoteAddr); err == nil {
 				pr.Out.Header.Set("X-Forwarded-For", ip)
 				pr.Out.Header.Set("X-Real-Ip", ip)
@@ -178,6 +227,19 @@ func portOf(addr string) string {
 		return "443"
 	}
 	return port
+}
+
+// checkAddress validates a listen/upstream address. Staging explicitly opts into
+// non-loopback values (private container network); the loopback fixture never
+// does. With allow=false this is exactly the historical requireLoopback rule.
+func checkAddress(addr string, allowNonLoopback bool) error {
+	if allowNonLoopback {
+		if _, _, err := net.SplitHostPort(addr); err != nil {
+			return fmt.Errorf("address %q must be host:port", addr)
+		}
+		return nil
+	}
+	return requireLoopback(addr)
 }
 
 // requireLoopback rejects wildcard or non-loopback listen/upstream addresses.

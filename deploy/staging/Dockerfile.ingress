@@ -1,0 +1,17 @@
+# Staging-only TLS ingress image (the same Go test ingress used by R5.1).
+# It is NOT a production proxy: it terminates TLS with a test CA certificate,
+# strips forwarding headers, and is placed behind a loopback-only compose port.
+FROM golang:1.25-bookworm AS build
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ingress ./tests/r51/ingress
+
+FROM debian:bookworm-slim AS runtime
+RUN groupadd --gid 10001 app && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
+COPY --from=build /out/ingress /app/ingress
+WORKDIR /app
+USER 10001:10001
+ENTRYPOINT ["/app/ingress"]

@@ -1,0 +1,74 @@
+=== RUN   Test…
+--- PASS: Test… (0.17s)
+=== RUN   Test…
+=== RUN   Test…/rate-limit
+=== RUN   Test…/html-200
+=== RUN   Test…/invalid-json
+=== RUN   Test…/wrong-schema
+=== RUN   Test…/wrong-item-type
+=== RUN   Test…/empty-204
+=== RUN   Test…/redirect
+=== RUN   Test…/forbidden
+=== RUN   Test…/unauthorized
+=== RUN   Test…/oversize
+--- PASS: Test… (1.61s)
+    --- PASS: Test…/rate-limit (0.15s)
+    --- PASS: Test…/html-200 (0.17s)
+    --- PASS: Test…/invalid-json (0.17s)
+    --- PASS: Test…/wrong-schema (0.17s)
+    --- PASS: Test…/wrong-item-type (0.17s)
+    --- PASS: Test…/empty-204 (0.17s)
+    --- PASS: Test…/redirect (0.15s)
+    --- PASS: Test…/forbidden (0.15s)
+    --- PASS: Test…/unauthorized (0.15s)
+    --- PASS: Test…/oversize (0.15s)
+=== RUN   Test…
+--- PASS: Test… (12.10s)
+=== RUN   Test…
+--- PASS: Test… (0.18s)
+=== RUN   Test…
+--- PASS: Test… (0.19s)
+=== RUN   Test…
+--- PASS: Test… (0.08s)
+=== RUN   Test…
+--- PASS: Test… (0.04s)
+=== RUN   Test…
+=== RUN   Test…/bare_array
+=== RUN   Test…/results
+=== RUN   Test…/parsed_mails
+=== RUN   Test…/mails
+=== RUN   Test…/messages
+=== RUN   Test…/data
+=== RUN   Test…/items
+=== RUN   Test…/list
+=== RUN   Test…/null_list
+=== RUN   Test…/empty_list
+--- PASS: Test… (1.72s)
+    --- PASS: Test…/bare_array (0.17s)
+    --- PASS: Test…/results (0.17s)
+    --- PASS: Test…/parsed_mails (0.17s)
+    --- PASS: Test…/mails (0.17s)
+    --- PASS: Test…/messages (0.17s)
+    --- PASS: Test…/data (0.17s)
+    --- PASS: Test…/items (0.17s)
+    --- PASS: Test…/list (0.17s)
+    --- PASS: Test…/null_list (0.17s)
+    --- PASS: Test…/empty_list (0.18s)
+=== RUN   Test…
+=== RUN   Test…/html-200
+=== RUN   Test…/invalid-json
+=== RUN   Test…/wrong-schema
+=== RUN   Test…/items-not-list
+=== RUN   Test…/empty-body
+=== RUN   Test…/truncated-json
+--- PASS: Test… (1.03s)
+    --- PASS: Test…/html-200 (0.17s)
+    --- PASS: Test…/invalid-json (0.17s)
+    --- PASS: Test…/wrong-schema (0.17s)
+    --- PASS: Test…/items-not-list (0.17s)
+    --- PASS: Test…/empty-body (0.17s)
+    --- PASS: Test…/truncated-json (0.17s)
+=== RUN   Test…
+--- PASS: Test… (0.00s)
+PASS
+ok  	github.com/baicie/account-onboarding/tests/r11	17.122s

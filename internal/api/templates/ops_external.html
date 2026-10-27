@@ -1,0 +1,67 @@
+{{define "content"}}
+<h1>External operations &amp; reconciliation</h1>
+<p class="muted">Admin-only. Tokens, JWTs, OAuth state, addresses and secret references are never displayed. Resolving records an audited operator decision; it does not delete remote resources or trigger retries.</p>
+<section class="cards">
+  <div class="card stat"><div class="stat-label">Needs reconciliation</div><div class="stat-value">{{.TotalNeeds}}</div></div>
+  {{range $status, $count := .StatusCount}}<div class="card stat"><div class="stat-label state-{{stateClass $status}}">{{$status}}</div><div class="stat-value">{{$count}}</div></div>{{end}}
+</section>
+<form method="get" action="/ui/ops/external" class="stack card">
+  <label for="status">Filter status</label>
+  <select id="status" name="status">
+    <option value="">All</option>
+    {{range $s := (list "PREPARED" "IN_FLIGHT" "OUTCOME_UNKNOWN" "RECONCILIATION_REQUIRED" "CONFIRMED" "RESOLVED" "FAILED_DEFINITE")}}
+    <option value="{{$s}}"{{if eq $s $.Status}} selected{{end}}>{{$s}}</option>{{end}}
+  </select>
+  <label for="provider">Filter provider</label>
+  <input id="provider" name="provider" value="{{.Provider}}" placeholder="cloudflare">
+  <label for="run_id">Filter run ID</label>
+  <input id="run_id" name="run_id" value="{{.RunID}}" placeholder="run id">
+  <button type="submit">Apply</button>
+  <a href="/ui/ops/external">Clear</a>
+</form>
+<section class="card">
+<h2>Operations</h2>
+<table>
+<thead><tr><th>Created</th><th>Run</th><th>Provider</th><th>Status</th><th>Version</th><th>Resolution</th><th>Resolve</th></tr></thead>
+<tbody>
+{{range .Items}}
+<tr class="{{if .NeedsReview}}needs-review{{end}}">
+  <td>{{fmtUnix .CreatedAtMS}}</td>
+  <td><a href="/ui/ops/external/{{.ID}}?status={{urlquery $.Status}}&provider={{urlquery $.Provider}}&run_id={{urlquery $.RunID}}&cursor={{urlquery $.NextCursor}}">{{short .ID}}</a><br><a href="/ui/runs/{{.RunID}}">{{short .RunID}}</a></td>
+  <td>{{.Provider}} / {{.OperationType}}</td>
+  <td><span class="pill {{if .NeedsReview}}warning{{else}}ok{{end}}">{{.Status}}</span></td>
+  <td>{{.Version}}</td>
+  <td>{{if .Resolution}}{{.Resolution}} — {{.ResolutionReason}}{{if .ResolvedBy}} ({{.ResolvedBy}}){{end}}{{else}}—{{end}}</td>
+  <td>
+    {{if .NeedsReview}}
+    <form method="post" action="/ui/ops/external/{{.ID}}/resolve" class="stack">
+      <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
+      <input type="hidden" name="expected_version" value="{{.Version}}">
+      <input type="hidden" name="return_status" value="{{$.Status}}">
+      <input type="hidden" name="return_provider" value="{{$.Provider}}">
+      <input type="hidden" name="return_cursor" value="{{$.NextCursor}}">
+      <input type="hidden" name="return_run_id" value="{{$.RunID}}">
+      <label>Resolution</label>
+      <select name="resolution">
+        <option value="RESOURCE_CONFIRMED">RESOURCE_CONFIRMED</option>
+        <option value="NO_RESOURCE_CREATED">NO_RESOURCE_CREATED</option>
+        <option value="MANUAL_COMPENSATION_COMPLETED">MANUAL_COMPENSATION_COMPLETED</option>
+        <option value="UNRESOLVED">UNRESOLVED</option>
+      </select>
+      <label>Reason (required)</label>
+      <input name="reason" required maxlength="2000">
+      <label>Evidence reference</label>
+      <input name="evidence_reference" maxlength="512">
+      <button type="submit">Record resolution</button>
+    </form>
+    {{else}}—{{end}}
+  </td>
+</tr>
+{{else}}
+<tr><td colspan="7" class="muted">No operations match this filter.</td></tr>
+{{end}}
+</tbody>
+</table>
+{{if .HasNext}}<a href="/ui/ops/external?status={{urlquery .Status}}&provider={{urlquery .Provider}}&run_id={{urlquery .RunID}}&cursor={{urlquery .NextCursor}}">Next page →</a>{{end}}
+</section>
+{{end}}

@@ -169,7 +169,9 @@ func serve() error {
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
-	engine.Start(ctx)
+	if err := engine.Start(ctx); err != nil {
+		return fmt.Errorf("engine start failed (external operation recovery is mandatory): %w", err)
+	}
 	_ = store.Audit(ctx, "system", "service.start", "", map[string]any{"version": api.Version})
 
 	errCh := make(chan error, 1)
@@ -182,7 +184,9 @@ func serve() error {
 
 	select {
 	case err := <-errCh:
-		engine.Stop()
+		if stopErr := engine.Stop(); stopErr != nil {
+			log.Error("engine stop recovery failed", "error", stopErr)
+		}
 		return err
 	case <-ctx.Done():
 		log.Info("shutdown requested")
@@ -193,8 +197,11 @@ func serve() error {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Error("http shutdown failed", "error", err)
 	}
-	engine.Stop()
+	stopErr := engine.Stop()
 	_ = store.Audit(context.Background(), "system", "service.stop", "", nil)
+	if stopErr != nil {
+		return fmt.Errorf("engine stop recovery failed: %w", stopErr)
+	}
 	log.Info("stopped")
 	return nil
 }

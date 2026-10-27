@@ -18,3 +18,16 @@
 coverage.out
 *.test
 *.lock
+
+# R16 browser E2E artifacts
+tests/browser/node_modules/
+tests/browser/test-results/
+tests/browser/playwright-report/
+
+tests/browser/browser-evidence.json
+tests/browser/playwright-results.json
+browser-evidence/
+
+# Python bytecode from local tooling runs
+__pycache__/
+*.pyc

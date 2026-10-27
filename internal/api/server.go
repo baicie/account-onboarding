@@ -3,6 +3,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/baicie/account-onboarding/internal/alerts"
 	"github.com/baicie/account-onboarding/internal/config"
 	"github.com/baicie/account-onboarding/internal/errs"
 	"github.com/baicie/account-onboarding/internal/provider"
@@ -32,21 +35,29 @@ var Commit = "unknown"
 
 // Server wires the API to storage, the engine and providers.
 type Server struct {
-	Cfg       config.Config
-	Store     *storage.Store
-	Engine    *workflow.Engine
-	Registry  *provider.Registry
-	Secrets   *secrets.Service
-	Log       *slog.Logger
-	Signer    *security.SessionSigner
-	Redactor  *security.Redactor
-	StartedAt time.Time
-	Version   string
+	Cfg                 config.Config
+	Store               *storage.Store
+	Engine              *workflow.Engine
+	Registry            *provider.Registry
+	Secrets             *secrets.Service
+	Log                 *slog.Logger
+	Signer              *security.SessionSigner
+	Redactor            *security.Redactor
+	AlertQueue          *alerts.Queue
+	AlertNotifier       alerts.Notifier
+	AlertOutboxNotifier alerts.Notifier
+	StartedAt           time.Time
+	Version             string
 
 	pages map[string]*page
 
 	generalLimiter *rateLimiter
 	loginLimiter   *rateLimiter
+
+	// Maintenance window (planned restore) state and in-flight accounting.
+	maint          *maintenanceState
+	inFlight       atomic.Int64
+	writesInFlight atomic.Int64
 }
 
 // New builds the HTTP server.
@@ -64,19 +75,23 @@ func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 		redactor = security.NewRedactor()
 	}
 	return &Server{
-		Cfg:            cfg,
-		Store:          store,
-		Engine:         engine,
-		Registry:       registry,
-		Secrets:        sec,
-		Log:            log,
-		Signer:         signer,
-		Redactor:       redactor,
-		StartedAt:      time.Now().UTC(),
-		Version:        Version,
-		pages:          pages,
-		generalLimiter: newRateLimiter(cfg.RateLimitPerMinute, time.Minute),
-		loginLimiter:   newRateLimiter(cfg.LoginRateLimitPerMinute, time.Minute),
+		maint:               &maintenanceState{},
+		Cfg:                 cfg,
+		Store:               store,
+		Engine:              engine,
+		Registry:            registry,
+		Secrets:             sec,
+		Log:                 log,
+		Signer:              signer,
+		Redactor:            redactor,
+		AlertQueue:          alerts.NewQueue(100, time.Minute),
+		AlertNotifier:       &alerts.RecordingNotifier{},
+		AlertOutboxNotifier: nil,
+		StartedAt:           time.Now().UTC(),
+		Version:             Version,
+		pages:               pages,
+		generalLimiter:      newRateLimiter(cfg.RateLimitPerMinute, time.Minute),
+		loginLimiter:        newRateLimiter(cfg.LoginRateLimitPerMinute, time.Minute),
 	}, nil
 }
 
@@ -98,6 +113,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/resume", s.apiAuth(true, true, s.handleResumeRun))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", s.apiAuth(true, true, s.handleCancelRun))
 	mux.HandleFunc("GET /v1/audit", s.apiAuth(false, false, s.handleListAudit))
+	mux.HandleFunc("GET /v1/ops/external", s.apiAuth(false, true, s.handleListExternalOperations))
+	mux.HandleFunc("POST /v1/ops/external/{id}/resolve", s.apiAuth(true, true, s.handleResolveExternalOperation))
+	mux.HandleFunc("GET /v1/ops/external/{id}/audit", s.apiAuth(false, true, s.handleExternalOperationAudit))
+	mux.HandleFunc("GET /v1/ops/metrics", s.apiAuth(false, true, s.handleOpsMetrics))
+	// Planned-maintenance window used by the running-restore protocol.
+	mux.HandleFunc("GET /v1/maintenance", s.apiAuth(false, true, s.handleMaintenanceState))
+	mux.HandleFunc("POST /v1/maintenance/enter", s.apiAuth(true, true, s.handleMaintenanceEnter))
+	mux.HandleFunc("POST /v1/maintenance/exit", s.apiAuth(true, true, s.handleMaintenanceExit))
+	mux.HandleFunc("GET /v1/ops/alerts", s.apiAuth(false, true, s.handleOpsAlerts))
+	mux.HandleFunc("GET /v1/ops/alerts/queue", s.apiAuth(false, true, s.handleOpsAlertQueue))
+	mux.HandleFunc("POST /v1/ops/alerts/drain", s.apiAuth(true, true, s.handleOpsAlertDrain))
+	mux.HandleFunc("POST /v1/ops/alerts/resolve", s.apiAuth(true, true, s.handleOpsAlertResolve))
+	mux.HandleFunc("POST /v1/ops/alerts/reconcile", s.apiAuth(true, true, s.handleOpsAlertReconcile))
+	mux.HandleFunc("GET /v1/ops/alerts/outbox", s.apiAuth(false, true, s.handleAlertOutbox))
+	mux.HandleFunc("POST /v1/ops/alerts/outbox/dispatch", s.apiAuth(true, true, s.handleAlertOutboxDispatch))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)
@@ -106,12 +136,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /ui/logout", s.uiAuth(s.handleLogout))
 	mux.HandleFunc("GET /ui/", s.uiAuth(s.handleDashboard))
 	mux.HandleFunc("GET /ui/runs/{id}", s.uiAuth(s.handleRunPage))
+	mux.HandleFunc("GET /ui/alerts/outbox", s.uiAuth(s.handleAlertsPage))
+	mux.HandleFunc("GET /ui/alerts/outbox/{id}", s.uiAuth(s.handleAlertDetail))
+	mux.HandleFunc("POST /ui/alerts/reconcile", s.uiAuth(s.handleAlertReconcileUI))
+	mux.HandleFunc("POST /ui/alerts/outbox/dispatch", s.uiAuth(s.handleAlertDispatchUI))
+	mux.HandleFunc("POST /ui/alerts/outbox/resolve", s.uiAuth(s.handleAlertResolveUI))
+	mux.HandleFunc("POST /ui/alerts/outbox/rearm", s.uiAuth(s.handleAlertRearmUI))
+	mux.HandleFunc("GET /ui/ops/external", s.uiAuth(s.handleOpsExternalPage))
+	mux.HandleFunc("POST /ui/ops/external/{id}/resolve", s.uiAuth(s.handleOpsExternalResolveUI))
+	mux.HandleFunc("GET /ui/ops/external/{id}", s.uiAuth(s.handleOpsExternalDetail))
 	mux.HandleFunc("POST /ui/runs", s.uiAuth(s.handleCreateRunUI))
 	mux.HandleFunc("POST /ui/runs/{id}/resume", s.uiAuth(s.handleResumeUI))
 	mux.HandleFunc("POST /ui/runs/{id}/cancel", s.uiAuth(s.handleCancelUI))
 	mux.HandleFunc("GET /ui/static/app.css", s.handleCSS)
 
-	return s.securityHeaders(s.requestLogger(s.recoverer(s.rateLimit(mux))))
+	return s.securityHeaders(s.requestLogger(s.recoverer(s.rateLimit(s.maintenanceGate(mux)))))
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +224,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		if strings.HasPrefix(r.URL.Path, "/ui/") || r.URL.Path == "/" {
@@ -250,15 +289,23 @@ func (s *Server) apiAuth(requireCSRF bool, adminOnly bool, next http.HandlerFunc
 	}
 }
 
+// credentialActor identifies the credential subject. A shared Bearer token
+// cannot identify a natural person, so it is explicitly labelled as the token
+// credential (stable truncated fingerprint, never the token itself).
+func credentialActor(kind, token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return kind + ":sha256:" + hex.EncodeToString(sum[:6])
+}
+
 func (s *Server) authenticate(r *http.Request) (authInfo, bool) {
 	// Bearer token path (API clients).
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		token := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 		if s.Cfg.AdminToken != "" && security.ConstantTimeEqual(token, s.Cfg.AdminToken) {
-			return authInfo{Actor: "operator", Role: "admin", Via: "bearer"}, true
+			return authInfo{Actor: credentialActor("bearer:admin", token), Role: "admin", Via: "bearer"}, true
 		}
 		if s.Cfg.ReadOnlyToken != "" && security.ConstantTimeEqual(token, s.Cfg.ReadOnlyToken) {
-			return authInfo{Actor: "viewer", Role: "viewer", Via: "bearer"}, true
+			return authInfo{Actor: credentialActor("bearer:viewer", token), Role: "viewer", Via: "bearer"}, true
 		}
 		return authInfo{}, false
 	}
@@ -285,7 +332,7 @@ func (s *Server) authenticate(r *http.Request) (authInfo, bool) {
 	if revoked {
 		return authInfo{}, false
 	}
-	return authInfo{Actor: "operator", Role: "admin", Via: "cookie", CSRF: csrf,
+	return authInfo{Actor: "cookie:operator", Role: "admin", Via: "cookie", CSRF: csrf,
 		SessionID: sessionID, SessionExpires: expiresAt}, true
 }
 
@@ -495,12 +542,20 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 
 // handleReadyz verifies DB writability, schema version, WAL mode and key setup.
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if active, reason, _ := s.maint.status(); active {
+		w.Header().Set("Retry-After", "30")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"ready": false, "maintenance": true, "reason": reason,
+		})
+		return
+	}
 	health, err := s.Store.Health(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "reason": "database unavailable"})
 		return
 	}
-	ready := health.Writable && health.SchemaVersion >= 3 && health.SessionRevocationsReady &&
+	ready := health.Writable && health.SchemaVersion >= 6 && health.SessionRevocationsReady &&
+		health.ExternalOperationsReady &&
 		strings.EqualFold(health.WALMode, "wal")
 	if len(s.Cfg.MasterKey) != 32 {
 		ready = false

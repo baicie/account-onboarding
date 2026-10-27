@@ -1,0 +1,2 @@
+Exact secret modes R14.1: ACCEPT 0400, 0600; REJECT 0000, 0500, 0700, 0450, 0644, 0660, 0666.
+Single readSecureSecretFile for every provider file; regular/non-symlink; descriptor/inode consistency; 1..64 KiB; no value leakage.

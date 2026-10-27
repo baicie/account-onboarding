@@ -1,0 +1,1 @@
+R15 restore state: pre-backup CONFIRMED/UNKNOWN/RECON/PREPARED/IN_FLIGHT/RESOLVED external ops, completed/failed/retry runs, active+expired revocations, audit rows, durable pending alert outbox, schema 6. Wrong key/corrupt snapshot leave target byte-identical.

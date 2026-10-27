@@ -1,0 +1,4 @@
+CI release-image candidate job (c49a630):
+PASS candidate identity: commit, image tar sha256, loaded image id, binary commit, SBOM sha256, base digests
+PASS candidate identity rejects tampered provenance
+Publish: skipped (no GHCR login/push)

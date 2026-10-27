@@ -88,6 +88,27 @@ var eventPayloadAllowlist = map[string]bool{
 	"credential_ref_kind": true,
 	"waiting_for":         true,
 	"resume_state":        true,
+	// External operation audit (non-secret enums/digest); see
+	// docs/adr/0001-external-operation-reconciliation.md.
+	"operation_type":      true,
+	"request_fingerprint": true,
+	"status":              true,
+	"error_class":         true,
+	// Operator resolution audit (R9): enum/ticket reference only; values still
+	// pass through Redact and are length-capped.
+	"resolution":         true,
+	"evidence_reference": true,
+	"operation_id":       true,
+	"run_id":             true,
+	"from_status":        true,
+	"to_status":          true,
+	"version_before":     true,
+	"version_after":      true,
+	"requested_at_ms":    true,
+	"resolved_at_ms":     true,
+	"resolved_by":        true,
+	"actor":              true,
+	"review_action":      true,
 }
 
 // SanitizeEventPayload filters an event payload down to the allowlist and

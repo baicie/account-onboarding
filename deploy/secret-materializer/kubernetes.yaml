@@ -1,0 +1,25 @@
+# Illustrative fixture only; no cluster was executed in R15.
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: onboardd
+      image: account-onboarding:candidate
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, readOnlyRootFilesystem: true}
+      volumeMounts:
+        - {name: projected, mountPath: /run/secrets-source, readOnly: true}
+        - {name: materialized, mountPath: /run/secrets}
+      env:
+        - {name: ONBOARD_MASTER_KEY_FILE, value: /run/secrets/master.key}
+        - {name: ONBOARD_ADMIN_TOKEN_FILE, value: /run/secrets/admin.token}
+    - name: materialize
+      image: account-onboarding:candidate
+      command: ["/bin/sh","-c","/app/scripts/materialize_secrets.sh --source-dir /run/secrets-source --target-dir /run/secrets --uid 10001 --gid 10001"]
+      volumeMounts:
+        - {name: projected, mountPath: /run/secrets-source, readOnly: true}
+        - {name: materialized, mountPath: /run/secrets}
+  volumes:
+    - name: projected
+      secret: {secretName: onboarding-secrets, defaultMode: 0444}
+    - name: materialized
+      emptyDir: {medium: Memory}

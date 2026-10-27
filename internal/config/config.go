@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -397,23 +398,32 @@ func LoadFrom(environ []string) (Config, error) {
 
 func (c *Config) resolveSecrets() error {
 	var err error
+	read := func(path, label string) (string, error) {
+		raw, err := readSecureSecretFile(path, label, secretPolicy{MaxBytes: 64 * 1024})
+		if err != nil {
+			return "", err
+		}
+		v := strings.TrimSpace(string(raw))
+		if v == "" {
+			return "", fmt.Errorf("%s file %q is empty", label, path)
+		}
+		return v, nil
+	}
 	if c.AdminToken == "" && c.AdminTokenFile != "" {
-		if c.AdminToken, err = readSecretFile(c.AdminTokenFile, "ONBOARD_ADMIN_TOKEN_FILE"); err != nil {
+		if c.AdminToken, err = read(c.AdminTokenFile, "ONBOARD_ADMIN_TOKEN_FILE"); err != nil {
 			return err
 		}
 	}
 	if c.ReadOnlyToken == "" && c.ReadOnlyTokenFile != "" {
-		if c.ReadOnlyToken, err = readSecretFile(c.ReadOnlyTokenFile, "ONBOARD_READONLY_TOKEN_FILE"); err != nil {
+		if c.ReadOnlyToken, err = read(c.ReadOnlyTokenFile, "ONBOARD_READONLY_TOKEN_FILE"); err != nil {
 			return err
 		}
 	}
 	if c.MasterKey == nil && c.MasterKeyFile != "" {
-		raw, err := os.ReadFile(c.MasterKeyFile)
+		raw, err := readSecureSecretFile(c.MasterKeyFile, "ONBOARD_MASTER_KEY_FILE", secretPolicy{MaxBytes: 64 * 1024})
 		if err != nil {
-			return fmt.Errorf("read master key file: %w", err)
+			return err
 		}
-		// A raw 32-byte key is accepted verbatim: binary keys may contain
-		// whitespace bytes that TrimSpace would silently corrupt.
 		if len(raw) == 32 {
 			c.MasterKey = append([]byte(nil), raw...)
 		} else {
@@ -425,58 +435,119 @@ func (c *Config) resolveSecrets() error {
 		}
 	}
 	if c.Cloudflare.AdminPassword == "" && c.Cloudflare.AdminPasswordFile != "" {
-		if c.Cloudflare.AdminPassword, err = readSecretFile(c.Cloudflare.AdminPasswordFile, "cloudflare admin password"); err != nil {
+		if c.Cloudflare.AdminPassword, err = read(c.Cloudflare.AdminPasswordFile, "cloudflare admin password"); err != nil {
 			return err
 		}
 	}
 	if c.Cloudflare.SitePassword == "" && c.Cloudflare.SitePasswordFile != "" {
-		if c.Cloudflare.SitePassword, err = readSecretFile(c.Cloudflare.SitePasswordFile, "cloudflare site password"); err != nil {
+		if c.Cloudflare.SitePassword, err = read(c.Cloudflare.SitePasswordFile, "cloudflare site password"); err != nil {
 			return err
 		}
 	}
 	if c.Keycloak.AdminPassword == "" && c.Keycloak.AdminPasswordFile != "" {
-		if c.Keycloak.AdminPassword, err = readSecretFile(c.Keycloak.AdminPasswordFile, "keycloak admin password"); err != nil {
+		if c.Keycloak.AdminPassword, err = read(c.Keycloak.AdminPasswordFile, "keycloak admin password"); err != nil {
 			return err
 		}
 	}
 	if c.Keycloak.AdminClientSecret == "" && c.Keycloak.AdminClientSecretFile != "" {
-		if c.Keycloak.AdminClientSecret, err = readSecretFile(c.Keycloak.AdminClientSecretFile, "keycloak admin client secret"); err != nil {
+		if c.Keycloak.AdminClientSecret, err = read(c.Keycloak.AdminClientSecretFile, "keycloak admin client secret"); err != nil {
 			return err
 		}
 	}
 	if c.Keycloak.ClientSecret == "" && c.Keycloak.ClientSecretFile != "" {
-		if c.Keycloak.ClientSecret, err = readSecretFile(c.Keycloak.ClientSecretFile, "keycloak client secret"); err != nil {
+		if c.Keycloak.ClientSecret, err = read(c.Keycloak.ClientSecretFile, "keycloak client secret"); err != nil {
 			return err
 		}
 	}
 	if c.GitHub.Token == "" && c.GitHub.TokenFile != "" {
-		if c.GitHub.Token, err = readSecretFile(c.GitHub.TokenFile, "github token"); err != nil {
+		if c.GitHub.Token, err = read(c.GitHub.TokenFile, "github token"); err != nil {
 			return err
 		}
 	}
 	if c.WorkBuddy.Token == "" && c.WorkBuddy.TokenFile != "" {
-		if c.WorkBuddy.Token, err = readSecretFile(c.WorkBuddy.TokenFile, "workbuddy gateway token"); err != nil {
+		if c.WorkBuddy.Token, err = read(c.WorkBuddy.TokenFile, "workbuddy gateway token"); err != nil {
 			return err
 		}
 	}
 	if c.OIDC.ClientSecret == "" && c.OIDC.ClientSecretFile != "" {
-		if c.OIDC.ClientSecret, err = readSecretFile(c.OIDC.ClientSecretFile, "oidc client secret"); err != nil {
+		if c.OIDC.ClientSecret, err = read(c.OIDC.ClientSecretFile, "oidc client secret"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func readSecretFile(path, label string) (string, error) {
-	b, err := os.ReadFile(path)
+// secretPolicy is intentionally strict. Docker/Kubernetes secret projections
+// must copy to an owner-only regular file (0400/0600) or configure defaultMode
+// accordingly; do not silently accept 0444.
+type secretPolicy struct {
+	MaxBytes int64
+}
+
+const maxSecretFileBytes = 64 * 1024
+
+// openSecretFile is a test seam for the Lstat/Open replacement race test.
+var openSecretFile = os.Open
+
+// readSecureSecretFile is the single secret-file entry point. It rejects
+// non-regular files, symlinks (TOCTOU/redirect risk), group/other permissions,
+// empty files and oversized files. It returns bytes read from the already-open
+// file descriptor; no secret value is included in errors.
+func readSecureSecretFile(path, label string, policy secretPolicy) ([]byte, error) {
+	if policy.MaxBytes <= 0 || policy.MaxBytes > maxSecretFileBytes {
+		policy.MaxBytes = maxSecretFileBytes
+	}
+	lst, err := os.Lstat(path)
 	if err != nil {
-		return "", fmt.Errorf("read %s file: %w", label, err)
+		return nil, fmt.Errorf("%s file %q is not readable: %w", label, path, err)
 	}
-	v := strings.TrimSpace(string(b))
-	if v == "" {
-		return "", fmt.Errorf("%s file %q is empty", label, path)
+	if lst.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s file %q is a symlink; projected secrets must be copied to an owner-only regular file", label, path)
 	}
-	return v, nil
+	f, err := openSecretFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("%s file %q is not readable: %w", label, path, err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s file: %w", label, err)
+	}
+	if !st.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s path is not a regular file", label)
+	}
+	if !os.SameFile(lst, st) {
+		return nil, fmt.Errorf("%s file changed while being opened", label)
+	}
+	perm := st.Mode().Perm()
+	if perm != 0o400 && perm != 0o600 {
+		return nil, fmt.Errorf("%s file %q permissions %04o are not allowed; require exactly 0400 or 0600", label, path, perm)
+	}
+	if st.Size() <= 0 {
+		return nil, fmt.Errorf("%s file %q is empty", label, path)
+	}
+	if st.Size() > policy.MaxBytes {
+		return nil, fmt.Errorf("%s file is too large (max %d bytes)", label, policy.MaxBytes)
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, policy.MaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s file: %w", label, err)
+	}
+	if int64(len(raw)) > policy.MaxBytes {
+		return nil, fmt.Errorf("%s file is too large (max %d bytes)", label, policy.MaxBytes)
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("%s file %q is empty", label, path)
+	}
+	return raw, nil
+}
+
+func readSecretFile(path, label string) (string, error) {
+	raw, err := readSecureSecretFile(path, label, secretPolicy{MaxBytes: maxSecretFileBytes})
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 // DecodeMasterKey accepts raw 32 bytes, hex, base64 or a JSON keyring envelope.

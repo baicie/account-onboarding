@@ -74,7 +74,7 @@ func TestMigrateHealthAndWAL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if health.SchemaVersion != 3 {
+	if health.SchemaVersion != 6 {
 		t.Fatalf("schema version = %d", health.SchemaVersion)
 	}
 	if health.WALMode != "wal" {
@@ -448,7 +448,7 @@ func TestBackupIntegrityAndSecretsList(t *testing.T) {
 	}
 	defer snap.Close()
 	health, err := snap.Health(ctx)
-	if err != nil || health.SchemaVersion != 3 {
+	if err != nil || health.SchemaVersion != 6 {
 		t.Fatalf("snapshot health: %+v %v", health, err)
 	}
 	if _, err := snap.GetRun(ctx, run.ID); err != nil {
@@ -543,5 +543,35 @@ func TestDatabaseFilesAreOwnerOnly(t *testing.T) {
 		// The store creates the data dir 0750: no group/other write, no other
 		// read/traverse for the database directory.
 		t.Fatalf("data dir permissions = %04o, want 0750", perm)
+	}
+}
+
+// TestListEventsLargeHistoryIsPagedAndBounded guards the event-history read path
+// against unbounded queries: even with hundreds of events, a page is limited
+// to the requested size and resumes after the given sequence.
+func TestListEventsLargeHistoryIsPagedAndBounded(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	run := createRun(t, s, "large-events", "validate")
+	const total = 300
+	for i := 0; i < total; i++ {
+		if err := s.AppendEvent(ctx, run.ID, "TEST_EVENT", "validate", map[string]any{"reason": "pagination probe"}); err != nil {
+			t.Fatalf("append %d: %v", i, err)
+		}
+	}
+	first, err := s.ListEvents(ctx, run.ID, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 50 {
+		t.Fatalf("first page len = %d, want 50", len(first))
+	}
+	last := first[len(first)-1].Seq
+	second, err := s.ListEvents(ctx, run.ID, last, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 50 || second[0].Seq <= last {
+		t.Fatalf("second page len=%d first_seq=%d after=%d", len(second), second[0].Seq, last)
 	}
 }

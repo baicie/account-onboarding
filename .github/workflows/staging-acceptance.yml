@@ -1,0 +1,86 @@
+# Manual-only R8 staging acceptance: loopback TLS ingress + internal network +
+# containerized app + SQLite. No production domain, ACME, registry or real
+# provider credentials. Never deploys anywhere.
+name: staging-acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/r8-staging-readiness
+      - feat/r9-release-hardening
+      - feat/r10-live-preflight
+      - feat/r11-integration-readiness
+      - feat/r12-acceptance-integrity
+      - feat/r13-integration-reliability
+      - feat/r14-security-release-closure
+      - feat/r14-1-final-safety-closure
+      - feat/r15-final-engineering-readiness
+      - feat/r15-1-outbox-security-closure
+      - feat/r16-r17-final-sandbox-release-readiness
+      - feat/r18-final-release-candidate-closure
+      - feat/r19-trusted-release-full-acceptance
+      - feat/r20-final-product-release-closure
+      - feat/r21-autonomous-final-qualification
+      - feat/r22-product-first-final-acceptance
+concurrency:
+  group: staging-acceptance
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      EVIDENCE_DIR: ${{ github.workspace }}/staging-evidence
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.10"
+      - name: Offline gates
+        run: make verify
+      - name: Isolated staging + test-CA TLS acceptance
+        shell: bash
+        env:
+          R8_EVIDENCE_DIR: ${{ github.workspace }}/staging-evidence
+        run: |
+          set -euo pipefail
+          bash tests/r8/staging_acceptance.sh 2>&1 | tee staging.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' staging.log
+      - name: Upload staging evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-acceptance-evidence-${{ github.run_id }}
+          path: |
+            staging-evidence/
+            staging.log
+          if-no-files-found: warn
+
+  container-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      EVIDENCE_DIR: ${{ github.workspace }}/container-evidence
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.10"
+      - name: Docker acceptance regression (build/runtime/upgrade/backup/lock)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          bash tests/r51/docker_acceptance.sh 2>&1 | tee "$EVIDENCE_DIR/container-acceptance.log"
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' "$EVIDENCE_DIR/container-acceptance.log"
+      - name: Upload container regression evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: r8-container-regression-${{ github.run_id }}
+          path: container-evidence/
+          if-no-files-found: warn

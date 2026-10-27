@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "release_authorized": false,
+  "gates": [
+    {
+      "id": "admin-ui-alerts",
+      "status": "PASS",
+      "scope": "CI Chromium tests + Go API tests"
+    },
+    {
+      "id": "runs-ui",
+      "status": "PASS",
+      "scope": "filters/cursor/lookup"
+    },
+    {
+      "id": "external-operations-ui",
+      "status": "PARTIAL",
+      "scope": "run filter; full matrix not run"
+    },
+    {
+      "id": "browser-full-matrix",
+      "status": "PARTIAL",
+      "scope": "14 tests; expiry/readonly/real-sandbox/in-flight alerts missing"
+    },
+    {
+      "id": "two-browser-context-resolve",
+      "status": "PASS",
+      "scope": "CI Chromium 14-test matrix"
+    },
+    {
+      "id": "browser-real-sandbox",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "docker-secret",
+      "status": "PASS",
+      "scope": "CI run 40453279233"
+    },
+    {
+      "id": "k8s-projected-secret",
+      "status": "PASS",
+      "scope": "Kind CI run 40453279233"
+    },
+    {
+      "id": "acl-secret",
+      "status": "PASS",
+      "scope": "CI run 40453279233"
+    },
+    {
+      "id": "arm64-full-emulated",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "arm64-full-native",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "historical-backup",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "trusted-build-provenance",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "pr-merge-dryrun",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "trusted-workflow-definition",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "publish-revalidation",
+      "status": "PASS",
+      "scope": "logic+tests; publish skipped"
+    },
+    {
+      "id": "live-ghcr-release-production",
+      "status": "NOT_RUN"
+    }
+  ]
+}

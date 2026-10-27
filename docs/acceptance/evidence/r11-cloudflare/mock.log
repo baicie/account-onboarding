@@ -1,0 +1,12 @@
+=== RUN   Test…
+--- PASS: Test… (0.06s)
+=== RUN   Test…
+=== RUN   Test…/rate-limit
+=== RUN   Test…/redirect
+=== RUN   Test…/forbidden
+--- PASS: Test… (0.14s)
+    --- PASS: Test…/rate-limit (0.05s)
+    --- PASS: Test…/redirect (0.04s)
+    --- PASS: Test…/forbidden (0.04s)
+PASS
+ok  	github.com/baicie/account-onboarding/tests/r11	0.195s

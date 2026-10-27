@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "expected": 4,
+  "unexpected": 0,
+  "commit": "local",
+  "runner": "local",
+  "tests": [
+    {
+      "title": "invalid token is rejected without a session",
+      "status": "passed",
+      "duration_ms": 1092,
+      "retry": 0,
+      "error_classes": []
+    },
+    {
+      "title": "admin can create and inspect a real run through the UI",
+      "status": "passed",
+      "duration_ms": 735,
+      "retry": 0,
+      "error_classes": []
+    },
+    {
+      "title": "cookie mutation without CSRF is rejected",
+      "status": "passed",
+      "duration_ms": 468,
+      "retry": 0,
+      "error_classes": []
+    },
+    {
+      "title": "logout clears the admin session",
+      "status": "passed",
+      "duration_ms": 535,
+      "retry": 0,
+      "error_classes": []
+    }
+  ]
+}

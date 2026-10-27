@@ -671,9 +671,19 @@ func TestAuthorizeOIDCRejectsWrongVerifier(t *testing.T) {
 	f.forceWrongVerifier = true
 	f.mu.Unlock()
 
-	_, err := a.Sandbox().AuthorizeOIDC(context.Background(), provider.SandboxAuthorizeRequest{
-		Identity: handle, RedirectURI: testCallback,
-	})
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = a.Sandbox().AuthorizeOIDC(context.Background(), provider.SandboxAuthorizeRequest{
+			Identity: handle, RedirectURI: testCallback,
+		})
+		// The fake IdP can see a transient connection reset under the full
+		// parallel race suite; retry only that infrastructure class so the
+		// semantic assertion below stays strict.
+		if errs.ClassOf(err) != errs.ClassUpstreamTransient {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if errs.ClassOf(err) != errs.ClassAuthExpired {
 		t.Fatalf("class = %s, want AUTH_EXPIRED for a rejected PKCE exchange (%v)", errs.ClassOf(err), err)
 	}
@@ -789,12 +799,14 @@ func TestErrorMapping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := newFakeKeycloak(t, testRealm, testClientID)
-			a, sec := newTestAdapter(t, f, func(c *Config) {
-				if tc.timeout > 0 {
-					c.Timeout = tc.timeout
-				}
-			})
+			a, sec := newTestAdapter(t, f, nil)
 			handle := register(t, a, "onboard-mapping", "mapping@moonbyte.top")
+			if tc.timeout > 0 {
+				// Apply the short timeout only to the validation call: a cold CI
+				// runner may legitimately spend >100ms registering the user.
+				a.timeout = tc.timeout
+				a.api.Timeout = tc.timeout
+			}
 			cred := seedCredential(t, f, sec, handle.SubjectID, "mapping-token", time.Now().Add(time.Hour))
 			f.mu.Lock()
 			tc.mutate(f)

@@ -1,0 +1,12 @@
+{"schema":1,"release_authorized":false,"gates":[
+{"id":"go_unit_race","status":"PASS"},{"id":"provider_contract","status":"PASS"},
+{"id":"sandbox_infra","status":"PASS"},{"id":"application_e2e","status":"PASS"},
+{"id":"browser_full_matrix","status":"NOT_RUN"},{"id":"browser_real_provider","status":"NOT_RUN"},
+{"id":"docker_secret","status":"NOT_RUN"},{"id":"k8s_projected_secret","status":"NOT_RUN"},{"id":"acl_secret","status":"NOT_RUN"},
+{"id":"historical_backup_restore","status":"NOT_RUN"},{"id":"outbox_recovery","status":"PASS"},{"id":"ssrf_egress","status":"PASS"},
+{"id":"arm64_full_emulated","status":"NOT_RUN"},{"id":"arm64_full_native","status":"BLOCKED"},
+{"id":"staging_acceptance","status":"PASS"},{"id":"trusted_workflow_definition","status":"BLOCKED","reason":"protected ruleset/baseline/admin required"},
+{"id":"trusted_ci_evidence","status":"PASS"},{"id":"trusted_build_provenance","status":"NOT_RUN"},
+{"id":"same_artifact","status":"PASS"},{"id":"release_artifact_identity","status":"PARTIAL"},
+{"id":"publish_revalidation","status":"PASS","scope":"logic+tests; publish skipped"},{"id":"rollback_preflight","status":"PARTIAL"},
+{"id":"artifact_redaction","status":"PASS"},{"id":"independent_security_review","status":"FAIL"}]}

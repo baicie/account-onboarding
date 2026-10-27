@@ -100,3 +100,43 @@ func TestRequireLoopbackRejectsWildcardAndNonLoopback(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckAddressStagingOptIn(t *testing.T) {
+	if err := checkAddress("0.0.0.0:8443", false); err == nil {
+		t.Fatal("0.0.0.0 must be rejected without the staging opt-in")
+	}
+	if err := checkAddress("app:8788", false); err == nil {
+		t.Fatal("service names must be rejected without the staging opt-in")
+	}
+	if err := checkAddress("0.0.0.0:8443", true); err != nil {
+		t.Fatalf("staging opt-in should accept 0.0.0.0:8443: %v", err)
+	}
+	if err := checkAddress("app:8788", true); err != nil {
+		t.Fatalf("staging opt-in should accept app:8788: %v", err)
+	}
+	if err := checkAddress("not-an-address", true); err == nil {
+		t.Fatal("staging opt-in must still require host:port")
+	}
+}
+
+func TestRequireAllowedHostRejectsUnknownHost(t *testing.T) {
+	h := requireAllowedHost(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), []string{"localhost", "127.0.0.1"})
+	for _, host := range []string{"localhost:8443", "127.0.0.1:8443"} {
+		req := httptest.NewRequest(http.MethodGet, "https://"+host+"/healthz", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("host %s = %d, want 200", host, rec.Code)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "https://evil.example/healthz", nil)
+	req.Host = "evil.example"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMisdirectedRequest {
+		t.Fatalf("evil host = %d, want 421", rec.Code)
+	}
+}

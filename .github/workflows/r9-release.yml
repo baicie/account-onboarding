@@ -1,0 +1,91 @@
+name: r9-release
+# R9 release-candidate gates: real old-image rollback and a real Caddy TLS
+# reverse-proxy drill. Both run in an isolated GitHub-hosted Docker environment;
+# no production credentials, no real DNS/ACME, no image push.
+on:
+  push:
+    branches: [feat/r9-release-hardening, feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure, feat/r16-r17-final-sandbox-release-readiness, feat/r18-final-release-candidate-closure, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification, feat/r22-product-first-final-acceptance]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  old-image-rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.10"
+          cache: true
+      - name: Build old R8 source artifact
+        run: |
+          set -euo pipefail
+          OLD_REF=74d2c4e
+          mkdir -p /tmp/r9-old-src
+          git archive "$OLD_REF" | tar -x -C /tmp/r9-old-src
+          test -f /tmp/r9-old-src/Dockerfile
+          echo "OLD_SHA=$(git rev-parse "$OLD_REF")" >> "$GITHUB_ENV"
+      - name: Old-image upgrade/rollback/restore drill
+        env:
+          R9_OLD_SHA: ${{ env.OLD_SHA }}
+        run: |
+          set -uo pipefail
+          mkdir -p r9-evidence/rollback
+          set +e
+          bash tests/r9/old_image_rollback.sh /tmp/r9-old-src 2>&1 | tee r9-evidence/rollback/rollback.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' r9-evidence/rollback/rollback.log
+          exit "$rc"
+      - name: Collect container diagnostics
+        if: always()
+        run: |
+          mkdir -p r9-evidence/rollback
+          docker ps -a > r9-evidence/rollback/docker-ps.txt 2>&1 || true
+          docker images > r9-evidence/rollback/docker-images.txt 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: r9-old-image-rollback-evidence
+          path: r9-evidence/rollback/
+          if-no-files-found: warn
+
+  caddy-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.10"
+          cache: true
+      - name: Real Caddy test-CA TLS reverse proxy acceptance
+        run: |
+          set -uo pipefail
+          mkdir -p r9-evidence/caddy
+          set +e
+          bash tests/r9/caddy_acceptance.sh 2>&1 | tee r9-evidence/caddy/caddy.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' r9-evidence/caddy/caddy.log
+          exit "$rc"
+      - name: Collect container diagnostics
+        if: always()
+        run: |
+          docker ps -a > r9-evidence/caddy/docker-ps.txt 2>&1 || true
+          docker network ls > r9-evidence/caddy/docker-networks.txt 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: r9-caddy-proxy-evidence
+          path: r9-evidence/caddy/
+          if-no-files-found: warn

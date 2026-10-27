@@ -1,0 +1,1 @@
+Recovery R14.1: real SQLite + AES-256-GCM restore includes CONFIRMED and PREPARED/IN_FLIGHT/OUTCOME_UNKNOWN/RECONCILIATION_REQUIRED/RESOLVED operations, revoked and expired sessions, audit rows, schema 5; wrong key/corrupt snapshot leave target byte-identical.

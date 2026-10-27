@@ -9,7 +9,9 @@
 #   - listens on 8788 inside the container; publish only 127.0.0.1 on the host
 #   - /app/data is the only writable path (SQLite + WAL)
 #   - /run/secrets/onboarding_master_key is the read-only master key
-FROM golang:1.25-bookworm AS build
+ARG GOLANG_IMAGE=golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
+ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+FROM ${GOLANG_IMAGE} AS build
 
 ARG VERSION=0.1.0
 ARG COMMIT=unknown
@@ -27,10 +29,10 @@ RUN CGO_ENABLED=1 GOOS=linux go build -trimpath \
     -ldflags="-s -w -X github.com/baicie/account-onboarding/internal/api.Version=${VERSION} -X github.com/baicie/account-onboarding/internal/api.Commit=${COMMIT}" \
     -o /out/onboardd ./cmd/onboardd
 
-FROM debian:bookworm-slim
+FROM ${RUNTIME_IMAGE} AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata bash util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 onboard \
     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin onboard \
@@ -38,6 +40,8 @@ RUN apt-get update \
     && chown 10001:10001 /app/data
 
 COPY --from=build /out/onboardd /app/onboardd
+COPY scripts/materialize_secrets.sh /app/scripts/materialize_secrets.sh
+RUN chmod 0755 /app/scripts/materialize_secrets.sh
 
 WORKDIR /app
 USER 10001:10001

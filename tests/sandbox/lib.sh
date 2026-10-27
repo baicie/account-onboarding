@@ -31,9 +31,20 @@ KC_VERSION="${KC_VERSION:-26.8.1}"
 MP_VERSION="${MP_VERSION:-1.32.0}"
 
 # ------------------------------------------------------------- java ---------
-# Keycloak 26.x needs Java 17/21. The system java on this machine is 25 and is
-# not supported by the Keycloak distribution; prefer Homebrew's JDK 21.
-SB_JAVA_HOME="${SB_JAVA_HOME:-/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home}"
+# Keycloak 26.x needs Java 17/21. The macOS default may be newer; prefer an
+# explicit JDK 21. Linux CI sets SB_JAVA_HOME from actions/setup-java.
+if [ -z "${SB_JAVA_HOME:-}" ]; then
+  if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    SB_JAVA_HOME="$JAVA_HOME"
+  else
+    case "$(uname -s)-$(uname -m)" in
+      Darwin-arm64) SB_JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ;;
+      Linux-x86_64) SB_JAVA_HOME=/usr/lib/jvm/temurin-21-jdk-amd64 ;;
+      Linux-aarch64) SB_JAVA_HOME=/usr/lib/jvm/temurin-21-jdk-arm64 ;;
+      *) SB_JAVA_HOME="" ;;
+    esac
+  fi
+fi
 SB_JAVA_BIN="$SB_JAVA_HOME/bin/java"
 
 # --------------------------------------------------------- components -------
@@ -47,7 +58,15 @@ KC_MD5_URL="$KC_RELEASE_URL.md5"
 KC_MAVEN_URL="https://repo1.maven.org/maven2/org/keycloak/keycloak-quarkus-dist/$KC_VERSION/keycloak-quarkus-dist-$KC_VERSION.tar.gz"
 KC_MAVEN_MIRROR_URL="https://maven.aliyun.com/repository/public/org/keycloak/keycloak-quarkus-dist/$KC_VERSION/keycloak-quarkus-dist-$KC_VERSION.tar.gz"
 
-MP_PLATFORM="${MP_PLATFORM:-darwin-arm64}"
+if [ -z "${MP_PLATFORM:-}" ]; then
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) MP_PLATFORM=darwin-arm64 ;;
+    Darwin-x86_64) MP_PLATFORM=darwin-amd64 ;;
+    Linux-x86_64) MP_PLATFORM=linux-amd64 ;;
+    Linux-aarch64) MP_PLATFORM=linux-arm64 ;;
+    *) MP_PLATFORM=linux-amd64 ;;
+  esac
+fi
 MP_TARBALL="mailpit-$MP_PLATFORM.tar.gz"
 MP_RELEASE_URL="https://github.com/axllent/mailpit/releases/download/v$MP_VERSION/$MP_TARBALL"
 MP_MIRROR_URL="https://gh-proxy.com/$MP_RELEASE_URL"

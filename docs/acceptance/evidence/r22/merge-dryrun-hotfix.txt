@@ -1,0 +1,49 @@
+=== PR stack merge dry run ===
+repo: /Users/liuzhiwei/Desktop/workspace/git-code/account-onboarding
+main: 9726fc13b8dd7da155e45390565b5b9a64682bbf
+tip:  634a85ca5f555f9662f5bc25e74032a6687ea8b9
+
+ORDER OK   feat/r8-staging-readiness  head=de89878 ahead=18 behind=0 based-on=main
+ORDER OK   feat/r9-release-hardening  head=e0b09b0 ahead=17 behind=0 based-on=feat/r8-staging-readiness
+ORDER OK   feat/r10-live-preflight  head=4dcb091 ahead=13 behind=0 based-on=feat/r9-release-hardening
+ORDER OK   feat/r11-integration-readiness  head=d5ec94e ahead=15 behind=0 based-on=feat/r10-live-preflight
+ORDER OK   feat/r12-acceptance-integrity  head=d9e3ee9 ahead=31 behind=0 based-on=feat/r11-integration-readiness
+ORDER OK   feat/r13-integration-reliability  head=8febb90 ahead=8 behind=0 based-on=feat/r12-acceptance-integrity
+ORDER OK   feat/r14-security-release-closure  head=080429b ahead=15 behind=0 based-on=feat/r13-integration-reliability
+ORDER OK   feat/r14-1-final-safety-closure  head=3796047 ahead=7 behind=0 based-on=feat/r14-security-release-closure
+ORDER OK   feat/r15-final-engineering-readiness  head=270aa1e ahead=10 behind=0 based-on=feat/r14-1-final-safety-closure
+ORDER OK   feat/r15-1-outbox-security-closure  head=c4f7927 ahead=5 behind=0 based-on=feat/r15-final-engineering-readiness
+ORDER OK   feat/r16-r17-final-sandbox-release-readiness  head=cc60937 ahead=7 behind=0 based-on=feat/r15-1-outbox-security-closure
+ORDER OK   feat/r18-final-release-candidate-closure  head=0875a1f ahead=5 behind=0 based-on=feat/r16-r17-final-sandbox-release-readiness
+ORDER OK   feat/r19-trusted-release-full-acceptance  head=ac6762f ahead=5 behind=0 based-on=feat/r18-final-release-candidate-closure
+ORDER OK   feat/r20-final-product-release-closure  head=d123497 ahead=2 behind=0 based-on=feat/r19-trusted-release-full-acceptance
+ORDER OK   feat/r21-autonomous-final-qualification  head=98645e8 ahead=3 behind=0 based-on=feat/r20-final-product-release-closure
+ORDER OK   feat/r22-product-first-final-acceptance  head=634a85c ahead=42 behind=0 based-on=feat/r21-autonomous-final-qualification
+
+MERGE OK   feat/r8-staging-readiness -> 5ff35f5 tree=d3c75fd
+MERGE OK   feat/r9-release-hardening -> e415b05 tree=c6c11b6
+MERGE OK   feat/r10-live-preflight -> 461815e tree=e85a8b8
+MERGE OK   feat/r11-integration-readiness -> 7624080 tree=42e4fb8
+MERGE OK   feat/r12-acceptance-integrity -> d47be1e tree=219ac30
+MERGE OK   feat/r13-integration-reliability -> 3330023 tree=511f674
+MERGE OK   feat/r14-security-release-closure -> dccda62 tree=06c2184
+MERGE OK   feat/r14-1-final-safety-closure -> eecf97c tree=7634610
+MERGE OK   feat/r15-final-engineering-readiness -> 662eadf tree=318a03d
+MERGE OK   feat/r15-1-outbox-security-closure -> 75315c8 tree=e4b0fde
+MERGE OK   feat/r16-r17-final-sandbox-release-readiness -> 77d7b04 tree=74a7904
+MERGE OK   feat/r18-final-release-candidate-closure -> 8778115 tree=f92e92b
+MERGE OK   feat/r19-trusted-release-full-acceptance -> f2ec98e tree=bb9f987
+MERGE OK   feat/r20-final-product-release-closure -> 7f6c21a tree=1dc3852
+MERGE OK   feat/r21-autonomous-final-qualification -> d9f3f56 tree=e0d1de9
+MERGE OK   feat/r22-product-first-final-acceptance -> af40256 tree=d1ccf1f
+
+merges_ok=16 merges_failed=0
+TREE MATCH merged=d1ccf1fbd8ca884260ab668cf55cdd4cf8f6a670 tip=d1ccf1fbd8ca884260ab668cf55cdd4cf8f6a670
+dry_run_merge_sha=af402562dea4daa60e2904200e0eac468b3f133e
+
+conflict_markers=0
+unmerged_paths=0
+
+tests=SKIPPED
+
+MERGE_DRYRUN_PASS

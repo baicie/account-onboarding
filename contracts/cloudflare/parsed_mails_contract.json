@@ -1,0 +1,33 @@
+{
+  "source": "Derived from internal/provider/mailbox/cloudflare/normalize.go and provider contract; NOT yet validated against a live Cloudflare Worker. Treat as compatibility contract only.",
+  "request": {
+    "method": "GET",
+    "path": "/api/parsed_mails",
+    "query": {"limit": "1", "offset": "0"},
+    "authorization": "Bearer <address JWT>",
+    "redirects": "forbidden",
+    "max_response_bytes": 1048576
+  },
+  "response": {
+    "status": 200,
+    "media_types": ["application/json", "application/*+json"],
+    "envelopes": ["bare-array", "results", "parsed_mails", "mails", "messages", "data", "items", "list", "null-list", "empty-list"],
+    "message_fields": ["id", "from", "to", "subject", "text", "html", "received_at"],
+    "pagination": {"limit": "page size requested by provider; preflight currently uses limit=1&offset=0"},
+    "rate_limit": {"http_429": "RATE_LIMITED; stop, do not retry blindly"},
+    "error_classes": {"401": "AUTH_DENIED", "403": "AUTH_DENIED", "429": "RATE_LIMITED", "5xx": "HTTP_*; stop"}
+  },
+  "invalid_cases": [
+    {"name":"html-200", "content_type":"text/html", "body":"<html>ok</html>", "expect":"RESPONSE_CONTENT_TYPE_INVALID"},
+    {"name":"invalid-json", "content_type":"application/json", "body":"{invalid", "expect":"RESPONSE_INVALID_JSON"},
+    {"name":"wrong-schema", "content_type":"application/json", "body":"{\"ok\":true}", "expect":"RESPONSE_SCHEMA_INVALID"},
+    {"name":"items-not-list", "content_type":"application/json", "body":"{\"results\":\"nope\"}", "expect":"RESPONSE_SCHEMA_INVALID"},
+    {"name":"empty-body", "content_type":"application/json", "body":"", "expect":"RESPONSE_EMPTY_BODY"},
+    {"name":"truncated-json", "content_type":"application/json", "body":"{\"results\":[{\"id\":\"m1\"", "expect":"RESPONSE_INVALID_JSON"}
+  ],
+  "provider_field_cases": [
+    {"name":"missing-sender", "item":{"id":"m1","to":"r11-test@example.test","subject":"s","text":"b"}, "expect":"normalizer accepts or skips; mailx policy decides"},
+    {"name":"bad-timestamp", "item":{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","received_at":"not-a-time"}, "expect":"normalized zero time; mailx rejects"},
+    {"name":"duplicate-id", "items":[{"id":"m1"},{"id":"m1"}], "expect":"provider dedup/skip policy is outside the wire parser"}
+  ]
+}

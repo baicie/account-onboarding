@@ -1,0 +1,90 @@
+# R8 isolated staging stack. Never point this at a production domain or real
+# provider credentials. The app is only reachable on the internal Docker
+# network; the test TLS ingress publishes loopback-only ports.
+name: account-onboarding-staging
+
+services:
+  app:
+    image: ${R8_IMAGE:?set R8_IMAGE to the locally built app image}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    environment:
+      ONBOARD_LISTEN: "0.0.0.0:8788"
+      ONBOARD_ALLOW_PUBLIC_LISTEN: "1"
+      ONBOARD_MODE: "sandbox"
+      ONBOARD_FAKE_PROVIDERS: "true"
+      ONBOARD_DOMAINS: "moonbyte.test"
+      ONBOARD_SENDER_ALLOWLIST: "no-reply,idp.fake.test,moonbyte.test"
+      ONBOARD_TRUST_PROXY_HEADERS: "1"
+      ONBOARD_DB_PATH: "/app/data/state.sqlite"
+      ONBOARD_MASTER_KEY_FILE: "/run/secrets/onboarding_master_key"
+      ONBOARD_ADMIN_TOKEN_FILE: "/run/secrets/onboard_admin_token"
+      ONBOARD_SESSION_TTL: "1h"
+      ONBOARD_LOG_LEVEL: "info"
+    volumes:
+      - "${R8_DATA:?set R8_DATA to an isolated data dir owned by UID 10001}:/app/data"
+    secrets:
+      - onboarding_master_key
+      - onboard_admin_token
+    networks: [staging-internal]
+    healthcheck:
+      test: ["CMD", "/app/onboardd", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  ingress:
+    image: ${R8_INGRESS_IMAGE:?set R8_INGRESS_IMAGE to the locally built ingress image}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    command:
+      - "-listen"
+      - "0.0.0.0:8443"
+      - "-http-listen"
+      - "0.0.0.0:8080"
+      - "-upstream"
+      - "http://app:8788"
+      - "-cert"
+      - "/certs/server.pem"
+      - "-key"
+      - "/certs/server-key.pem"
+      - "-allow-non-loopback-listen"
+      - "-allow-non-loopback-upstream"
+      - "-allowed-host"
+      - "localhost,127.0.0.1"
+      - "-public-https-port"
+      - "${R8_HTTPS_PORT:?}"
+      - "-forwarded-port"
+      - "${R8_HTTPS_PORT:?}"
+    ports:
+      - "127.0.0.1:${R8_HTTPS_PORT:?}:8443"
+      - "127.0.0.1:${R8_HTTP_PORT:?}:8080"
+    volumes:
+      - "${R8_CERTS:?set R8_CERTS to the test CA output dir}:/certs:ro"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [staging-internal, staging-edge]
+
+networks:
+  # App can only talk on the internal network. The ingress also joins a
+  # non-internal edge network so Docker can publish its loopback-only ports;
+  # the app itself remains unpublished and unreachable from the edge network.
+  staging-internal:
+    internal: true
+  staging-edge: {}
+
+secrets:
+  onboarding_master_key:
+    file: ${R8_MASTER_KEY:?}
+  onboard_admin_token:
+    file: ${R8_ADMIN_TOKEN:?}

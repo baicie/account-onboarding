@@ -1,0 +1,51 @@
+name: r10-release-dry-run
+# Isolated release dry run: throwaway local registry + test cosign key. No GHCR,
+# no production credentials, no Release/Tag. This is not a publish experiment.
+on:
+  push:
+    branches: [feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure, feat/r16-r17-final-sandbox-release-readiness, feat/r18-final-release-candidate-closure, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification, feat/r22-product-first-final-acceptance]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r10-release-dry-run-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.10"
+          cache: true
+      - name: Cloudflare live preflight dry run / fail-closed self test
+        run: |
+          set -euo pipefail
+          mkdir -p r10-evidence/dry-run
+          bash scripts/cloudflare_preflight.sh --self-test | tee r10-evidence/dry-run/cloudflare-preflight-selftest.log
+          ONBOARD_CF_TEST_ADDRESSES="r10-test@example.test" \
+            bash scripts/cloudflare_preflight.sh --dry-run --test-address r10-test@example.test \
+            | tee r10-evidence/dry-run/cloudflare-preflight-dryrun.log
+      - name: Isolated registry / signing / attestation dry run
+        run: |
+          set -uo pipefail
+          mkdir -p r10-evidence/dry-run
+          set +e
+          bash tests/r10/registry_dry_run.sh 2>&1 | tee r10-evidence/dry-run/dry-run.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' r10-evidence/dry-run/dry-run.log
+          exit "$rc"
+      - name: Collect dry-run diagnostics
+        if: always()
+        run: |
+          docker ps -a > r10-evidence/dry-run/docker-ps.txt 2>&1 || true
+          docker images > r10-evidence/dry-run/docker-images.txt 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: r10-release-dry-run-evidence
+          path: r10-evidence/dry-run/
+          if-no-files-found: warn

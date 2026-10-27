@@ -3,9 +3,11 @@ package workflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/baicie/account-onboarding/internal/errs"
@@ -44,10 +46,38 @@ type Engine struct {
 	templates map[string]*Template
 	now       func() time.Time
 
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	// paused stops new step claims during a maintenance window. In-flight steps
+	// finish; any lease they hold waits for the next probe after Resume.
+	paused atomic.Bool
+	// activeTicks counts steps that already own a claim and are executing. It is
+	// what a maintenance drain must wait for: pausing only stops new claims.
+	activeTicks atomic.Int64
+	// testTickHook runs inside a claimed Tick (tests only, nil in production).
+	testTickHook func()
+
+	lifecycleMu sync.Mutex
+	lifecycle   engineLifecycle
+	stopCh      chan struct{}
+	stopDone    chan struct{}
+	stopErr     error
+	wg          sync.WaitGroup
 }
+
+type engineLifecycle uint8
+
+const (
+	engineNew engineLifecycle = iota
+	engineStarting
+	engineRunning
+	engineStopping
+	engineStopped
+	engineStartFailed
+)
+
+var (
+	ErrEngineAlreadyStarted = errors.New("workflow: engine already started")
+	ErrEngineStopped        = errors.New("workflow: engine cannot be restarted after stop")
+)
 
 // claimableStatuses are the run states a worker may claim. Waiting states are
 // only claimable when next_run_at has been set (resume or poll schedule).
@@ -103,6 +133,7 @@ func New(store *storage.Store, registry *provider.Registry, sec *secrets.Service
 		templates: map[string]*Template{},
 		now:       time.Now,
 		stopCh:    make(chan struct{}),
+		stopDone:  make(chan struct{}),
 	}
 	for _, t := range e.buildTemplates() {
 		e.templates[t.Name] = t
@@ -142,8 +173,35 @@ func (e *Engine) Template(name string) (*Template, bool) {
 	return t, ok
 }
 
-// Start launches the worker pool and deadline sweeper.
-func (e *Engine) Start(ctx context.Context) {
+// Start performs mandatory external-operation recovery before any worker can
+// claim a step. Lifecycle transitions are serialized so Stop cannot race the
+// recovery barrier or close stopCh before the workers have been registered.
+func (e *Engine) Start(ctx context.Context) error {
+	e.lifecycleMu.Lock()
+	if e.lifecycle != engineNew {
+		state := e.lifecycle
+		e.lifecycleMu.Unlock()
+		if state == engineRunning || state == engineStarting || state == engineStopping {
+			return ErrEngineAlreadyStarted
+		}
+		return ErrEngineStopped
+	}
+	e.lifecycle = engineStarting
+
+	// The previous process is known dead after the instance lock is acquired.
+	// PREPARED never reached the provider; IN_FLIGHT may have and must remain
+	// pending reconciliation.
+	n, err := e.store.RecoverExternalOperations(ctx, "STARTUP_PREVIOUS_PROCESS")
+	if err != nil {
+		e.lifecycle = engineStartFailed
+		e.lifecycleMu.Unlock()
+		e.log.ErrorContext(ctx, "external operation startup recovery failed", "error", err)
+		return fmt.Errorf("workflow: external operation startup recovery: %w", err)
+	}
+	if n > 0 {
+		e.log.WarnContext(ctx, "recovered leftover external operations", "count", n)
+	}
+
 	for i := 0; i < e.cfg.MaxConcurrency; i++ {
 		e.wg.Add(1)
 		go func(worker int) {
@@ -163,6 +221,11 @@ func (e *Engine) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// A maintenance window must not mutate state behind the
+				// restore: skip the sweep until the engine resumes.
+				if e.paused.Load() {
+					continue
+				}
 				ids, err := e.store.SweepDeadlines(ctx, 50)
 				if err != nil {
 					e.log.ErrorContext(ctx, "deadline sweep failed", "error", err)
@@ -174,13 +237,91 @@ func (e *Engine) Start(ctx context.Context) {
 			}
 		}
 	}()
+	e.lifecycle = engineRunning
+	e.lifecycleMu.Unlock()
+	return nil
 }
 
-// Stop stops claiming and waits for in-flight steps.
-func (e *Engine) Stop() {
-	e.stopOnce.Do(func() { close(e.stopCh) })
+// Stop stops claiming work, drains workers, then performs the lifecycle recovery
+// barrier. Concurrent/repeated callers observe the same terminal result; a
+// stopped Engine is intentionally not restartable because its stopCh is closed.
+func (e *Engine) Stop() error {
+	e.lifecycleMu.Lock()
+	switch e.lifecycle {
+	case engineNew, engineStartFailed:
+		e.lifecycle = engineStopped
+		close(e.stopCh)
+		close(e.stopDone)
+		e.lifecycleMu.Unlock()
+		return nil
+	case engineStopped:
+		err := e.stopErr
+		e.lifecycleMu.Unlock()
+		return err
+	case engineStopping:
+		done := e.stopDone
+		e.lifecycleMu.Unlock()
+		<-done
+		e.lifecycleMu.Lock()
+		err := e.stopErr
+		e.lifecycleMu.Unlock()
+		return err
+	case engineRunning:
+		e.lifecycle = engineStopping
+		close(e.stopCh)
+	default:
+		// STARTING is protected by lifecycleMu during recovery and worker
+		// registration, so a caller cannot observe it here.
+		e.lifecycleMu.Unlock()
+		return ErrEngineAlreadyStarted
+	}
+	e.lifecycleMu.Unlock()
+
 	e.wg.Wait()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if n, err := e.store.RecoverExternalOperations(ctx, "GRACEFUL_STOP"); err != nil {
+		e.log.Error("external operation stop recovery failed", "error", err)
+		e.lifecycleMu.Lock()
+		e.stopErr = fmt.Errorf("workflow: external operation stop recovery: %w", err)
+		e.lifecycle = engineStopped
+		close(e.stopDone)
+		result := e.stopErr
+		e.lifecycleMu.Unlock()
+		return result
+	} else if n > 0 {
+		e.log.Warn("recovered external operations on stop", "count", n)
+	}
+
+	e.lifecycleMu.Lock()
+	e.lifecycle = engineStopped
+	close(e.stopDone)
+	result := e.stopErr
+	e.lifecycleMu.Unlock()
+	return result
 }
+
+// Pause stops new step claims for a maintenance window. In-flight steps are
+// allowed to finish; their leases are honoured again (or reclaimed if expired)
+// after Resume.
+func (e *Engine) Pause() {
+	e.paused.Store(true)
+}
+
+// Resume restarts step claiming.
+func (e *Engine) Resume() {
+	e.paused.Store(false)
+}
+
+// Paused reports whether step claiming is suspended.
+func (e *Engine) Paused() bool { return e.paused.Load() }
+
+// ActiveTicks reports how many claimed steps are executing right now.
+func (e *Engine) ActiveTicks() int64 { return e.activeTicks.Load() }
+
+// SetTestTickHook installs a hook that runs inside a claimed Tick. Tests use it to
+// hold a step in flight; production leaves it nil.
+func (e *Engine) SetTestTickHook(fn func()) { e.testTickHook = fn }
 
 func (e *Engine) workerLoop(ctx context.Context, worker int) {
 	ticker := time.NewTicker(e.cfg.TickInterval)
@@ -208,6 +349,9 @@ func (e *Engine) workerLoop(ctx context.Context, worker int) {
 
 // Tick claims and executes at most one step. It reports whether work was done.
 func (e *Engine) Tick(ctx context.Context) (bool, error) {
+	if e.paused.Load() {
+		return false, nil
+	}
 	claim, err := e.store.ClaimNext(ctx, storage.ClaimRequest{
 		Owner:            e.cfg.InstanceID,
 		LeaseTTL:         e.cfg.LeaseTTL,
@@ -219,6 +363,11 @@ func (e *Engine) Tick(ctx context.Context) (bool, error) {
 	}
 	if claim == nil {
 		return false, nil
+	}
+	e.activeTicks.Add(1)
+	defer e.activeTicks.Add(-1)
+	if hook := e.testTickHook; hook != nil {
+		hook()
 	}
 	if claim.CancelRequested {
 		return true, e.store.CommitStepResult(ctx, claim, storage.StepResult{
@@ -319,6 +468,7 @@ func (e *Engine) execute(ctx context.Context, claim *storage.Claim) (result stor
 		Now:       e.now().UTC(),
 		Deadline:  time.UnixMilli(claim.Run.DeadlineMS).UTC(),
 		Selection: e.selectionFromSnapshot(claim.Run),
+		Claim:     *claim,
 		Log: e.log.With("run_id", claim.Run.ID, "step", claim.StepName,
 			"template", claim.Run.Template, "attempt", claim.Attempt),
 	}

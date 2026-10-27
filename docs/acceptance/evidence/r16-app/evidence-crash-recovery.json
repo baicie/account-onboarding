@@ -1,0 +1,19 @@
+{
+  "crash_at": "2026-10-26T11:14:42.476055Z",
+  "data_dir": "/tmp/r16src/.sandbox/e2e/run-20261026T111427-477dfe",
+  "email_verified": true,
+  "environment": "LOCAL SANDBOX (Keycloak http://127.0.0.1:8180, Mailpit http://127.0.0.1:8025)",
+  "generated_at": "2026-10-26T11:14:44Z",
+  "keycloak_users_after": 1,
+  "logs": "/tmp/r16src/.sandbox/e2e/run-20261026T111427-477dfe/onboardd-1.log (pre-crash), /tmp/r16src/.sandbox/e2e/run-20261026T111427-477dfe/onboardd-2.log (post-restart)",
+  "request_verification_attempts": 1,
+  "restart_at": "2026-10-26T11:14:42.585018Z",
+  "run_id": "fc1e5c28-6c47-458a-91b0-470bf8b5e9f4",
+  "status_after_resume": "COMPLETED",
+  "status_before_crash": "WAITING_EMAIL",
+  "subject_after": "7a7b96d0-d8bd-4ca0-bf8a-eff264c41218",
+  "subject_before": "7a7b96d0-d8bd-4ca0-bf8a-eff264c41218",
+  "test": "E2E-003/E2E-008 crash recovery",
+  "userinfo_status": 200,
+  "wait_email_attempts": 2
+}

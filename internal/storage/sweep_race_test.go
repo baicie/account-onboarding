@@ -72,8 +72,8 @@ func TestSweepDeadlinesDoesNotOverrideCancel(t *testing.T) {
 
 	reached := make(chan struct{})
 	release := make(chan struct{})
-	sweepAfterSelectHook = func() { close(reached); <-release }
-	t.Cleanup(func() { sweepAfterSelectHook = nil })
+	s.sweepHook = func() { close(reached); <-release }
+	t.Cleanup(func() { s.sweepHook = nil })
 
 	type result struct {
 		ids []string
@@ -138,8 +138,8 @@ func TestSweepDeadlinesDoesNotDoubleFailWorkerTerminal(t *testing.T) {
 
 	reached := make(chan struct{})
 	release := make(chan struct{})
-	sweepAfterSelectHook = func() { close(reached); <-release }
-	t.Cleanup(func() { sweepAfterSelectHook = nil })
+	s.sweepHook = func() { close(reached); <-release }
+	t.Cleanup(func() { s.sweepHook = nil })
 
 	done := make(chan error, 1)
 	go func() {

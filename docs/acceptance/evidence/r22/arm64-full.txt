@@ -1,0 +1,31 @@
+ARM64 full acceptance - emulated linux/arm64 runtime
+code: 17cb198efcf8ba6916e074a8cb59aa61f6e59433
+workflow: r22-arm64-full / arm64-full-emulated
+run: 40462295245 (success)
+result: ARM64_FULL_EMULATED_PASS, SUMMARY pass=31 fail=0 skip=2
+host architecture: amd64 (GitHub ubuntu-latest) - runtime reports aarch64
+image: built with tests/r22/Dockerfile.arm64test (cross-compiled on the build
+platform, no Go toolchain under QEMU)
+
+Asserted inside the arm64 container:
+  image platform linux/arm64; uname -m = aarch64
+  secret materialization 0400 10001:10001, no secret value logged
+  service ready; runtime UID/GID 10001; root filesystem read-only
+  SQLite database + WAL created in /app/data
+  run created through the API (HTTP 202), run id returned
+  external operations, durable alert outbox and audit readable
+  SIGKILL then restart: service recovers, run survives
+  encrypted backup (verify: checksum, integrity, schema_version 6)
+  restore into a new database: the restored copy boots and still contains the run
+  verify rejects a wrong master key and a corrupted snapshot
+  live database still serves after the failed restore attempts
+  rollback replay: snapshot restored over the live database, replaced database
+  kept, pre-rollback run kept, post-snapshot run gone (HTTP 404)
+
+Skipped (covered by other gates, not by this job):
+  Caddy TLS ingress on arm64 (staging-acceptance covers TLS)
+  schema5 -> schema6 migration from a historical binary
+  (covered by the historical replay: docs/acceptance/evidence/r22/historical-backup.txt)
+
+Native ARM64: no native arm64 runner is available to this repository, so
+ARM64_FULL_NATIVE is BLOCKED, not claimed.

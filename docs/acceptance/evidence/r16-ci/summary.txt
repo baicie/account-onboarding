@@ -1,0 +1,7 @@
+R16 final CI evidence
+head 48b9ca3
+r16-sandbox-e2e PR 40320760117 success
+r17-browser-e2e PR 40320760147 success (4 Playwright tests)
+ci 40320761116 success
+release-image 40320753837 success, publish skipped
+deploy 16/16, ARM64 RUNTIME_SERVICE_PASS, same-artifact 14/14

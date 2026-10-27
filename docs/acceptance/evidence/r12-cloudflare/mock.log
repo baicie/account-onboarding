@@ -1,0 +1,38 @@
+=== RUN   Test…
+--- PASS: Test… (0.19s)
+=== RUN   Test…
+=== RUN   Test…/rate-limit
+=== RUN   Test…/html-200
+=== RUN   Test…/invalid-json
+=== RUN   Test…/wrong-schema
+=== RUN   Test…/wrong-item-type
+=== RUN   Test…/empty-204
+=== RUN   Test…/redirect
+=== RUN   Test…/forbidden
+=== RUN   Test…/unauthorized
+=== RUN   Test…/oversize
+--- PASS: Test… (1.74s)
+    --- PASS: Test…/rate-limit (0.16s)
+    --- PASS: Test…/html-200 (0.18s)
+    --- PASS: Test…/invalid-json (0.18s)
+    --- PASS: Test…/wrong-schema (0.18s)
+    --- PASS: Test…/wrong-item-type (0.18s)
+    --- PASS: Test…/empty-204 (0.19s)
+    --- PASS: Test…/redirect (0.17s)
+    --- PASS: Test…/forbidden (0.16s)
+    --- PASS: Test…/unauthorized (0.16s)
+    --- PASS: Test…/oversize (0.16s)
+=== RUN   Test…
+--- PASS: Test… (12.11s)
+=== RUN   Test…
+--- PASS: Test… (0.18s)
+=== RUN   Test…
+--- PASS: Test… (0.20s)
+=== RUN   Test…
+--- PASS: Test… (0.09s)
+=== RUN   Test…
+--- PASS: Test… (0.04s)
+=== RUN   Test…
+--- PASS: Test… (0.00s)
+PASS
+ok  	github.com/baicie/account-onboarding/tests/r11	14.562s

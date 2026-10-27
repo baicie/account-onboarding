@@ -1,0 +1,6 @@
+commit=0c4de93bce9876e224ba829c9f6c5fdbc578ef8b
+app_image=sha256:41e9ebf07b7f19ec578dbc738da15ce7314d4564637579380e07e6bd670b9be3
+ingress_image=sha256:4ac29a6cf87217942a8189cbbf35c993ab10a0f3079d97f398c23dc7c942b72c
+project=onboarding-r8-r8-1792930936-10343
+https_port=53941
+http_port=54631

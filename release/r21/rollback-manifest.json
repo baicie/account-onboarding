@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "candidate_commit": "b739b9d1bf3ed56fc036a1b6d04cbba5b48894f6",
+  "digest": "sha256:14a224883fc73b55ada4d7b7dcfb4d5cc8add09d412b0713864dd4df869cf405",
+  "schema_version": 6,
+  "rollback": "restore encrypted pre-upgrade backup with keyring; deploy previous immutable image; old binaries refuse schema6",
+  "constraints": [
+    "verify backup/checksum/keyring",
+    "operator approval",
+    "no in-place schema downgrade"
+  ]
+}

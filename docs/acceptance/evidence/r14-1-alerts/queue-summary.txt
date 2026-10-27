@@ -1,0 +1,8 @@
+Alert queue R14.1:
+- stable entry IDs + PENDING/IN_FLIGHT/RETRY_PENDING + batch ID
+- Notifier called without lock; success acknowledges only still-present IDs
+- Resolve/Reconcile during Notify do not resurrect or send stale entries
+- concurrent Drain rejected; bounded drop only pending/retry; attempts cap; context cancel retryable
+- GET /v1/ops/alerts side-effect free; POST reconcile/resolve/drain admin-only
+- RecordingNotifier only local; queue is ephemeral on restart (Status.ephemeral=true)
+- tests: go test ./internal/alerts -race -count=20; go test ./internal/api -run TestAlert -race -count=10

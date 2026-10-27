@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -529,4 +531,212 @@ func TestEngineStartStopDoesNotLeakGoroutines(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("goroutine leak: baseline=%d now=%d", baseline, runtime.NumGoroutine())
+}
+
+type externalFailingMailbox struct {
+	provider.MailboxProvider
+	err   error
+	calls atomic.Int32
+}
+
+func (m *externalFailingMailbox) Descriptor() provider.Descriptor {
+	return m.MailboxProvider.Descriptor()
+}
+
+func (m *externalFailingMailbox) CreateAddress(context.Context, provider.CreateAddressRequest) (provider.Mailbox, error) {
+	m.calls.Add(1)
+	return provider.Mailbox{}, m.err
+}
+
+func TestExternalOperationConfirmedOnSuccess(t *testing.T) {
+	h := newHarness(t, nil)
+	run := h.create(t, sandboxRequest("external-confirmed-1"))
+	final := h.waitTerminal(t, run.ID, 500)
+	if final.Status != "COMPLETED" {
+		t.Fatalf("run status = %s", final.Status)
+	}
+	page, err := h.store.ListExternalOperations(context.Background(), storage.ExternalOperationFilter{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Status != storage.ExternalConfirmed {
+		t.Fatalf("external ops = %+v", page.Items)
+	}
+	events, err := h.store.ListEvents(context.Background(), run.ID, 0, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, ev := range events {
+		counts[ev.Type]++
+	}
+	if counts["EXTERNAL_OPERATION_IN_FLIGHT"] != 1 || counts["EXTERNAL_OPERATION_CONFIRMED"] != 1 {
+		t.Fatalf("external audit events = %+v", counts)
+	}
+}
+
+func TestExternalOperationTimeoutRequiresReconciliation(t *testing.T) {
+	mb := &externalFailingMailbox{
+		MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),
+		err:             errs.New(errs.ClassTimeoutUncertain, "test.mailbox", "timeout after write"),
+	}
+	h := newHarness(t, func(_ *workflow.Config, reg *provider.Registry) {
+		reg.AddMailbox(mb)
+	})
+	run := h.create(t, sandboxRequest("external-timeout-1"))
+	_ = h.waitTerminal(t, run.ID, 700)
+	page, err := h.store.ListExternalOperations(context.Background(), storage.ExternalOperationFilter{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Status != storage.ExternalOutcomeUnknown {
+		t.Fatalf("external timeout ops = %+v", page.Items)
+	}
+	if got := mb.calls.Load(); got != 1 {
+		t.Fatalf("provider CreateAddress calls = %d after OUTCOME_UNKNOWN; automatic retry must not call it again", got)
+	}
+}
+
+func TestExternalOperationDuplicateNeedsOperatorReconciliation(t *testing.T) {
+	h := newHarness(t, func(_ *workflow.Config, reg *provider.Registry) {
+		reg.AddMailbox(&externalFailingMailbox{
+			MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),
+			err:             errs.New(errs.ClassConflict, "test.mailbox", "address already exists"),
+		})
+	})
+	run := h.create(t, sandboxRequest("external-conflict-1"))
+	_ = h.waitTerminal(t, run.ID, 700)
+	page, err := h.store.ListExternalOperations(context.Background(), storage.ExternalOperationFilter{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Status != storage.ExternalReconciliationReq {
+		t.Fatalf("external conflict ops = %+v", page.Items)
+	}
+}
+
+func TestExternalOperationCancellationIsUnknown(t *testing.T) {
+	h := newHarness(t, func(_ *workflow.Config, reg *provider.Registry) {
+		reg.AddMailbox(&externalFailingMailbox{
+			MailboxProvider: fake.NewMailbox(fake.NewWorld(nil)),
+			err:             errs.New(errs.ClassCancelled, "test.mailbox", "cancelled after request start"),
+		})
+	})
+	run := h.create(t, sandboxRequest("external-cancel-1"))
+	_ = h.waitTerminal(t, run.ID, 700)
+	page, err := h.store.ListExternalOperations(context.Background(), storage.ExternalOperationFilter{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Status != storage.ExternalOutcomeUnknown {
+		t.Fatalf("cancel-after-gate must be reconciliation-required: %+v", page.Items)
+	}
+}
+
+func TestEngineStartFailsClosedWhenRecoveryFails(t *testing.T) {
+	h := newHarness(t, nil)
+	// Closing the store makes lifecycle recovery fail; no worker may start.
+	_ = h.store.Close()
+	err := h.engine.Start(context.Background())
+	if err == nil {
+		t.Fatal("Start succeeded despite lifecycle recovery failure")
+	}
+	// Stop after a failed Start must be a safe no-op (no workers were started).
+	if stopErr := h.engine.Stop(); stopErr != nil {
+		t.Fatalf("Stop after failed Start = %v", stopErr)
+	}
+}
+
+func TestEngineStartRejectsSecondStart(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := h.engine.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.Start(ctx); !errors.Is(err, workflow.ErrEngineAlreadyStarted) {
+		t.Fatalf("second Start = %v, want ErrEngineAlreadyStarted", err)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineConcurrentStartSerializesLifecycle(t *testing.T) {
+	h := newHarness(t, func(cfg *workflow.Config, _ *provider.Registry) {
+		cfg.TickInterval = time.Hour
+	})
+	const callers = 8
+	results := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() { results <- h.engine.Start(context.Background()) }()
+	}
+	started, rejected := 0, 0
+	for i := 0; i < callers; i++ {
+		err := <-results
+		switch {
+		case err == nil:
+			started++
+		case errors.Is(err, workflow.ErrEngineAlreadyStarted):
+			rejected++
+		default:
+			t.Fatalf("unexpected concurrent Start error: %v", err)
+		}
+	}
+	if started != 1 || rejected != callers-1 {
+		t.Fatalf("concurrent Start results: started=%d rejected=%d", started, rejected)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEngineStopIsIdempotentAndRestartRejected(t *testing.T) {
+	h := newHarness(t, func(cfg *workflow.Config, _ *provider.Registry) {
+		cfg.TickInterval = time.Hour
+	})
+	if err := h.engine.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatalf("first Stop: %v", err)
+	}
+	if err := h.engine.Stop(); err != nil {
+		t.Fatalf("second Stop: %v", err)
+	}
+	if err := h.engine.Start(context.Background()); !errors.Is(err, workflow.ErrEngineStopped) {
+		t.Fatalf("Start after Stop = %v, want ErrEngineStopped", err)
+	}
+}
+
+func TestEngineConcurrentStopPreservesRecoveryError(t *testing.T) {
+	h := newHarness(t, func(cfg *workflow.Config, _ *provider.Registry) {
+		cfg.TickInterval = time.Hour
+	})
+	if err := h.engine.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	const callers = 8
+	results := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() { results <- h.engine.Stop() }()
+	}
+	var first string
+	for i := 0; i < callers; i++ {
+		err := <-results
+		if err == nil {
+			t.Fatal("Stop lost the lifecycle recovery error")
+		}
+		if first == "" {
+			first = err.Error()
+		} else if err.Error() != first {
+			t.Fatalf("Stop callers observed different errors: %q vs %q", first, err.Error())
+		}
+	}
+	if !strings.Contains(first, "stop recovery") {
+		t.Fatalf("unexpected Stop error: %s", first)
+	}
 }

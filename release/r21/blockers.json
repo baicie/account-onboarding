@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "status": "NOT_READY",
+  "release_authorized": false,
+  "blockers": [
+    {
+      "id": "workflow-definition-trust",
+      "severity": "P2",
+      "status": "BLOCKED",
+      "reason": "protected ruleset/baseline/admin required; candidate branch workflow content not independently trusted"
+    },
+    {
+      "id": "browser-full-matrix",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "docker-k8s-acl",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "arm64-full",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "trusted-build-provenance",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "historical-backup",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "pr-merge-dryrun",
+      "severity": "P2",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "live-ghcr-release-production",
+      "severity": "P1",
+      "status": "BLOCKED"
+    }
+  ]
+}

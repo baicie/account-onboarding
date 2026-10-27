@@ -1,0 +1,11 @@
+DRY RUN — no network calls, no credentials read.
+  test_address:       r10-test@example.test
+  allowlisted:        yes
+  plan:               validate config -> health/readiness -> list existing external
+                      operations -> STOP (manual authorization required before
+                      create/send/delete)
+  request_budget:     10
+  time_budget_sec:    120
+  fail_closed:        --live requires allowlist, HTTPS base URL and readable
+                      admin token file; mailbox create/send/delete are NOT
+                      implemented without a separately reviewed change window.

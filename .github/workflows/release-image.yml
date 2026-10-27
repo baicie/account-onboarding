@@ -1,0 +1,333 @@
+# Release candidate + guarded publish pipeline.
+#
+# Candidate runs on a development branch and produces verifiable artifacts with
+# no production side effects (no push). Publish is a separate job that requires
+# an explicit environment approval and is refused unless publish=true, a valid
+# tag, an allowed ref, and candidate artifacts matching the same commit.
+name: release-image
+on:
+  push:
+    branches: [feat/r9-release-hardening, feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure, feat/r16-r17-final-sandbox-release-readiness, feat/r18-final-release-candidate-closure, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification, feat/r22-product-first-final-acceptance]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to GHCR (requires protected Environment approval)"
+        type: boolean
+        default: false
+      tag:
+        description: "Immutable release tag (required when publish=true)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.10"
+          cache: true
+      - name: Verify source
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          make verify
+      - name: Publish gate static audit (no publish)
+        run: bash tests/r10/publish_gate_audit.sh
+      - name: Unit / race / targeted reconciliation tests
+        run: |
+          set -euo pipefail
+          go test ./... -race -count=1
+          go test ./internal/storage/ -run 'TestExternalOperation' -count=1
+          go test ./internal/api/ -run 'TestExternalOperation' -count=1
+      - name: Build candidate (no push)
+        run: |
+          set -euo pipefail
+          COMMIT="$(git rev-parse HEAD)"
+          mkdir -p candidate
+          docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$COMMIT" -t account-onboarding:candidate .
+          docker image inspect account-onboarding:candidate > candidate/image-inspect.json
+          docker image inspect --format '{{.Id}}' account-onboarding:candidate > candidate/image-id.txt
+          docker save account-onboarding:candidate -o candidate/image.tar
+          echo "$COMMIT" > candidate/commit.txt
+          docker run --rm account-onboarding:candidate version | tee candidate/version.txt
+          grep -q "commit $COMMIT" candidate/version.txt
+      - name: Supply-chain gates / SBOM / provenance
+        run: |
+          set -euo pipefail
+          bash scripts/supply_chain.sh account-onboarding:candidate candidate/supply
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          c=pathlib.Path('candidate')
+          commit=(c/'commit.txt').read_text().strip()
+          image_id=(c/'image-id.txt').read_text().strip()
+          sbom=hashlib.sha256((c/'supply'/'sbom.cdx.json').read_bytes()).hexdigest()
+          meta=json.loads((c/'supply'/'metadata.json').read_text())
+          prov={"commit":commit,"image_id":image_id,"image_tar_sha256":hashlib.sha256((c/'image.tar').read_bytes()).hexdigest(),
+                "sbom_sha256":sbom,"base_image_refs":meta.get("base_image_refs"),
+                "base_image_digests":meta.get("base_image_digests"),"platform":meta.get("platform"),
+                "publish_default":False}
+          (c/'candidate-provenance.json').write_text(json.dumps(prov,indent=2))
+          print(json.dumps(prov,indent=2))
+          PY
+      - name: Verify candidate artifact identity
+        run: bash tests/r13/candidate_identity.sh candidate
+
+      - name: Candidate vulnerability / lint gates
+        env:
+          EVIDENCE: ${{ github.workspace }}/candidate/supply
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... | tee "$EVIDENCE/govulncheck.txt"
+          shellcheck -S error -x scripts/*.sh tests/r51/*.sh tests/r8/*.sh tests/r9/*.sh | tee "$EVIDENCE/shellcheck.txt"
+          V=0.76.1
+          ART="trivy_${V}_Linux-64bit.tar.gz"
+          mkdir -p /tmp/trivy-install && cd /tmp/trivy-install
+          curl -sSfL -o "$ART" "https://github.com/aquasecurity/trivy/releases/download/v${V}/${ART}"
+          curl -sSfL -o checksums.txt "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_checksums.txt"
+          grep " ${ART}$" checksums.txt | sha256sum -c -
+          tar -xzf "$ART" -C /usr/local/bin trivy
+          trivy --version > "$EVIDENCE/trivy-version.txt"
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 \
+            --format table -o "$EVIDENCE/trivy-critical.txt" account-onboarding:candidate
+          trivy image --severity HIGH --ignore-unfixed --exit-code 0 \
+            --format table -o "$EVIDENCE/trivy-high.txt" account-onboarding:candidate || true
+          {
+            echo "govulncheck: v1.1.4; shellcheck: -S error; trivy: v0.76.1 checksum-verified"
+            echo "CRITICAL blocks, HIGH report-only, --ignore-unfixed used for both."
+            echo "scanned_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "scanner_db_updated_at=$(python3 -c 'import json,glob;fs=glob.glob("/home/runner/.cache/trivy/**/metadata.json",recursive=True);print(json.load(open(fs[0])).get("UpdatedAt","unknown") if fs else "unknown")')"
+          } > "$EVIDENCE/scanner-policy.txt"
+      - name: Publish guard (candidate is never publishable)
+        run: |
+          echo "Candidate job has no packages:write token and never logs in/pushes."
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: candidate/
+          retention-days: 14
+
+  same-artifact-dry-run:
+    needs: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: candidate
+      - name: OCI registry/sign/attest against the same candidate artifact
+        run: |
+          set -uo pipefail
+          mkdir -p same-artifact-evidence
+          set +e
+          CANDIDATE_ARTIFACT_DIR="$PWD/candidate"             bash tests/r10/registry_dry_run.sh 2>&1 | tee same-artifact-evidence/dry-run.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          grep -q 'SAME_CANDIDATE_ARTIFACT=' same-artifact-evidence/dry-run.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' same-artifact-evidence/dry-run.log
+          exit "$rc"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: same-artifact-dry-run-evidence
+          path: same-artifact-evidence/
+
+  trusted-preflight:
+    needs: [candidate, same-artifact-dry-run]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - name: Download frozen candidate and same-artifact evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: candidate
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: same-artifact-dry-run-evidence
+          path: same-artifact
+      - name: Wait for required workflows on exact SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 40); do
+            missing=0
+            for wf in ci r12-integration r16-sandbox-e2e r17-browser-e2e supply-chain staging-acceptance; do
+              case "$wf" in
+                ci) path=.github/workflows/ci.yml ;;
+                r12-integration) path=.github/workflows/r11-integration.yml ;;
+                r16-sandbox-e2e) path=.github/workflows/r16-sandbox-e2e.yml ;;
+                r17-browser-e2e) path=.github/workflows/r17-browser-e2e.yml ;;
+                supply-chain) path=.github/workflows/supply-chain.yml ;;
+                staging-acceptance) path=.github/workflows/staging-acceptance.yml ;;
+              esac
+              n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" --jq "[.workflow_runs[] | select(.name==\"$wf\" and .event==\"push\" and .path==\"$path\" and .conclusion==\"success\")] | length")
+              [ "$n" -ge 1 ] || missing=$((missing+1))
+            done
+            [ "$missing" = 0 ] && exit 0
+            sleep 15
+          done
+          echo "required workflows did not all succeed on $GITHUB_SHA" >&2
+          exit 1
+      - name: Trusted GitHub API preflight
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/release_preflight.py --candidate-dir candidate --same-artifact-evidence same-artifact             --expected-commit "$GITHUB_SHA" --trusted-gates --api-base "$GITHUB_API_URL"             --token-env GITHUB_TOKEN --out trusted-preflight.json
+      - name: Upload trusted preflight evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: r19-trusted-preflight-${{ github.sha }}
+          path: trusted-preflight.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  publish:
+    needs: [candidate, same-artifact-dry-run, trusted-preflight]
+    if: ${{ inputs.publish == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate explicit release authorization
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$TAG" || { echo "refusing publish without tag"; exit 1; }
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "invalid release tag"; exit 1 ;; esac
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            refs/heads/main) ;;
+            *) echo "publish only from an allowed protected tag or main"; exit 1 ;;
+          esac
+      - name: Download and verify candidate matches HEAD
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: candidate
+      - name: Download same-artifact dry-run evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: same-artifact-dry-run-evidence
+          path: same-artifact-evidence
+      - name: Require same-artifact evidence before publish
+        run: |
+          set -euo pipefail
+          grep -q '^SAME_CANDIDATE_ARTIFACT=' same-artifact-evidence/dry-run.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' same-artifact-evidence/dry-run.log
+          grep -q 'account-onboarding:candidate' same-artifact-evidence/dry-run.log
+      - name: Download and revalidate trusted preflight evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: r19-trusted-preflight-${{ github.sha }}
+          path: trusted-preflight
+      - name: Revalidate trusted preflight before any publish step
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_trusted_artifact.py \
+            --preflight trusted-preflight/trusted-preflight.json \
+            --candidate candidate --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Verify candidate integrity
+        run: |
+          set -euo pipefail
+          COMMIT="$(git rev-parse HEAD)"
+          test "$(cat candidate/commit.txt)" = "$COMMIT"
+          test "$(sha256sum candidate/image.tar | awk '{print $1}')" = \
+               "$(python3 -c 'import json;print(json.load(open("candidate/candidate-provenance.json"))["image_tar_sha256"])')"
+          test "$(cat candidate/image-id.txt)" = \
+               "$(python3 -c 'import json;print(json.load(open("candidate/candidate-provenance.json"))["image_id"])')"
+          docker load -i candidate/image.tar
+          docker run --rm account-onboarding:candidate version | grep -q "commit $COMMIT"
+      - name: Assert candidate scan evidence before publish
+        run: |
+          set -euo pipefail
+          test -f candidate/supply/govulncheck.txt
+          test -f candidate/supply/shellcheck.txt
+          test -f candidate/supply/trivy-critical.txt
+          grep -q "No vulnerabilities found" candidate/supply/govulncheck.txt
+          if grep -qE "CVE-[0-9]{4}|GHSA-" candidate/supply/trivy-critical.txt; then
+            echo "refusing publish: candidate CRITICAL scan contains vulnerabilities"; exit 1
+          fi
+          if [ -s candidate/supply/shellcheck.txt ]; then
+            echo "refusing publish: candidate ShellCheck errors"; exit 1
+          fi
+          echo "candidate scan evidence present and clean"
+      - name: Re-scan loaded image
+        run: |
+          set -euo pipefail
+          bash scripts/supply_chain.sh account-onboarding:candidate publish-scan
+      - name: Log in to GHCR and push by digest
+        id: push
+        env:
+          TAG: ${{ inputs.tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          IMAGE="ghcr.io/${{ github.repository }}:${TAG}"
+          docker tag account-onboarding:candidate "$IMAGE"
+          docker push "$IMAGE"
+          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+      - name: Sign and attest pushed digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          V=2.4.1
+          mkdir -p /tmp/cosign-install && cd /tmp/cosign-install
+          curl -fsSL -o cosign-linux-amd64 "https://github.com/sigstore/cosign/releases/download/v${V}/cosign-linux-amd64"
+          curl -fsSL -o cosign_checksums.txt "https://github.com/sigstore/cosign/releases/download/v${V}/cosign_checksums.txt"
+          grep " cosign-linux-amd64$" cosign_checksums.txt | sha256sum -c -
+          install -m 0755 cosign-linux-amd64 /usr/local/bin/cosign
+          cosign version
+          cosign sign --yes "$DIGEST"
+          cosign attest --yes --predicate candidate/candidate-provenance.json --type custom "$DIGEST"
+      - name: Emit immutable rollback digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p publish-evidence
+          printf 'digest=%s\nimage=%s\ncommit=%s\ntag=%s\n' \
+            "$DIGEST" "${{ steps.push.outputs.image }}" "$(git rev-parse HEAD)" "${{ inputs.tag }}" \
+            > publish-evidence/rollback.txt
+          cat publish-evidence/rollback.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-publish-${{ inputs.tag }}
+          path: publish-evidence/

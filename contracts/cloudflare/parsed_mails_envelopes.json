@@ -1,0 +1,16 @@
+{
+  "description": "Provider-compatible parsed_mails list envelopes. Used by both the Go Cloudflare normalizer and the shell preflight mock so a fake green cannot diverge from the provider contract. This is not evidence of the live Worker schema.",
+  "item": {"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"},
+  "cases": [
+    {"name":"bare_array", "body":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]},
+    {"name":"results", "body":{"results":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]}},
+    {"name":"parsed_mails", "body":{"parsed_mails":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]}},
+    {"name":"mails", "body":{"mails":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]}},
+    {"name":"messages", "body":{"messages":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]}},
+    {"name":"data", "body":{"data":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]}},
+    {"name":"items", "body":{"items":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]}},
+    {"name":"list", "body":{"list":[{"id":"m1","from":"sender@example.test","to":"r11-test@example.test","subject":"fixture","text":"body","received_at":"2026-01-01T00:00:00Z"}]}},
+    {"name":"null_list", "body":{"results":null}},
+    {"name":"empty_list", "body":{"results":[]}}
+  ]
+}

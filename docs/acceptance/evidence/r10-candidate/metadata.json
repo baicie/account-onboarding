@@ -1,0 +1,13 @@
+{
+  "commit": "d9bcc6fd4568b713c2dfec525dc15ee9b586f6ea",
+  "go_version": "go1.26.10",
+  "image_id": "4133fba1e4cc04fa417994df5fb52592d757c4b6d06a9818f88de3de34423891",
+  "image_size_bytes": 97884875,
+  "platform": "linux/amd64",
+  "user": "10001:10001",
+  "binary_sha256": "c15fcbaa59e91523e5a3c9bfb9258552170c603c5eca360f1ea89892497e4466",
+  "base_image_refs": "golang_image=golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af runtime_image=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "base_image_digests": "golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af; debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+  "sbom_sha256": "6770fc31ed8fbc70d4c9067787d8087c9237cd5ae1aebe3515309f97b01a1d5c",
+  "note": "Image ID is local; no registry manifest digest unless the image was actually pushed. Base-image digests are NOT_RUN when the builder tag is not resolvable."
+}

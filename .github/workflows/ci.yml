@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification, feat/r22-product-first-final-acceptance]
   pull_request:
 
 permissions:
@@ -13,10 +13,10 @@ jobs:
     name: build vet test-race
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.25.x"
           cache: true
@@ -33,12 +33,21 @@ jobs:
       - name: Provider contract tests
         run: go test ./internal/provider/... ./internal/mailx/... -race -count=1
 
+      - name: Secret materializer tests
+        run: bash tests/r15/secret_materialize.sh
+
+      - name: Release preflight fail-closed tests
+        run: bash tests/r18/release_preflight_test.sh
+
+      - name: Publish trusted artifact revalidation tests
+        run: python3 tests/r21/publish_revalidation_test.py
+
   formatting:
     name: gofmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.25.x"
       - name: Check formatting
@@ -54,6 +63,6 @@ jobs:
     name: validate compose manifest (no daemon)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: docker compose config
         run: docker compose -f deploy/compose.yaml config >/dev/null

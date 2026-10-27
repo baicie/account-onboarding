@@ -41,6 +41,11 @@ var ErrNotFound = errors.New("not found")
 // different request body.
 var ErrIdempotencyConflict = errors.New("idempotency key reused with a different request")
 
+// ErrSchemaTooNew means the database was migrated by a newer build. Refusing to
+// start is the rollback safety rule: an older binary must not run against a
+// schema it does not know and potentially corrupt newer data.
+var ErrSchemaTooNew = errors.New("database schema is newer than this binary supports")
+
 // Options configures the store.
 type Options struct {
 	Path string
@@ -68,6 +73,9 @@ type Store struct {
 	redactor *security.Redactor
 	now      func() time.Time
 	validate func(from, to string) error
+	// sweepHook is an optional test-only synchronization point used by
+	// SweepDeadlines race tests; nil in production.
+	sweepHook func()
 }
 
 // Open opens the database, applies pragmas and runs migrations.
@@ -89,6 +97,18 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	}
 	if err := os.MkdirAll(filepath.Dir(opts.Path), 0o750); err != nil {
 		return nil, fmt.Errorf("storage: create data dir: %w", err)
+	}
+	// An interrupted restore removes the old database and leaves a marker.
+	// Opening the path would silently create an empty schema-6 database that then
+	// reports healthy, so refuse instead: the operator must restore a snapshot or
+	// clear the marker deliberately.
+	if opts.Path != ":memory:" {
+		if _, statErr := os.Stat(opts.Path); errors.Is(statErr, os.ErrNotExist) {
+			marker := opts.Path + ".restore-in-progress"
+			if _, mErr := os.Stat(marker); mErr == nil {
+				return nil, fmt.Errorf("storage: interrupted restore: %s does not exist and %s is present; restore a snapshot or remove the marker", opts.Path, marker)
+			}
+		}
 	}
 	writeDSN := dsn(opts.Path, true)
 	readDSN := dsn(opts.Path, false)
@@ -254,6 +274,15 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&applied); err != nil {
 		return fmt.Errorf("storage: read schema version: %w", err)
 	}
+	maxKnown := 0
+	for _, m := range list {
+		if m.version > maxKnown {
+			maxKnown = m.version
+		}
+	}
+	if applied > maxKnown {
+		return fmt.Errorf("%w: database version %d > binary supports %d", ErrSchemaTooNew, applied, maxKnown)
+	}
 	for _, m := range list {
 		if m.version <= applied {
 			continue
@@ -277,6 +306,10 @@ type Health struct {
 	// from migration 0003 is present. A missing table means cookie sessions
 	// cannot be revoked reliably, so /readyz must not report ready.
 	SessionRevocationsReady bool `json:"session_revocations_ready"`
+	// ExternalOperationsReady reports that the migration-0004 write-ahead
+	// external-operation gate is present. Without it an ambiguous remote write
+	// could be retried unsafely, so /readyz must not report ready.
+	ExternalOperationsReady bool `json:"external_operations_ready"`
 }
 
 // Health verifies schema version, WAL mode and write capability.
@@ -294,6 +327,12 @@ func (s *Store) Health(ctx context.Context) (Health, error) {
 		return h, fmt.Errorf("probe session revocation table: %w", err)
 	}
 	h.SessionRevocationsReady = tables == 1
+	var extTables int
+	if err := s.readDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='external_operations'`).Scan(&extTables); err != nil {
+		return h, fmt.Errorf("probe external operations table: %w", err)
+	}
+	h.ExternalOperationsReady = extTables == 1
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return h, fmt.Errorf("begin write probe: %w", err)

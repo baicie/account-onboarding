@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -40,6 +41,7 @@ type env struct {
 	reg    *provider.Registry
 	world  *fake.World
 	sec    *secrets.Service
+	server *api.Server
 	log    *slog.Logger
 	signer *security.SessionSigner
 }
@@ -116,7 +118,7 @@ func newEnv(t *testing.T, mutate func(*config.Config, *provider.Registry)) *env 
 		_ = store.Close()
 	})
 	return &env{ts: ts, client: client, cfg: cfg, store: store, engine: engine, reg: reg,
-		world: world, sec: sec, log: log, signer: signer}
+		server: server, world: world, sec: sec, log: log, signer: signer}
 }
 
 func (e *env) request(t *testing.T, method, path string, body any, token string, headers map[string]string) (int, []byte) {
@@ -582,7 +584,7 @@ func TestSecurityHeaders(t *testing.T) {
 	checks := map[string]string{
 		"X-Content-Type-Options": "nosniff",
 		"X-Frame-Options":        "DENY",
-		"Referrer-Policy":        "no-referrer",
+		"Referrer-Policy":        "same-origin",
 	}
 	for header, want := range checks {
 		if got := resp.Header.Get(header); got != want {
@@ -936,5 +938,282 @@ func TestConcurrentHTTPReadsAndWrites(t *testing.T) {
 	}
 	if len(page.Items) < writers {
 		t.Fatalf("persisted runs = %d, want >= %d", len(page.Items), writers)
+	}
+}
+
+func TestExternalOperationDiagnosticsAdminOnly(t *testing.T) {
+	e := newEnv(t, nil)
+	status, body := e.request(t, http.MethodGet, "/v1/ops/external", nil, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("admin GET /v1/ops/external = %d %s", status, body)
+	}
+	var resp struct {
+		Items                    []any            `json:"items"`
+		StatusCounts             map[string]int64 `json:"status_counts"`
+		TotalNeedsReconciliation int64            `json:"total_needs_reconciliation"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode: %v (%s)", err, body)
+	}
+	if len(resp.Items) != 0 || resp.TotalNeedsReconciliation != 0 || len(resp.StatusCounts) != 0 {
+		t.Fatalf("unexpected empty page: %+v", resp)
+	}
+	viewer := "viewer-token-0123456789"
+	e.cfg.ReadOnlyToken = viewer
+	// Rebuild the server so the viewer token is wired into auth.
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) {
+		cfg.ReadOnlyToken = viewer
+	})
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/external", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer GET /v1/ops/external = %d, want 403", status)
+	}
+}
+
+func TestExternalOperationResolveAPI(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	run, created, err := e.store.CreateRun(ctx, storage.CreateRunParams{
+		ID: security.NewID(), OwnerID: "operator", Template: "test-template",
+		Mode: "sandbox-e2e", IdempotencyKey: "resolve-api-1",
+		ProviderSnapshotJSN: `{}`, RequestFingerprint: "fp",
+		DeadlineMS: time.Now().Add(time.Hour).UnixMilli(),
+		Steps:      []storage.StepSeed{{Name: "validate"}},
+	})
+	if err != nil || !created {
+		t.Fatalf("create run: %v created=%v", err, created)
+	}
+	claim, err := e.store.ClaimNext(ctx, storage.ClaimRequest{
+		Owner: "worker-1", LeaseTTL: time.Minute,
+		RunnableStatuses: []string{"CREATED", "VALIDATING"},
+		ActiveState: func(template, step string) (string, bool) {
+			return "VALIDATING", true
+		},
+	})
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %v %v", err, claim)
+	}
+	op, err := e.store.BeginExternalOperation(ctx, storage.BeginExternalOperationParams{
+		RunID: run.ID, StepName: claim.StepName, Provider: "fake-mailbox",
+		OperationType: "mailbox.create", Fingerprint: "0123456789abcdef",
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = e.store.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.CompleteExternalOperation(ctx, storage.CompleteExternalOperationParams{
+		OperationKey: op.OperationKey, Status: storage.ExternalOutcomeUnknown, ErrorClass: "TIMEOUT_UNCERTAIN",
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation, OperationVersion: op.Version,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	op, err = e.store.GetExternalOperation(ctx, op.OperationKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{
+		"resolution": "RESOURCE_CONFIRMED", "reason": "operator verified the mailbox",
+		"expected_version": op.Version, "evidence_reference": "ticket-1",
+	}
+	status, raw := e.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", body, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("resolve = %d %s", status, raw)
+	}
+	var resolved storage.ExternalOperation
+	if err := json.Unmarshal(raw, &resolved); err != nil || resolved.Status != storage.ExternalResolved {
+		t.Fatalf("resolve response = %+v err=%v", resolved, err)
+	}
+	audits, err := e.store.ListAudit(ctx, 10)
+	if err != nil || len(audits) == 0 {
+		t.Fatalf("audit list: %v %+v", err, audits)
+	}
+	if audits[0].Action != "external_operation.resolve" || audits[0].RunID != run.ID ||
+		!strings.HasPrefix(audits[0].Actor, "bearer:admin:sha256:") {
+		t.Fatalf("audit identity/run binding = %+v", audits[0])
+	}
+	// Duplicate/stale resolution is a conflict.
+	if status, _ := e.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", body, adminToken, nil); status != http.StatusConflict {
+		t.Fatalf("duplicate resolve = %d, want 409", status)
+	}
+	// Missing reason is validation.
+	bad := map[string]any{"resolution": "UNRESOLVED", "expected_version": op.Version}
+	if status, _ := e.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", bad, adminToken, nil); status != http.StatusBadRequest {
+		t.Fatalf("missing reason = %d, want 400", status)
+	}
+	// Viewer cannot resolve.
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodPost, "/v1/ops/external/"+op.ID+"/resolve", body, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer resolve = %d, want 403", status)
+	}
+}
+
+func TestOpsMetricsAdminOnlyAndSecretFree(t *testing.T) {
+	e := newEnv(t, nil)
+	status, body := e.request(t, http.MethodGet, "/v1/ops/metrics", nil, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("admin metrics = %d %s", status, body)
+	}
+	var resp struct {
+		Metrics map[string]any `json:"metrics"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode metrics: %v (%s)", err, body)
+	}
+	for _, forbidden := range []string{"token", "jwt", "email", "password", "address", "oauth_state"} {
+		if _, ok := resp.Metrics[forbidden]; ok {
+			t.Fatalf("metrics exposed forbidden label %q", forbidden)
+		}
+	}
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/metrics", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer metrics = %d, want 403", status)
+	}
+}
+
+func seedPendingExternalOperation(t *testing.T, e *env) (storage.ExternalOperation, storage.Run, storage.Claim) {
+	t.Helper()
+	ctx := context.Background()
+	run, created, err := e.store.CreateRun(ctx, storage.CreateRunParams{
+		ID: security.NewID(), OwnerID: "operator", Template: "test-template",
+		Mode: "sandbox-e2e", IdempotencyKey: "ui-seed-" + security.NewID(),
+		ProviderSnapshotJSN: `{}`, RequestFingerprint: "fp",
+		DeadlineMS: time.Now().Add(time.Hour).UnixMilli(),
+		Steps:      []storage.StepSeed{{Name: "validate"}},
+	})
+	if err != nil || !created {
+		t.Fatalf("create run: %v created=%v", err, created)
+	}
+	claim, err := e.store.ClaimNext(ctx, storage.ClaimRequest{
+		Owner: "worker-ui", LeaseTTL: time.Minute,
+		RunnableStatuses: []string{"CREATED", "VALIDATING"},
+		ActiveState:      func(template, step string) (string, bool) { return "VALIDATING", true },
+	})
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %v %v", err, claim)
+	}
+	op, err := e.store.BeginExternalOperation(ctx, storage.BeginExternalOperationParams{
+		RunID: run.ID, StepName: claim.StepName, Provider: "fake-mailbox",
+		OperationType: "mailbox.create", Fingerprint: "0123456789abcdef",
+		LeaseOwner: claim.Owner, FencingGeneration: claim.Generation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = e.store.MarkExternalOperationInFlight(ctx, op.OperationKey, claim.Owner, claim.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = e.store.CompleteExternalOperation(ctx, storage.CompleteExternalOperationParams{
+		OperationKey: op.OperationKey, Status: storage.ExternalOutcomeUnknown,
+		ErrorClass: "TIMEOUT_UNCERTAIN", LeaseOwner: claim.Owner,
+		FencingGeneration: claim.Generation, OperationVersion: op.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return op, run, *claim
+}
+
+func TestReconciliationUISecurityAndAuditHistory(t *testing.T) {
+	e := newEnv(t, nil)
+	op, run, _ := seedPendingExternalOperation(t, e)
+	ctx := context.Background()
+	// A malicious-looking reason is persisted and must be rendered escaped.
+	if _, err := e.store.ResolveExternalOperation(ctx, op.ID, storage.ExternalResolution{
+		Resolution: "UNRESOLVED", Reason: `<script>alert("x")</script>`,
+		EvidenceReference: "ticket-xss", ExpectedVersion: op.Version,
+		Actor: "bearer:admin:test", RequestedAtMS: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	status, body := e.request(t, http.MethodGet, "/v1/ops/external/"+op.ID+"/audit", nil, adminToken, nil)
+	if status != http.StatusOK || !strings.Contains(string(body), "external_operation.review") {
+		t.Fatalf("admin audit = %d %s", status, body)
+	}
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/external/"+op.ID+"/audit", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer audit = %d, want 403", status)
+	}
+	// Unauthenticated UI redirects.
+	resp, err := e.client.Get(e.ts.URL + "/ui/ops/external")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther || !strings.Contains(resp.Header.Get("Location"), "/ui/login") {
+		t.Fatalf("anonymous UI = %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	// Login obtains a session cookie in the jar.
+	req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/login", strings.NewReader(url.Values{"token": {adminToken}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", e.ts.URL)
+	resp, err = e.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login = %d", resp.StatusCode)
+	}
+	resp, err = e.client.Get(e.ts.URL + "/ui/ops/external/" + op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("detail = %d %s", resp.StatusCode, detail)
+	}
+	if strings.Contains(string(detail), `<script>alert("x")</script>`) {
+		t.Fatal("detail page embedded raw operator text")
+	}
+	if !strings.Contains(string(detail), "&lt;script&gt;") {
+		t.Fatal("detail page did not escape operator text")
+	}
+	if !strings.Contains(string(detail), "external_operation.review") {
+		t.Fatal("detail page missing audit history")
+	}
+	if !strings.Contains(string(detail), run.ID) {
+		t.Fatal("detail page missing run link")
+	}
+	// Cookie mutation without CSRF is rejected.
+	noCSRF, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/ops/external/"+op.ID+"/resolve", strings.NewReader(url.Values{
+		"resolution": {"UNRESOLVED"}, "reason": {"x"}, "expected_version": {strconv.FormatInt(op.Version+1, 10)},
+	}.Encode()))
+	noCSRF.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	noCSRF.Header.Set("Origin", e.ts.URL)
+	resp, err = e.client.Do(noCSRF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("UI resolve without CSRF = %d, want 403", resp.StatusCode)
+	}
+}
+
+func TestOpsAlertsAdminOnly(t *testing.T) {
+	e := newEnv(t, nil)
+	status, body := e.request(t, http.MethodGet, "/v1/ops/alerts", nil, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("admin alerts = %d %s", status, body)
+	}
+	var resp struct {
+		Alerts []map[string]any `json:"alerts"`
+		Count  int              `json:"count"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Count != len(resp.Alerts) {
+		t.Fatalf("alerts shape: %v %s", err, body)
+	}
+	viewer := "viewer-token-0123456789"
+	e2 := newEnv(t, func(cfg *config.Config, _ *provider.Registry) { cfg.ReadOnlyToken = viewer })
+	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/alerts", nil, viewer, nil); status != http.StatusForbidden {
+		t.Fatalf("viewer alerts = %d, want 403", status)
 	}
 }

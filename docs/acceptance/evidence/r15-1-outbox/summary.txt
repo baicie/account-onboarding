@@ -1,0 +1,5 @@
+Outbox >500 closure:
+- ResolveAlertOutboxMissing: single transaction temp current-rule set; no ListAlertOutbox(500).
+- Only PENDING/IN_FLIGHT/RETRY_PENDING resolved; delivery history atomically RESOLVED.
+- Tests: 100 active behind 600 resolved; 1 active + 1000 delivered; 1000 active rule preservation; in-flight; Resolve/Claim race; reopen 700.
+- DELIVERED/DEAD_LETTER remain until explicit Resolve.

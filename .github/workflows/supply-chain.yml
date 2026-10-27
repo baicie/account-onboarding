@@ -1,0 +1,109 @@
+# Manual + R8-branch supply-chain gate. Builds (does not publish) an image, then
+# runs pinned scanners. A failed/missing scanner fails the job; NOT_RUN is
+# reported explicitly rather than treated as PASS.
+name: supply-chain
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/r8-staging-readiness
+      - feat/r9-release-hardening
+      - feat/r10-live-preflight
+      - feat/r11-integration-readiness
+      - feat/r12-acceptance-integrity
+      - feat/r13-integration-reliability
+      - feat/r14-security-release-closure
+      - feat/r14-1-final-safety-closure
+      - feat/r15-final-engineering-readiness
+      - feat/r15-1-outbox-security-closure
+      - feat/r16-r17-final-sandbox-release-readiness
+      - feat/r18-final-release-candidate-closure
+      - feat/r19-trusted-release-full-acceptance
+      - feat/r20-final-product-release-closure
+      - feat/r21-autonomous-final-qualification
+      - feat/r22-product-first-final-acceptance
+concurrency:
+  group: supply-chain
+  cancel-in-progress: false
+jobs:
+  supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      IMAGE: account-onboarding:r8-supply
+      EVIDENCE: ${{ github.workspace }}/supply-chain-evidence
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.10"
+      - name: Build image with provenance
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          docker build --build-arg VERSION=0.1.0 --build-arg COMMIT="$(git rev-parse HEAD)" -t "$IMAGE" .
+          docker image inspect "$IMAGE" > "$EVIDENCE/image-inspect.json"
+      - name: SBOM + provenance metadata
+        run: bash scripts/supply_chain.sh "$IMAGE" "$EVIDENCE"
+      - name: Go vulnerability scan (pinned)
+        run: |
+          set -euo pipefail
+          go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... | tee "$EVIDENCE/govulncheck.txt"
+      - name: Go module verification
+        run: go mod verify | tee "$EVIDENCE/go-mod-verify.txt"
+      - name: ShellCheck
+        run: |
+          set -euo pipefail
+          shellcheck -S error -x scripts/*.sh tests/r51/*.sh tests/r8/*.sh | tee "$EVIDENCE/shellcheck.txt"
+      - name: Syft SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.IMAGE }}
+          format: spdx-json
+          output-file: ${{ env.EVIDENCE }}/sbom.spdx.json
+          syft-version: v1.20.0
+          upload-artifact: false
+      - name: Install pinned Trivy
+        run: |
+          set -euo pipefail
+          V=0.76.1
+          ART="trivy_${V}_Linux-64bit.tar.gz"
+          mkdir -p /tmp/trivy-install
+          cd /tmp/trivy-install
+          curl -sSfL -o "$ART" "https://github.com/aquasecurity/trivy/releases/download/v${V}/${ART}"
+          curl -sSfL -o checksums.txt "https://github.com/aquasecurity/trivy/releases/download/v${V}/trivy_${V}_checksums.txt"
+          grep " ${ART}$" checksums.txt | sha256sum -c -
+          tar -xzf "$ART" -C /usr/local/bin trivy
+          trivy --version > "$EVIDENCE/trivy-version.txt"
+      - name: Trivy image scan (CRITICAL blocks; HIGH reported)
+        run: |
+          set -euo pipefail
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 \
+            --format table -o "$EVIDENCE/trivy-critical.txt" "$IMAGE"
+      - name: Trivy HIGH report (non-blocking, explicit)
+        if: always()
+        run: |
+          trivy image --severity HIGH --ignore-unfixed --exit-code 0 \
+            --format table -o "$EVIDENCE/trivy-high.txt" "$IMAGE" || true
+      - name: Record scanner versions and limits
+        if: always()
+        run: |
+          {
+            echo "govulncheck: pinned v1.1.4 via go run"
+            echo "syft: v1.20.0 via anchore/sbom-action"
+            echo "trivy: v0.76.1 binary (checksum verified); CRITICAL blocking, HIGH report-only; --ignore-unfixed used for both"
+            echo "scanned_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "scanner_db_updated_at=$(python3 -c 'import json,glob;fs=glob.glob("/home/runner/.cache/trivy/**/metadata.json",recursive=True);print(json.load(open(fs[0])).get("UpdatedAt","unknown") if fs else "unknown")')"
+
+            echo "shellcheck: $(shellcheck --version | head -2 | tr '\n' ' ')"
+            echo "scanner failure => job failure; absence => NOT_RUN, never PASS"
+          } > "$EVIDENCE/scanner-policy.txt"
+      - name: Upload supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: supply-chain-evidence-${{ github.run_id }}
+          path: supply-chain-evidence/
+          if-no-files-found: warn

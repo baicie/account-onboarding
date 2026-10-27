@@ -1,0 +1,2 @@
+ERROR: test address is not in the dedicated allowlist
+SELF-TEST PASS: live mode fails closed without allowlist
