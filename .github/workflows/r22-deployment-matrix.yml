@@ -9,7 +9,30 @@ on:
 permissions:
   contents: read
 
+# One writer per ref: two concurrent runs would fight over the kind cluster name
+# and the docker image tag even though both are now run-scoped.
+concurrency:
+  group: r22-deployment-matrix-@@{{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  materializer-faults:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Materializer unit regression (real filesystem)
+        run: sudo bash tests/r15/secret_materialize.sh
+      - name: Materializer fault injection (crash, signal, disk full, no lock)
+        run: sudo bash tests/r22/materializer_fault.sh
+      - name: No leftover target directories
+        if: always()
+        run: |
+          set -euo pipefail
+          leftovers=$(find /tmp -maxdepth 1 -name 'r22-matfault.*' -o -maxdepth 1 -name 'r22-*' | wc -l)
+          echo "leftover_temp_dirs=$leftovers"
+          test "$leftovers" -eq 0
+
   docker-secret:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -17,6 +40,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Real Docker secret materialization
         run: bash tests/r22/docker_secret.sh
+      - name: No leftover container, volume or image
+        if: always()
+        run: |
+          set -euo pipefail
+          docker ps -a --format '{{.Names}}' | grep -E '^r22-app-' && exit 1 || true
+          docker volume ls --format '{{.Name}}' | grep -E '^r22-data-' && exit 1 || true
+          docker images --format '{{.Repository}}' | grep -E '^r22-candidate$' && exit 1 || true
+          echo "no_docker_leftovers"
 
   posix-acl:
     runs-on: ubuntu-latest
@@ -44,5 +75,14 @@ jobs:
           sudo install -m 0755 "$(go env GOPATH)/bin/kind" /usr/local/bin/kind
           curl -fsSLo /tmp/kubectl https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl
           sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
-      - name: Real Kind projected Secret
+      - name: Real Kind projected Secret with rotation identity
         run: bash tests/r22/kind_secret.sh
+      - name: No leftover cluster or namespace
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "clusters: $(kind get clusters 2>/dev/null | tr '\n' ' ')"
+          if kind get clusters 2>/dev/null | grep -q '^r22-kind-'; then
+            echo "leftover kind cluster" >&2; exit 1
+          fi
+          echo "no_kind_leftovers"
