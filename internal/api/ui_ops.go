@@ -31,9 +31,11 @@ type opsExternalPage struct {
 	Items       []opsExternalRow
 	Status      string
 	Provider    string
+	RunID       string
 	NextCursor  string
 	TotalNeeds  int64
 	StatusCount map[string]int64
+	HasNext     bool
 }
 
 func parseInt64Form(r *http.Request, key string) (int64, error) {
@@ -48,9 +50,10 @@ func (s *Server) handleOpsExternalPage(w http.ResponseWriter, r *http.Request) {
 	info, _ := authInfoFrom(r)
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	provider := strings.TrimSpace(r.URL.Query().Get("provider"))
+	runID := strings.TrimSpace(r.URL.Query().Get("run_id"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	page, err := s.Store.ListExternalOperations(r.Context(), storage.ExternalOperationFilter{
-		Status: status, Provider: provider, Limit: 50, Cursor: cursor,
+		Status: status, Provider: provider, RunID: runID, Limit: 50, Cursor: cursor,
 	})
 	if err != nil {
 		http.Error(w, "could not load external operations", http.StatusInternalServerError)
@@ -59,8 +62,9 @@ func (s *Server) handleOpsExternalPage(w http.ResponseWriter, r *http.Request) {
 	data := opsExternalPage{
 		pageData: pageData{Title: "Reconciliation", Version: Version, CSRFToken: info.CSRF,
 			SignedIn: true, Actor: info.Actor},
-		Status: status, Provider: provider, NextCursor: page.NextCursor,
+		Status: status, Provider: provider, RunID: runID, NextCursor: page.NextCursor,
 		TotalNeeds: page.TotalNeedsReconciliation, StatusCount: page.StatusCounts,
+		HasNext: page.NextCursor != "",
 	}
 	for _, op := range page.Items {
 		data.Items = append(data.Items, opsExternalRow{
@@ -103,6 +107,9 @@ func (s *Server) handleOpsExternalResolveUI(w http.ResponseWriter, r *http.Reque
 	if v := strings.TrimSpace(r.FormValue("return_cursor")); v != "" {
 		back.Set("cursor", v)
 	}
+	if v := strings.TrimSpace(r.FormValue("return_run_id")); v != "" {
+		back.Set("run_id", v)
+	}
 	if err != nil {
 		back.Set("error", errs.SummaryOf(err))
 		http.Redirect(w, r, "/ui/ops/external?"+back.Encode(), http.StatusSeeOther)
@@ -131,6 +138,7 @@ type opsExternalDetailPage struct {
 	ReturnStatus   string
 	ReturnProvider string
 	ReturnCursor   string
+	ReturnRunID    string
 }
 
 func (s *Server) handleOpsExternalDetail(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +159,7 @@ func (s *Server) handleOpsExternalDetail(w http.ResponseWriter, r *http.Request)
 			SignedIn: true, Actor: info.Actor},
 		Op: op, ReturnStatus: r.URL.Query().Get("status"),
 		ReturnProvider: r.URL.Query().Get("provider"), ReturnCursor: r.URL.Query().Get("cursor"),
+		ReturnRunID: r.URL.Query().Get("run_id"),
 	}
 	for _, e := range entries {
 		row := auditRow{ID: e.ID, Actor: e.Actor, Action: e.Action, CreatedAt: e.CreatedAtMS}

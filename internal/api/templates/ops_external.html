@@ -7,10 +7,17 @@
 </section>
 <form method="get" action="/ui/ops/external" class="stack card">
   <label for="status">Filter status</label>
-  <input id="status" name="status" value="{{.Status}}" placeholder="OUTCOME_UNKNOWN">
+  <select id="status" name="status">
+    <option value="">All</option>
+    {{range $s := (list "PREPARED" "IN_FLIGHT" "OUTCOME_UNKNOWN" "RECONCILIATION_REQUIRED" "CONFIRMED" "RESOLVED" "FAILED_DEFINITE")}}
+    <option value="{{$s}}"{{if eq $s $.Status}} selected{{end}}>{{$s}}</option>{{end}}
+  </select>
   <label for="provider">Filter provider</label>
   <input id="provider" name="provider" value="{{.Provider}}" placeholder="cloudflare">
+  <label for="run_id">Filter run ID</label>
+  <input id="run_id" name="run_id" value="{{.RunID}}" placeholder="run id">
   <button type="submit">Apply</button>
+  <a href="/ui/ops/external">Clear</a>
 </form>
 <section class="card">
 <h2>Operations</h2>
@@ -20,7 +27,7 @@
 {{range .Items}}
 <tr class="{{if .NeedsReview}}needs-review{{end}}">
   <td>{{fmtUnix .CreatedAtMS}}</td>
-  <td><a href="/ui/ops/external/{{.ID}}?status={{$.Status}}&provider={{$.Provider}}&cursor={{$.NextCursor}}">{{short .ID}}</a><br><a href="/ui/runs/{{.RunID}}">{{short .RunID}}</a></td>
+  <td><a href="/ui/ops/external/{{.ID}}?status={{urlquery $.Status}}&provider={{urlquery $.Provider}}&run_id={{urlquery $.RunID}}&cursor={{urlquery $.NextCursor}}">{{short .ID}}</a><br><a href="/ui/runs/{{.RunID}}">{{short .RunID}}</a></td>
   <td>{{.Provider}} / {{.OperationType}}</td>
   <td><span class="pill {{if .NeedsReview}}warning{{else}}ok{{end}}">{{.Status}}</span></td>
   <td>{{.Version}}</td>
@@ -33,6 +40,7 @@
       <input type="hidden" name="return_status" value="{{$.Status}}">
       <input type="hidden" name="return_provider" value="{{$.Provider}}">
       <input type="hidden" name="return_cursor" value="{{$.NextCursor}}">
+      <input type="hidden" name="return_run_id" value="{{$.RunID}}">
       <label>Resolution</label>
       <select name="resolution">
         <option value="RESOURCE_CONFIRMED">RESOURCE_CONFIRMED</option>
@@ -54,6 +62,6 @@
 {{end}}
 </tbody>
 </table>
-{{if .NextCursor}}<a href="/ui/ops/external?status={{.Status}}&provider={{.Provider}}&cursor={{.NextCursor}}">Next page</a>{{end}}
+{{if .HasNext}}<a href="/ui/ops/external?status={{urlquery .Status}}&provider={{urlquery .Provider}}&run_id={{urlquery .RunID}}&cursor={{urlquery .NextCursor}}">Next page →</a>{{end}}
 </section>
 {{end}}

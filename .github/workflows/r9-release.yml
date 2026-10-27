@@ -4,7 +4,7 @@ name: r9-release
 # no production credentials, no real DNS/ACME, no image push.
 on:
   push:
-    branches: [feat/r9-release-hardening, feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure, feat/r16-r17-final-sandbox-release-readiness, feat/r18-final-release-candidate-closure, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification]
+    branches: [feat/r9-release-hardening, feat/r10-live-preflight, feat/r11-integration-readiness, feat/r12-acceptance-integrity, feat/r13-integration-reliability, feat/r14-security-release-closure, feat/r14-1-final-safety-closure, feat/r15-final-engineering-readiness, feat/r15-1-outbox-security-closure, feat/r16-r17-final-sandbox-release-readiness, feat/r18-final-release-candidate-closure, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification, feat/r22-product-first-final-acceptance]
   workflow_dispatch:
 
 permissions:

@@ -19,6 +19,7 @@
   <input type="hidden" name="return_status" value="{{.ReturnStatus}}">
   <input type="hidden" name="return_provider" value="{{.ReturnProvider}}">
   <input type="hidden" name="return_cursor" value="{{.ReturnCursor}}">
+  <input type="hidden" name="return_run_id" value="{{.ReturnRunID}}">
   <label>Decision</label>
   <select name="resolution">
     <option value="UNRESOLVED">UNRESOLVED — review only, stays pending</option>
@@ -45,5 +46,5 @@
 </tbody>
 </table>
 </section>
-<p><a href="/ui/ops/external?status={{.ReturnStatus}}&provider={{.ReturnProvider}}&cursor={{.ReturnCursor}}">Back to reconciliation</a></p>
+<p><a href="/ui/ops/external?status={{urlquery .ReturnStatus}}&provider={{urlquery .ReturnProvider}}&run_id={{urlquery .ReturnRunID}}&cursor={{urlquery .ReturnCursor}}">Back to reconciliation</a></p>
 {{end}}

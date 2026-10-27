@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification]
+    branches: [main, feat/r19-trusted-release-full-acceptance, feat/r20-final-product-release-closure, feat/r21-autonomous-final-qualification, feat/r22-product-first-final-acceptance]
   pull_request:
 
 permissions:

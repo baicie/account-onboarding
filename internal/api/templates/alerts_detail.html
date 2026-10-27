@@ -1,0 +1,40 @@
+{{define "content"}}
+<p class="crumbs"><a href="/ui/alerts/outbox">← Alerts</a></p>
+<h1>Alert delivery {{short .Item.ID}}</h1>
+<section class="card">
+<table>
+<tbody>
+<tr><th>Alert ID</th><td><code>{{.Item.ID}}</code></td></tr>
+<tr><th>Rule</th><td>{{.Item.Rule}}</td></tr>
+<tr><th>Severity</th><td>{{.Item.Severity}}</td></tr>
+<tr><th>Message</th><td>{{.Item.Message}}</td></tr>
+<tr><th>Status</th><td><span class="pill state-{{stateClass .Item.Status}}">{{.Item.Status}}</span></td></tr>
+<tr><th>Attempts</th><td>{{.Item.Attempts}}</td></tr>
+<tr><th>Delivery ID</th><td><code>{{.Item.DeliveryID}}</code></td></tr>
+<tr><th>Next attempt</th><td>{{fmtUnix .Item.NextAttemptMS}}</td></tr>
+<tr><th>Lease expires</th><td>{{fmtUnix .Item.LeaseExpiresMS}}</td></tr>
+<tr><th>Last error</th><td class="err">{{.Item.LastError}}</td></tr>
+<tr><th>Created / updated</th><td>{{fmtUnix .Item.CreatedAtMS}} / {{fmtUnix .Item.UpdatedAtMS}}</td></tr>
+</tbody>
+</table>
+{{if or (eq .Item.Status "PENDING") (eq .Item.Status "RETRY_PENDING")}}
+<form method="post" action="/ui/alerts/outbox/resolve" class="inline">
+  <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+  <input type="hidden" name="rule" value="{{.Item.Rule}}">
+  <button type="submit">Resolve active rows for this rule</button>
+</form>
+<p class="muted small">Resolve closes active rows. It does not re-send and does not re-arm delivery history.</p>
+{{end}}
+</section>
+<section class="card">
+<h2>Delivery history</h2>
+<table>
+<thead><tr><th>Delivery ID</th><th>Attempt</th><th>Status</th><th>Lease owner</th><th>Started</th><th>Finished</th><th>HTTP</th><th>Error</th></tr></thead>
+<tbody>
+{{range .Deliveries}}
+<tr><td><code class="small">{{short .ID}}</code></td><td>{{.Attempt}}</td><td>{{.Status}}</td><td class="small">{{.LeaseOwner}}</td><td>{{fmtUnix .StartedAtMS}}</td><td>{{fmtMS .FinishedAtMS}}</td><td>{{.HTTPStatus}}</td><td class="small err">{{.Error}}</td></tr>
+{{else}}<tr><td colspan="8" class="muted">No delivery attempts yet.</td></tr>{{end}}
+</tbody>
+</table>
+</section>
+{{end}}

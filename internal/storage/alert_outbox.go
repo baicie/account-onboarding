@@ -388,3 +388,74 @@ func scanAlertOutbox(row rowScanner) (AlertOutboxItem, error) {
 	}
 	return it, err
 }
+
+// ListAlertOutboxFilter returns a status-filtered page ordered newest first.
+// Offset pagination is bounded; callers must not request unbounded ranges.
+func (s *Store) ListAlertOutboxFilter(ctx context.Context, status string, limit, offset int) ([]AlertOutboxItem, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := `SELECT ` + alertOutboxColumns + ` FROM alert_outbox`
+	args := []any{}
+	if status != "" {
+		query += ` WHERE status=?`
+		args = append(args, status)
+	}
+	query += ` ORDER BY updated_at_ms DESC, id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.readDB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AlertOutboxItem
+	for rows.Next() {
+		it, err := scanAlertOutbox(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// ListAlertDeliveries returns bounded delivery history for one alert.
+func (s *Store) ListAlertDeliveries(ctx context.Context, alertID string) ([]AlertDelivery, error) {
+	if alertID == "" {
+		return nil, errors.New("storage: alert id required")
+	}
+	rows, err := s.readDB.QueryContext(ctx, `SELECT id,alert_id,attempt,status,lease_owner,
+		started_at_ms,finished_at_ms,http_status,error FROM alert_deliveries
+		WHERE alert_id=? ORDER BY started_at_ms DESC, id DESC LIMIT 100`, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AlertDelivery
+	for rows.Next() {
+		var d AlertDelivery
+		var finished sql.NullInt64
+		if err := rows.Scan(&d.ID, &d.AlertID, &d.Attempt, &d.Status, &d.LeaseOwner,
+			&d.StartedAtMS, &finished, &d.HTTPStatus, &d.Error); err != nil {
+			return nil, err
+		}
+		if finished.Valid {
+			v := finished.Int64
+			d.FinishedAtMS = &v
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// GetAlertOutbox returns one alert row or sql.ErrNoRows.
+func (s *Store) GetAlertOutbox(ctx context.Context, id string) (AlertOutboxItem, error) {
+	if id == "" {
+		return AlertOutboxItem{}, errors.New("storage: alert id required")
+	}
+	row := s.readDB.QueryRowContext(ctx, `SELECT `+alertOutboxColumns+` FROM alert_outbox WHERE id=?`, id)
+	return scanAlertOutbox(row)
+}

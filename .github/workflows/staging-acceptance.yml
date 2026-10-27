@@ -21,6 +21,7 @@ on:
       - feat/r19-trusted-release-full-acceptance
       - feat/r20-final-product-release-closure
       - feat/r21-autonomous-final-qualification
+      - feat/r22-product-first-final-acceptance
 concurrency:
   group: staging-acceptance
   cancel-in-progress: false

@@ -48,6 +48,7 @@ func loadPages() (map[string]*page, error) {
 			}
 			return id
 		},
+		"list": func(v ...string) []string { return v },
 		"json": func(v any) string {
 			raw, err := json.Marshal(v)
 			if err != nil {
@@ -61,7 +62,7 @@ func loadPages() (map[string]*page, error) {
 		return nil, err
 	}
 	pages := map[string]*page{}
-	for _, name := range []string{"login", "dashboard", "run", "ops_external", "ops_external_detail"} {
+	for _, name := range []string{"login", "dashboard", "run", "ops_external", "ops_external_detail", "alerts", "alerts_detail"} {
 		clone, err := layout.Clone()
 		if err != nil {
 			return nil, err
@@ -127,6 +128,11 @@ type dashboardPage struct {
 	Stats          []statRow
 	IdempotencyKey string
 	Form           createForm
+	StatusFilter   string
+	TemplateFilter string
+	Cursor         string
+	NextCursor     string
+	HasNext        bool
 }
 
 type createForm struct {
@@ -278,7 +284,18 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	info, _ := authInfoFrom(r)
-	runs, err := s.Store.ListRuns(r.Context(), storage.RunListFilter{Limit: 50})
+	if runID := strings.TrimSpace(r.URL.Query().Get("run")); runID != "" {
+		if _, err := s.Store.GetRun(r.Context(), runID); err != nil {
+			http.Redirect(w, r, "/ui/?error="+url.QueryEscape("run not found"), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/ui/runs/"+url.PathEscape(runID), http.StatusSeeOther)
+		return
+	}
+	statusFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
+	templateFilter := strings.TrimSpace(r.URL.Query().Get("template"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	runs, err := s.Store.ListRuns(r.Context(), storage.RunListFilter{Status: statusFilter, Template: templateFilter, Limit: 50, Cursor: cursor})
 	if err != nil {
 		http.Error(w, "could not load runs", http.StatusInternalServerError)
 		return
@@ -328,7 +345,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			Notice:    r.URL.Query().Get("notice"),
 		},
 		Runs: rows, Providers: catalog, Templates: templates, Stats: stats,
-		IdempotencyKey: security.NewID(), Form: form,
+		IdempotencyKey: security.NewID(), Form: form, StatusFilter: statusFilter,
+		TemplateFilter: templateFilter, Cursor: cursor, NextCursor: runs.NextCursor,
+		HasNext: runs.NextCursor != "",
 	}); err != nil {
 		s.Log.Error("render dashboard page", "error", err)
 	}

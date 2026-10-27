@@ -61,6 +61,29 @@
 </section>
 
 <section class="card">
+  <h2>Find a run</h2>
+  <form method="get" action="/ui/" class="stack">
+    <label for="run">Run ID</label>
+    <input id="run" name="run" placeholder="run id">
+    <button type="submit">Open run</button>
+  </form>
+  <form id="run-filters" method="get" action="/ui/" class="stack">
+    <label for="filter_status">Status filter</label>
+    <select id="filter_status" name="status">
+      <option value="">All statuses</option>
+      {{range .Stats}}<option value="{{.Status}}"{{if eq .Status $.StatusFilter}} selected{{end}}>{{.Status}}</option>{{end}}
+    </select>
+    <label for="filter_template">Template filter</label>
+    <select id="filter_template" name="template">
+      <option value="">All templates</option>
+      {{range .Templates}}<option value="{{.Name}}"{{if eq .Name $.TemplateFilter}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+    <button type="submit">Apply filters</button>
+    <a href="/ui/">Clear</a>
+  </form>
+</section>
+
+<section class="card">
   <h2>Recent runs</h2>
   <table>
     <thead><tr><th>Run</th><th>Template</th><th>Mode</th><th>Status</th><th>Step</th><th>Action</th><th>Created (UTC)</th></tr></thead>
@@ -80,5 +103,7 @@
     {{end}}
     </tbody>
   </table>
+  {{if .HasNext}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}&cursor={{urlquery .NextCursor}}">Next page →</a></p>{{end}}
+  {{if .Cursor}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}">← First page</a></p>{{end}}
 </section>
 {{end}}
