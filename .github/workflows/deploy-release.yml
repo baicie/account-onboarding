@@ -1,0 +1,193 @@
+# Tag-driven deployment of the v0.1 sandbox instance.
+#
+# Push a tag (or run this workflow with an existing tag) and it will:
+#   build the image from that tag -> push ghcr.io/<repo>:<tag> -> ssh to the host
+#   -> materialize secrets -> docker compose up -d -> health check -> roll back on
+#   failure. Nothing runs on a branch push: a deployment only happens for a tag.
+#
+# Required repository configuration (Settings -> Secrets and variables -> Actions):
+#   secrets.DEPLOY_SSH_KEY        private key for the deploy user (preferred)
+#     or secrets.DEPLOY_SSH_PASSWORD
+#   vars.DEPLOY_HOST / DEPLOY_USER / DEPLOY_PORT   (defaults: 82.156.234.84 / ubuntu / 22)
+#   vars.ONBOARD_DOMAINS                          (default: moonbyte.test)
+# Host bootstrap is documented in docs/runbooks/TAG-DEPLOY.md.
+name: deploy-release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to deploy (for example v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+# One deployment at a time, never cancelled midway.
+concurrency:
+  group: deploy-release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  CONTAINER: account-onboarding
+  DEPLOY_DIR: /opt/account-onboarding
+  HOST_PORT: "18788"
+
+jobs:
+  build:
+    name: build and push the tagged image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            git fetch --depth=1 origin "refs/tags/${TAG}:refs/tags/${TAG}" >/dev/null 2>&1 || {
+              echo "::error::tag ${TAG} does not exist in this repository"
+              exit 1
+            }
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "deploying tag ${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3
+
+      - name: Login to GHCR
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push
+        id: push
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg VERSION="$TAG" \
+            --build-arg COMMIT="${{ github.sha }}" \
+            -t "$IMAGE:$TAG" \
+            -t "$IMAGE:latest" \
+            --metadata-file "$RUNNER_TEMP/meta.json" \
+            --push .
+          digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/meta.json")"
+          echo "digest=${digest}"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "### image" >> "$GITHUB_STEP_SUMMARY"
+          echo "- $IMAGE:$TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "- digest: ${digest}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify the pushed tag resolves
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          docker buildx imagetools inspect "$IMAGE:$TAG" | head -20
+
+  deploy:
+    name: deploy to the sandbox host
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Remove this line if you do not want an approval gate; keep it if you do.
+    environment: production-sandbox
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '82.156.234.84' }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      ONBOARD_DOMAINS: ${{ vars.ONBOARD_DOMAINS || 'moonbyte.test' }}
+      SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      SSH_PASSWORD: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check deploy credentials
+        id: cred
+        run: |
+          set -euo pipefail
+          if [ -n "${SSH_KEY:-}" ]; then
+            echo "method=key" >> "$GITHUB_OUTPUT"
+          elif [ -n "${SSH_PASSWORD:-}" ]; then
+            echo "method=password" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::no deploy credential: set DEPLOY_SSH_KEY (preferred) or DEPLOY_SSH_PASSWORD"
+            exit 1
+          fi
+          echo "target: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PORT} dir=${DEPLOY_DIR} container=${CONTAINER}"
+
+      - name: Install SSH client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-client sshpass
+
+      - name: Prepare SSH options
+        id: ssh
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          if [ "${{ steps.cred.outputs.method }}" = "key" ]; then
+            printf "%s\n" "${SSH_KEY}" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            printf "SSHOPTS=-i %s/.ssh/deploy_key -o IdentitiesOnly=yes\n" "$HOME" >> "$GITHUB_OUTPUT"
+          else
+            printf "%s" "${SSH_PASSWORD}" > ~/.ssh/pass
+            chmod 600 ~/.ssh/pass
+            echo "SSHOPTS=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the server compose and the deploy script
+        run: |
+          set -euo pipefail
+          COMPOSE_B64="$(base64 < deploy/release/docker-compose.deploy.yml | tr -d '\n')"
+          if [ "${{ steps.cred.outputs.method }}" = "password" ]; then
+            SSH=(sshpass -f ~/.ssh/pass ssh)
+          else
+            SSH=(ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes)
+          fi
+          SSH+=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_PORT}")
+          "${SSH[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' -- "${DEPLOY_DIR}" "${COMPOSE_B64}" <<'REMOTE'
+          set -euo pipefail
+          DIR="$1"; B64="$2"
+          mkdir -p "$DIR/secrets-src" "$DIR/data" "$DIR/secrets"
+          chmod 0700 "$DIR/secrets"
+          printf "%s" "$B64" | base64 -d > "$DIR/docker-compose.deploy.yml"
+          chmod 0644 "$DIR/docker-compose.deploy.yml"
+          echo "compose ready: $DIR/docker-compose.deploy.yml"
+          REMOTE
+
+      - name: Deploy (materialize secrets, compose up, health check, rollback)
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.cred.outputs.method }}" = "password" ]; then
+            SSH=(sshpass -f ~/.ssh/pass ssh)
+          else
+            SSH=(ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes)
+          fi
+          SSH+=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -p "${DEPLOY_PORT}")
+          # The script and its arguments travel separately: the script on stdin, the
+          # values as positional parameters, so nothing is interpolated into a shell
+          # command string on the target.
+          "${SSH[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' -- \
+            "${IMAGE}" "${{ needs.build.outputs.tag }}" "${{ needs.build.outputs.digest }}" \
+            "${CONTAINER}" "${DEPLOY_DIR}" "${HOST_PORT}" "${DEPLOY_DIR}/docker-compose.deploy.yml" "${ONBOARD_DOMAINS}" \
+            < deploy/release/remote-deploy.sh
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/pass
