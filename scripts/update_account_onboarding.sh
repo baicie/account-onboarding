@@ -253,8 +253,17 @@ check_data_safety() {
   # Unconditional, first: the marker is written next to the target database path before
   # the publish step, so it matters for a first install, for a database without a
   # container and for a running container alike.
+  if [ -L "$DATA" ]; then
+    die "$DATA is a symlink; refusing to deploy through it" 3
+  fi
+  if [ -L "$DATA/state.sqlite" ]; then
+    die "$DATA/state.sqlite is a symlink; refusing to deploy through it" 3
+  fi
   if db_file_exists "$DATA/state.sqlite.restore-in-progress"; then
     die "a restore marker is present at $DATA/state.sqlite.restore-in-progress; finish or clear the interrupted restore before deploying" 3
+  fi
+  if db_file_exists "$DATA/state.sqlite" && ! db_file_nonempty "$DATA/state.sqlite"; then
+    die "$DATA/state.sqlite exists but is empty; refusing to deploy over a truncated database" 3
   fi
   c="$(detect_existing_container)"
   if [ -z "$c" ]; then
@@ -273,9 +282,6 @@ check_data_safety() {
   if [ -n "$current_secrets" ]; then
     dir="$(dirname "$current_secrets")"
     [ "$dir" = "$SECRETS" ] || warn "existing container mounts secrets from $dir, this run uses $SECRETS"
-  fi
-  if db_file_exists "$DATA/state.sqlite" && ! db_file_nonempty "$DATA/state.sqlite"; then
-    die "$DATA/state.sqlite exists but is empty; refusing to deploy over a truncated database" 3
   fi
 }
 

@@ -106,6 +106,16 @@ mkroot; STUB_DIRTY=1 run --preflight --root="$ROOT"; want "dirty worktree refuse
 mkroot; STUB_FETCH_RC=1 run --preflight --root="$ROOT"; want "fetch failure not silently ignored" 2 "cannot reach the git remote"
 mkroot; STUB_TARGET=2222222222222222222222222222222222222222 run --preflight --expected-sha=3333333333333333333333333333333333333333 --root="$ROOT"; want "expected-sha mismatch refused" 2 "not the required"
 mkroot; : > "$ROOT/runtime/data/state.sqlite.restore-in-progress"; run --preflight --root="$ROOT"; want "marker blocks a first install" 3 "restore marker is present"
+mkroot; mv "$ROOT/runtime/data" "$ROOT/runtime/data-real"; ln -s "$ROOT/runtime/data-real" "$ROOT/runtime/data"; run --preflight --root="$ROOT"; want "symlinked data directory is refused" 3 "is a symlink"
+mkroot; : > "$ROOT/runtime/data/state.sqlite"; run --preflight --root="$ROOT"; want "empty database without a container is refused" 3 "exists but is empty"
+mkroot; python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+db.execute("INSERT INTO schema_migrations(version) VALUES (6)")
+db.commit(); db.close()
+PY
+run --preflight --root="$ROOT"; want "valid database without a container is safely reused" 0 "found a database with no container"
 mkroot; : > "$ROOT/runtime/data/state.sqlite"; : > "$ROOT/runtime/data/state.sqlite.restore-in-progress"; run --preflight --root="$ROOT"; want "marker blocks a database without a container" 3 "restore marker is present"
 mkroot; : > "$ROOT/runtime/data/state.sqlite.restore-in-progress"; STUB_CONTAINER=account-onboarding STUB_MOUNT_DATA="$ROOT/runtime/data" run --preflight --root="$ROOT"; want "marker blocks a running instance" 3 "restore marker is present"
 mkroot; STUB_CONTAINER=account-onboarding STUB_MOUNT_DATA=/elsewhere/data run --preflight --root="$ROOT"; want "data mount mismatch refused" 3 "Refusing to start on an empty directory"
