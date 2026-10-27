@@ -1,0 +1,38 @@
+name: r22-provenance
+
+on:
+  push:
+    branches: [feat/r22-product-first-final-acceptance]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r22-provenance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  buildkit-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Offline verifier negative tests (forgery paths)
+        run: python3 tests/r22/provenance_verifier_test.py
+      - name: BuildKit provenance and SBOM acceptance
+        run: |
+          set -euo pipefail
+          bash tests/r22/buildkit_provenance.sh --evidence-dir "$PWD/provenance-evidence" 2>&1 | tee provenance.log
+          grep -q '^PROVENANCE_VERIFIED$' provenance.log
+          grep -q '^TRUSTED_BUILD_VERIFIED=NO' provenance.log
+          grep -qE '^SUMMARY pass=[0-9]+ fail=0' provenance.log
+      - name: Upload provenance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: r22-provenance-evidence-${{ github.run_id }}
+          path: |
+            provenance-evidence/
+            provenance.log
+          if-no-files-found: warn
