@@ -33,15 +33,18 @@
     },
     {
       "id": "docker-secret",
-      "status": "NOT_RUN"
+      "status": "PASS",
+      "scope": "CI run 40453279233"
     },
     {
       "id": "k8s-projected-secret",
-      "status": "NOT_RUN"
+      "status": "PASS",
+      "scope": "Kind CI run 40453279233"
     },
     {
       "id": "acl-secret",
-      "status": "NOT_RUN"
+      "status": "PASS",
+      "scope": "CI run 40453279233"
     },
     {
       "id": "arm64-full-emulated",
