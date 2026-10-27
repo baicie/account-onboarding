@@ -10,7 +10,7 @@
 # roll back on failure. Failures are explicit; secret material is never printed.
 set -euo pipefail
 
-IMAGE="$1"; TAG="$2"; DIGEST="$3"; CONTAINER="$4"; DIR="$5"; HOST_PORT="$6"; DOMAINS="${7:-moonbyte.test}"; COMPOSE_B64="${8:-}"
+IMAGE="$1"; TAG="$2"; DIGEST="$3"; CONTAINER="$4"; DIR="$5"; HOST_PORT="$6"; DOMAINS="${7:-moonbyte.test}"; COMPOSE_B64="${8:-}"; MIRROR="${9:-}"
 DATA="$DIR/data"; SECRETS_SRC="$DIR/secrets-src"; SECRETS="$DIR/secrets"; STATE="$DIR/.current-tag"
 COMPOSE="$DIR/docker-compose.deploy.yml"
 
@@ -66,23 +66,34 @@ else
 fi
 dk() { "${DOCKER[@]}" "$@"; }
 
-# ---- pull ------------------------------------------------------------------------
-if ! dk image inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+# ---- pull: mirror first, because ghcr.io is slow and often unauthenticated here ---
+if dk image inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+  echo "==> image already present locally"
+else
+  REPO_PATH="${IMAGE#ghcr.io/}"
+  pulled=0
   if [ -f "$DIR/.ghcr-token" ]; then
     echo "==> pulling with the host-stored registry token"
     dk login ghcr.io -u "${GHCR_USER:-token}" --password-stdin < "$DIR/.ghcr-token" >/dev/null
-  else
-    echo "==> pulling (package must be publicly readable)"
+    if dk pull "$IMAGE:$TAG"; then pulled=1; fi
   fi
-  if ! dk pull "$IMAGE:$TAG"; then
-    echo "ERROR: cannot pull $IMAGE:$TAG" >&2
-    echo "       make the GHCR package public, or store a read:packages token in" >&2
-    echo "       $DIR/.ghcr-token (mode 0600) so this script can log in" >&2
+  if [ "$pulled" != "1" ] && [ -n "$MIRROR" ]; then
+    echo "==> pulling through the mirror $MIRROR"
+    if dk pull "$MIRROR/$REPO_PATH:$TAG"; then
+      dk tag "$MIRROR/$REPO_PATH:$TAG" "$IMAGE:$TAG"
+      pulled=1
+    fi
+  fi
+  if [ "$pulled" != "1" ]; then
+    if dk pull "$IMAGE:$TAG"; then pulled=1; fi
+  fi
+  if [ "$pulled" != "1" ]; then
+    echo "ERROR: cannot pull $IMAGE:$TAG (mirror: ${MIRROR:-<none>})" >&2
+    echo "       make the GHCR package public, store a read:packages token in" >&2
+    echo "       $DIR/.ghcr-token (mode 0600), or set GHCR_MIRROR to a reachable mirror" >&2
     exit 1
   fi
 fi
-echo "==> image id: $(dk image inspect "$IMAGE:$TAG" --format "{{.Id}}" 2>/dev/null || echo unknown) (CI index digest: $DIGEST)"
-
 # ---- materialize the 0400 files the service accepts -------------------------------
 dk run --rm --user 0:0 \
   --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
