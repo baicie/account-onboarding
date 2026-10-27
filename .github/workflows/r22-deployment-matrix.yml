@@ -2,9 +2,11 @@ name: r22-deployment-matrix
 
 on:
   push:
-    branches: [feat/r22-product-first-final-acceptance]
+    # The integration branch is in the list so the same jobs and assertions run on
+    # the candidate proposed for main. Nothing else about the gate changes.
+    branches: [feat/r22-product-first-final-acceptance, integration/v0.1-sandbox-rc]
   pull_request:
-    branches: [feat/r22-product-first-final-acceptance]
+    branches: [feat/r22-product-first-final-acceptance, main]
 
 permissions:
   contents: read
