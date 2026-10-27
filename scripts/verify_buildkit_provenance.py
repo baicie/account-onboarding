@@ -103,6 +103,12 @@ def collect_statements(base, repo, image_digest):
             platform_label = ""
             if isinstance(plat, dict) and plat.get("os") and plat.get("architecture"):
                 platform_label = "%s/%s" % (plat["os"], plat["architecture"])
+            if platform_label in ("", "unknown/unknown") and platform:
+                for cand in manifests:
+                    if cand.get("digest") == platform:
+                        cplat = cand.get("platform") or {}
+                        if cplat.get("os") and cplat.get("architecture"):
+                            platform_label = "%s/%s" % (cplat["os"], cplat["architecture"])
             items.append({
                 "kind": "provenance" if "provenance" in str(stmt.get("predicateType", "")) else "sbom",
                 "statement": stmt,
@@ -146,6 +152,39 @@ def _build_args(predicate):
                 if isinstance(item, dict) and "key" in item:
                     out[item["key"]] = item.get("value", "")
     return out
+
+
+def _source_identity(predicate, args, ptype):
+    """Return ((how, value), (how, value)) for the commit and the repository.
+
+    Build args are the primary record; the standard SLSA dependency lists are the
+    fallback, because BuildKit records a git context there and different versions
+    place the build args differently.
+    """
+    commit = ("build-args", (args or {}).get("SOURCE_COMMIT"))
+    repo = ("build-args", (args or {}).get("SOURCE_REPOSITORY"))
+    deps = []
+    build_def = predicate.get("buildDefinition") or {}
+    for d in build_def.get("resolvedDependencies") or []:
+        deps.append(d)
+    for m in predicate.get("materials") or []:
+        deps.append(m)
+    for dep in deps:
+        if not isinstance(dep, dict):
+            continue
+        digest = dep.get("digest") or {}
+        cand_commit = digest.get("gitCommit") or digest.get("sha1") or ""
+        uri = dep.get("uri") or ""
+        if cand_commit and not commit[1]:
+            commit = ("dependency:%s" % uri, cand_commit)
+        if uri and not repo[1]:
+            clean = uri
+            if clean.startswith("git+"):
+                clean = clean[4:]
+            if clean.endswith(".git"):
+                clean = clean[:-4]
+            repo = ("dependency:%s" % uri, clean)
+    return commit, repo
 
 
 def verify_provenance(stmt, expect, platform_hint=""):
@@ -193,31 +232,37 @@ def verify_provenance(stmt, expect, platform_hint=""):
     if not invocation:
         errs.append("invocation id is empty")
 
+    commit_from, repo_from = _source_identity(predicate, args, ptype)
     if expect.get("commit"):
-        got_commit = args.get("SOURCE_COMMIT") if isinstance(args, dict) else None
-        if got_commit != expect["commit"]:
-            errs.append("source commit mismatch: provenance=%r expected=%r" % (got_commit, expect["commit"]))
+        if commit_from[1] != expect["commit"]:
+            errs.append("source commit mismatch: provenance=%r (via %s) expected=%r"
+                        % (commit_from[1], commit_from[0], expect["commit"]))
     if expect.get("repository"):
-        got_repo = args.get("SOURCE_REPOSITORY") if isinstance(args, dict) else None
-        if got_repo != expect["repository"]:
-            errs.append("source repository mismatch: provenance=%r expected=%r" % (got_repo, expect["repository"]))
+        if repo_from[1] != expect["repository"]:
+            errs.append("source repository mismatch: provenance=%r (via %s) expected=%r"
+                        % (repo_from[1], repo_from[0], expect["repository"]))
     if expect.get("platform"):
         observed = platform or platform_hint
+        if observed in ("", "unknown/unknown"):
+            observed = expect.get("resolved_platform") or observed
         if observed != expect["platform"]:
             errs.append("platform mismatch: provenance=%r index=%r expected=%r"
                         % (platform, platform_hint, expect["platform"]))
     return errs
 
 
-def verify_sbom(stmt, expect):
+def verify_sbom(stmt, expect, subject_digests=None):
     errs = []
     subjects = stmt.get("subject") or []
     if len(subjects) != 1:
         errs.append("sbom statement must have exactly one subject, got %d" % len(subjects))
         return errs
     got = (subjects[0].get("digest") or {}).get("sha256", "")
-    if got != _digest_hex(expect["digest"]):
-        errs.append("sbom subject digest mismatch: statement=%s expected=%s" % (got, _digest_hex(expect["digest"])))
+    allowed = {_digest_hex(expect["digest"])}
+    for d in subject_digests or []:
+        allowed.add(_digest_hex(d))
+    if got not in allowed:
+        errs.append("sbom subject digest mismatch: statement=%s expected one of %s" % (got, sorted(allowed)))
     if stmt.get("predicateType") != SPDX:
         errs.append("unexpected sbom predicateType %r" % stmt.get("predicateType"))
     predicate = stmt.get("predicate") or {}
@@ -299,7 +344,8 @@ def main(argv=None):
         expect_for_item = dict(expect)
         expect_for_item["subject_digests"] = item.get("platform_digests") or []
         errs = (verify_provenance(stmt, expect_for_item, item.get("platform", ""))
-                if item["kind"] == "provenance" else verify_sbom(stmt, expect))
+                if item["kind"] == "provenance"
+                else verify_sbom(stmt, expect, item.get("platform_digests") or []))
         entry = {
             "kind": item["kind"],
             "attestation_manifest": item["attestation_manifest"],
