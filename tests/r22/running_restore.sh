@@ -173,12 +173,27 @@ if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" = "0" ]; then
     dd if=/dev/zero of="$FULL/filler" bs=1k count=250 2>/dev/null
     if "$WORK/restore" -snapshot "$SNAP1" -target "$FULL/target.sqlite" -keyring "$KEY" -force >/dev/null 2>&1; then
       bad "restore succeeded on a full filesystem"; else ok "restore fails closed on a full filesystem"; fi
+    echo "DISK_FULL_RAN"
     rm -f "$FULL/filler"; umount "$FULL" 2>/dev/null
-  else skip "disk full: tmpfs mount unavailable"; fi
+  else
+    if [ "$REQUIRE_DISK_FULL" = "1" ]; then
+      bad "disk full: required but this environment cannot mount a tmpfs (BLOCKED, not PASS)"
+    else
+      skip "disk full: tmpfs mount unavailable"
+      echo "DISK_FULL_SKIPPED"
+    fi
+  fi
 else
-  skip "disk full: requires root on Linux"
+  if [ "$REQUIRE_DISK_FULL" = "1" ]; then
+    bad "disk full: required but this test is not running as root on Linux (BLOCKED, not PASS)"
+  else
+    skip "disk full: requires root on Linux"
+    echo "DISK_FULL_SKIPPED"
+  fi
 fi
-skip "interrupted restore (SIGKILL mid-restore): no deterministic injection point without fault seams in the ops tool"
+echo "INTERRUPTED_RESTORE_COVERED_BY_GO_TESTS"
+echo "  crash before/between/after publish is covered deterministically by"
+echo "  internal/ops/restore_crash_test.go (restorePublishHook), not by this shell run"
 
 # ---- retention -------------------------------------------------------------
 # Retention runs against its own directory: the earlier steps already put

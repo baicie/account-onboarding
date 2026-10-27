@@ -10,7 +10,8 @@ import (
 
 // maintenanceDrainTimeout bounds how long entering maintenance waits for
 // in-flight writes. A write that outlives it is reported, not killed.
-const maintenanceDrainTimeout = 30 * time.Second
+// A variable only so tests can shorten the bounded drain.
+var maintenanceDrainTimeout = 30 * time.Second
 
 // maintenanceInfo is the observable maintenance state.
 type maintenanceInfo struct {
@@ -19,6 +20,7 @@ type maintenanceInfo struct {
 	Since          *time.Time `json:"since,omitempty"`
 	InFlight       int64      `json:"in_flight"`
 	WritesInFlight int64      `json:"writes_in_flight"`
+	TicksInFlight  int64      `json:"ticks_in_flight"`
 	WorkersPaused  bool       `json:"workers_paused"`
 	Drained        bool       `json:"drained"`
 }
@@ -73,6 +75,7 @@ func (s *Server) maintenanceInfo() maintenanceInfo {
 		Reason:         reason,
 		InFlight:       s.inFlight.Load(),
 		WritesInFlight: s.writesInFlight.Load(),
+		TicksInFlight:  s.engineTicks(),
 	}
 	if active {
 		info.Since = &since
@@ -80,8 +83,17 @@ func (s *Server) maintenanceInfo() maintenanceInfo {
 	if s.Engine != nil {
 		info.WorkersPaused = s.Engine.Paused()
 	}
-	info.Drained = info.WritesInFlight == 0
+	info.Drained = info.WritesInFlight == 0 && info.TicksInFlight == 0
 	return info
+}
+
+// engineTicks reports steps that already hold a claim and are executing. A
+// maintenance window is only quiescent when this reaches zero.
+func (s *Server) engineTicks() int64 {
+	if s.Engine == nil {
+		return 0
+	}
+	return s.Engine.ActiveTicks()
 }
 
 // maintenanceGate rejects new mutations while a maintenance window is open and
@@ -145,7 +157,7 @@ func (s *Server) handleMaintenanceEnter(w http.ResponseWriter, r *http.Request) 
 	}
 	deadline := time.Now().Add(maintenanceDrainTimeout)
 	waited := time.Duration(0)
-	for s.writesInFlight.Load() > 0 && time.Now().Before(deadline) {
+	for (s.writesInFlight.Load() > 0 || s.engineTicks() > 0) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 		waited += 20 * time.Millisecond
 	}
@@ -155,6 +167,7 @@ func (s *Server) handleMaintenanceEnter(w http.ResponseWriter, r *http.Request) 
 		"drained":           info.Drained,
 		"in_flight":         info.InFlight,
 		"writes_in_flight":  info.WritesInFlight,
+		"ticks_in_flight":   info.TicksInFlight,
 		"workers_paused":    info.WorkersPaused,
 		"waited_ms":         waited.Milliseconds(),
 		"drain_timeout_sec": int(maintenanceDrainTimeout.Seconds()),

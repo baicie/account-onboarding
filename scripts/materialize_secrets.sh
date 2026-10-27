@@ -36,11 +36,23 @@
 set -euo pipefail
 umask 077
 
-SRC="" DST="" UID_N="" GID_N="" ALLOW_K8S=0
+SRC="" DST="" UID_N="" GID_N="" ALLOW_K8S=0 REVOKE=""
 usage() {
-  echo "usage: materialize_secrets.sh --source-dir SRC --target-dir DST [--uid U] [--gid G] [--allow-k8s-projection]" >&2
+  echo "usage: materialize_secrets.sh --source-dir SRC --target-dir DST [--uid U] [--gid G] [--allow-k8s-projection] [--revoke NAME]" >&2
 }
 die() { echo "materialize: $*" >&2; exit 1; }
+
+# valid_secret_name is the one name rule for source files, journal records and
+# revoke arguments: no separators, no traversal, no control characters.
+valid_secret_name() {
+  case "$1" in
+    ''|.|..) return 1 ;;
+  esac
+  case "$1" in
+    *[!A-Za-z0-9_.-]*) return 1 ;;
+  esac
+  return 0
+}
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -54,6 +66,9 @@ while [ "$#" -gt 0 ]; do
       esac
       shift 2 ;;
     --allow-k8s-projection) ALLOW_K8S=1; shift ;;
+    --revoke)
+      [ "$#" -ge 2 ] || { usage; exit 2; }
+      REVOKE="$REVOKE $2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -114,6 +129,8 @@ STAGED=0
 # which is safe because the mutation it announces had not run yet.
 journal_append() {
   local kind="$1" name="$2" record sum
+  case "$kind" in B|I|R) ;; *) die "internal: bad journal record kind" ;; esac
+  valid_secret_name "$name" || die "refusing to journal an unsafe secret name"
   record="$kind $name"
   sum="$(printf '%s' "$record" | $SHACMD | cut -d' ' -f1 | cut -c1-16)"
   printf '%s %s\n' "$record" "$sum" >>"$JOURNAL" || return 1
@@ -124,25 +141,62 @@ journal_append() {
 # that were installed where nothing existed before, then drop the transaction.
 recover_transaction() {
   [ -d "$TXNDIR" ] || return 0
-  local backed="" installed="" kind="" name="" sum="" extra=""
+  local backed="" installed="" revoked="" kind="" name="" sum="" extra=""
+  local i=0 total=0 line="" torn=0
   if [ -f "$JOURNAL" ]; then
-    while read -r kind name sum extra; do
-      if [ -n "$extra" ]; then continue; fi
-      if [ -z "$name" ] || [ -z "$sum" ]; then continue; fi
-      if [ "$(printf '%s %s' "$kind" "$name" | $SHACMD | cut -d' ' -f1 | cut -c1-16)" != "$sum" ]; then continue; fi
+    while IFS= read -r line || [ -n "$line" ]; do total=$((total + 1)); done <"$JOURNAL"
+    while IFS= read -r line || [ -n "$line" ]; do
+      i=$((i + 1))
+      kind=""; name=""; sum=""; extra=""; torn=0
+      read -r kind name sum extra <<<"$line"
+      # A truncated tail IS the crash window: the mutation its record would have
+      # announced had not run yet, so dropping it is safe. Anything else that does
+      # not verify - a complete record with a bad checksum, an unknown kind, or an
+      # illegal name - means the journal cannot be trusted, so recovery stops
+      # instead of acting on it. The checksum detects corruption; it is not
+      # authentication, and the name rule below is what bounds the file system
+      # effects of a record an attacker could have planted.
+      if [ -n "$extra" ] || [ -z "$name" ] || [ -z "$sum" ]; then
+        torn=1
+      elif [ "$(printf "%s %s" "$kind" "$name" | $SHACMD | cut -d" " -f1 | cut -c1-16)" != "$sum" ]; then
+        torn=1
+      fi
+      if [ "$torn" = "1" ]; then
+        if [ "$i" -eq "$total" ]; then
+          echo "materialize: ignoring a torn final journal record (crash window)" >&2
+          continue
+        fi
+        echo "materialize: journal record $i is truncated or corrupt; refusing to recover" >&2
+        return 1
+      fi
+      case "$kind" in
+        B|I|R) ;;
+        *) echo "materialize: journal record $i has an unknown kind; refusing to recover" >&2; return 1 ;;
+      esac
+      if ! valid_secret_name "$name"; then
+        echo "materialize: journal record $i names an unsafe target; refusing to recover" >&2
+        return 1
+      fi
       case "$kind" in
         B) backed="$backed $name" ;;
         I) installed="$installed $name" ;;
+        R) revoked="$revoked $name" ;;
       esac
     done <"$JOURNAL"
   fi
-  for name in $backed; do
+  # Only a regular, non-symlink file inside the transaction backup may be
+  # promoted back into the target.
+  for name in $backed $revoked; do
     if [ -e "$BAK/$name" ] || [ -L "$BAK/$name" ]; then
+      if [ ! -f "$BAK/$name" ] || [ -L "$BAK/$name" ]; then
+        echo "materialize: transaction backup entry is not a regular file; refusing to recover" >&2
+        return 1
+      fi
       mv -f -- "$BAK/$name" "$DST/$name" || return 1
     fi
   done
   for name in $installed; do
-    case " $backed " in *" $name "*) continue ;; esac
+    case " $backed $revoked " in *" $name "*) continue ;; esac
     rm -f -- "$DST/$name" || return 1
   done
   rm -rf -- "$TXNDIR" || return 1
@@ -235,7 +289,7 @@ for f in "$SRC"/*; do
   NAMES="$NAMES $name"
   count=$((count + 1))
 done
-[ "$count" -gt 0 ] || die "no secret files materialized"
+[ "$count" -gt 0 ] || [ -n "$REVOKE" ] || die "no secret files materialized"
 
 mkdir -p "$TXNDIR" "$BAK"
 chmod 0700 "$TXNDIR" "$BAK"
@@ -243,10 +297,30 @@ chmod 0700 "$TXNDIR" "$BAK"
 chmod 0600 "$JOURNAL"
 sync
 
+# Explicit revocation: only names that already exist as regular files are removed,
+# each journaled (R) with a hard-linked copy so recovery can restore it.
+for name in $REVOKE; do
+  valid_secret_name "$name" || die "refusing to revoke an unsafe secret name"
+  if [ -e "$DST/$name" ] || [ -L "$DST/$name" ]; then
+    if [ ! -f "$DST/$name" ] || [ -L "$DST/$name" ]; then
+      die "refusing to revoke a non-regular live secret"
+    fi
+    journal_append R "$name" || die "cannot journal revoke of $name"
+    ln -f -- "$DST/$name" "$BAK/$name" || die "cannot snapshot the revoked secret"
+    rm -f -- "$DST/$name" || die "cannot revoke $name"
+  else
+    echo "materialize: nothing to revoke for $name" >&2
+  fi
+done
 for name in $NAMES; do
   if [ -e "$DST/$name" ] || [ -L "$DST/$name" ]; then
     journal_append B "$name" || die "cannot journal backup of $name"
-    mv -f -- "$DST/$name" "$BAK/$name" || die "cannot move live $name to backup"
+    if [ ! -f "$DST/$name" ] || [ -L "$DST/$name" ]; then
+      die "refusing to replace a non-regular live secret"
+    fi
+    # Hard link, not a move: the live name keeps resolving to the old inode until
+    # the rename below swaps it, so a reader never sees the name disappear.
+    ln -f -- "$DST/$name" "$BAK/$name" || die "cannot snapshot the live secret into the transaction backup"
   fi
   journal_append I "$name" || die "cannot journal install of $name"
   mv -f -- "$STAGE/$name" "$DST/$name" || die "cannot install $name"

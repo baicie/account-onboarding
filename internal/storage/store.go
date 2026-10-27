@@ -98,6 +98,18 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(opts.Path), 0o750); err != nil {
 		return nil, fmt.Errorf("storage: create data dir: %w", err)
 	}
+	// An interrupted restore removes the old database and leaves a marker.
+	// Opening the path would silently create an empty schema-6 database that then
+	// reports healthy, so refuse instead: the operator must restore a snapshot or
+	// clear the marker deliberately.
+	if opts.Path != ":memory:" {
+		if _, statErr := os.Stat(opts.Path); errors.Is(statErr, os.ErrNotExist) {
+			marker := opts.Path + ".restore-in-progress"
+			if _, mErr := os.Stat(marker); mErr == nil {
+				return nil, fmt.Errorf("storage: interrupted restore: %s does not exist and %s is present; restore a snapshot or remove the marker", opts.Path, marker)
+			}
+		}
+	}
 	writeDSN := dsn(opts.Path, true)
 	readDSN := dsn(opts.Path, false)
 

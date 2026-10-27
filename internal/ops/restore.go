@@ -202,6 +202,15 @@ func Restore(ctx context.Context, opts RestoreOptions) (RestoreResult, error) {
 		}
 	}
 
+	// Mark the target before the first rename so a crash cannot be mistaken for a
+	// first install: storage.Open refuses to create a database while this marker
+	// exists and the database does not.
+	if err := writeRestoreMarker(targetAbs, staged, opts.Now()); err != nil {
+		return res, fmt.Errorf("restore: write restore marker: %w", err)
+	}
+	if hook := restorePublishHook; hook != nil {
+		hook("before-publish")
+	}
 	// Publish: move the old DB (and its WAL sidecars) aside, then rename the
 	// verified staging file into place. On failure the old files are restored.
 	var preRestore string
@@ -231,6 +240,9 @@ func Restore(ctx context.Context, opts RestoreOptions) (RestoreResult, error) {
 			}
 		}
 	}
+	if hook := restorePublishHook; hook != nil {
+		hook("between-renames")
+	}
 	if err := os.Rename(staged, targetAbs); err != nil {
 		if preRestore != "" {
 			_ = os.Rename(preRestore, targetAbs)
@@ -241,6 +253,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (RestoreResult, error) {
 				_ = os.Rename(preRestore+"-shm", shmPath)
 			}
 		}
+		_ = clearRestoreMarker(targetAbs)
 		return res, fmt.Errorf("restore: publish restored database: %w", err)
 	}
 	if err := os.Chmod(targetAbs, 0o600); err != nil {
@@ -250,6 +263,12 @@ func Restore(ctx context.Context, opts RestoreOptions) (RestoreResult, error) {
 		return res, fmt.Errorf("restore: sync target dir: %w", err)
 	}
 
+	if hook := restorePublishHook; hook != nil {
+		hook("after-publish")
+	}
+	if err := clearRestoreMarker(targetAbs); err != nil {
+		return res, fmt.Errorf("restore: clear restore marker: %w", err)
+	}
 	// Post-restore proof: reopen the published file and repeat every check.
 	postInfo, err := inspectSnapshot(ctx, targetAbs)
 	if err != nil {
@@ -342,4 +361,40 @@ func verifySecretsDecryptable(ctx context.Context, dbPath string, ring *security
 // samePath compares absolute paths after cleaning them.
 func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+// restoreMarkerSuffix marks a target whose publish started but did not finish.
+// storage.Open refuses to create a fresh database next to it, so an interrupted
+// restore can never masquerade as a first install.
+const restoreMarkerSuffix = ".restore-in-progress"
+
+// restorePublishHook is a test seam (nil in production). Tests use it to stop the
+// publish at a named stage and inspect the state a crash would leave behind.
+var restorePublishHook func(stage string)
+
+func writeRestoreMarker(target, snapshot string, now time.Time) error {
+	marker := target + restoreMarkerSuffix
+	f, err := os.OpenFile(marker, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(f, "%s\n%s\n", filepath.Base(snapshot), now.UTC().Format(time.RFC3339)); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return syncDir(filepath.Dir(target))
+}
+
+func clearRestoreMarker(target string) error {
+	if err := os.Remove(target + restoreMarkerSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return syncDir(filepath.Dir(target))
 }

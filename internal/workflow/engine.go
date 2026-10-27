@@ -49,6 +49,11 @@ type Engine struct {
 	// paused stops new step claims during a maintenance window. In-flight steps
 	// finish; any lease they hold waits for the next probe after Resume.
 	paused atomic.Bool
+	// activeTicks counts steps that already own a claim and are executing. It is
+	// what a maintenance drain must wait for: pausing only stops new claims.
+	activeTicks atomic.Int64
+	// testTickHook runs inside a claimed Tick (tests only, nil in production).
+	testTickHook func()
 
 	lifecycleMu sync.Mutex
 	lifecycle   engineLifecycle
@@ -311,6 +316,13 @@ func (e *Engine) Resume() {
 // Paused reports whether step claiming is suspended.
 func (e *Engine) Paused() bool { return e.paused.Load() }
 
+// ActiveTicks reports how many claimed steps are executing right now.
+func (e *Engine) ActiveTicks() int64 { return e.activeTicks.Load() }
+
+// SetTestTickHook installs a hook that runs inside a claimed Tick. Tests use it to
+// hold a step in flight; production leaves it nil.
+func (e *Engine) SetTestTickHook(fn func()) { e.testTickHook = fn }
+
 func (e *Engine) workerLoop(ctx context.Context, worker int) {
 	ticker := time.NewTicker(e.cfg.TickInterval)
 	defer ticker.Stop()
@@ -351,6 +363,11 @@ func (e *Engine) Tick(ctx context.Context) (bool, error) {
 	}
 	if claim == nil {
 		return false, nil
+	}
+	e.activeTicks.Add(1)
+	defer e.activeTicks.Add(-1)
+	if hook := e.testTickHook; hook != nil {
+		hook()
 	}
 	if claim.CancelRequested {
 		return true, e.store.CommitStepResult(ctx, claim, storage.StepResult{

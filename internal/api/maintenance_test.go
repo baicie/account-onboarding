@@ -3,9 +3,12 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/baicie/account-onboarding/internal/api"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func decodeMaintenance(t *testing.T, body []byte) map[string]any {
@@ -139,4 +142,69 @@ func TestMaintenanceRequiresAuthentication(t *testing.T) {
 	if status, _ := e.request(t, http.MethodGet, "/v1/maintenance", nil, "", nil); status != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated state status=%d, want 401", status)
 	}
+}
+
+// P2-3: the drain must cover a step that already owns a claim and is executing,
+// not only HTTP writes. Barrier controlled, no sleep-based synchronisation.
+func TestMaintenanceDrainWaitsForInFlightTick(t *testing.T) {
+	e := newEnv(t, nil)
+	previous := api.MaintenanceDrainTimeoutForTest()
+	api.SetMaintenanceDrainTimeoutForTest(400 * time.Millisecond)
+	defer api.SetMaintenanceDrainTimeoutForTest(previous)
+
+	status, body := e.request(t, http.MethodPost, "/v1/runs", sandboxRequest(), adminToken,
+		map[string]string{"Idempotency-Key": "drain-tick-0001"})
+	if status != http.StatusAccepted && status != http.StatusOK {
+		t.Fatalf("create run status=%d body=%s", status, body)
+	}
+
+	enteredTick := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	e.engine.SetTestTickHook(func() {
+		once.Do(func() { close(enteredTick) })
+		<-release
+	})
+	defer e.engine.SetTestTickHook(nil)
+
+	go func() { _, _ = e.engine.Tick(context.Background()) }()
+	select {
+	case <-enteredTick:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no tick reached the executing phase")
+	}
+	if got := e.engine.ActiveTicks(); got < 1 {
+		t.Fatalf("activeTicks = %d, want at least 1", got)
+	}
+
+	status, body = e.request(t, http.MethodPost, "/v1/maintenance/enter",
+		map[string]string{"reason": "drain with a step in flight"}, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("enter status=%d body=%s", status, body)
+	}
+	entered := decodeMaintenance(t, body)
+	if entered["drained"] == true {
+		t.Fatalf("maintenance claimed quiescence while a step was executing: %s", body)
+	}
+	if got, _ := entered["ticks_in_flight"].(float64); got < 1 {
+		t.Fatalf("ticks_in_flight = %v, want at least 1 (%s)", entered["ticks_in_flight"], body)
+	}
+
+	close(release)
+	for i := 0; i < 600 && e.engine.ActiveTicks() != 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := e.engine.ActiveTicks(); got != 0 {
+		t.Fatalf("activeTicks = %d after the step finished, want 0", got)
+	}
+
+	status, body = e.request(t, http.MethodPost, "/v1/maintenance/enter",
+		map[string]string{"reason": "second drain"}, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("second enter status=%d", status)
+	}
+	if again := decodeMaintenance(t, body); again["drained"] != true {
+		t.Fatalf("second drain not quiescent: %s", body)
+	}
+	e.request(t, http.MethodPost, "/v1/maintenance/exit", nil, adminToken, nil)
 }

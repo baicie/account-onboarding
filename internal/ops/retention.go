@@ -78,6 +78,10 @@ const (
 	retentionDelete  = "delete"
 	retentionDryRun  = "would-delete"
 	retentionInvalid = "invalid"
+	// retentionUnverifiable marks a snapshot that could not be checked at all
+	// (missing manifest, missing or wrong keyring). It is kept: unverifiable does
+	// not mean worthless.
+	retentionUnverifiable = "unverifiable"
 )
 
 // ApplyRetention prunes a snapshot directory under the configured policy.
@@ -220,22 +224,46 @@ func ApplyRetention(ctx context.Context, opts RetentionOptions) (RetentionResult
 		res.Candidates = append(res.Candidates, c)
 	}
 
+	// Purging is deliberately constrained. An unverifiable snapshot is not a
+	// worthless snapshot: a wrong or missing keyring makes perfectly good backups
+	// fail verification, so a purge may never empty the directory and may never
+	// take the recovery set below the verified count or the MinValid floor.
+	purgeBlocked := ""
+	if opts.PurgeInvalid {
+		switch {
+		case len(valid) == 0:
+			purgeBlocked = "refusing to purge: no snapshot verifies with the supplied keyring"
+		case len(valid) < minValid:
+			purgeBlocked = fmt.Sprintf("refusing to purge: only %d verified snapshot(s) but -min-valid is %d", len(valid), minValid)
+		}
+	}
+	remaining := len(valid) + len(invalid)
 	for _, c := range invalid {
-		if opts.PurgeInvalid {
-			c.Action = retentionDelete
+		c.Action = retentionInvalid
+		if strings.Contains(c.Reason, "keyring") || strings.Contains(c.Reason, "manifest") {
+			c.Action = retentionUnverifiable
+		}
+		switch {
+		case !opts.PurgeInvalid, purgeBlocked != "":
+			// keep: nothing may be purged in this state
+		case remaining-1 < minValid || remaining-1 < len(valid):
+			// keep: the floor (or the verified count) would be crossed
+		default:
 			if opts.DryRun {
 				c.Action = retentionDryRun
-			}
-			if err := deleteSnapshotPair(c.SnapshotPath, c.ManifestPath, opts.DryRun); err != nil {
+			} else if err := deleteSnapshotPair(c.SnapshotPath, c.ManifestPath, false); err != nil {
 				res.Failures = append(res.Failures, err.Error())
 				c.Action = retentionInvalid
-			} else if !opts.DryRun {
+			} else {
+				c.Action = retentionDelete
 				res.Deleted++
+				remaining--
 			}
-		} else {
-			c.Action = retentionInvalid
 		}
 		res.Candidates = append(res.Candidates, c)
+	}
+	if purgeBlocked != "" {
+		res.Failures = append(res.Failures, purgeBlocked)
 	}
 
 	res.FinishedAt = now
