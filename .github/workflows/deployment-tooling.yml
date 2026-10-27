@@ -90,6 +90,7 @@ jobs:
           ONBOARD_BUILD_VERSION=0.1.1-e2e bash scripts/update_account_onboarding.sh --deploy --offline \
             --expected-sha="$GITHUB_SHA" --root="$ROOT" \
             --go-proxy=https://proxy.golang.org,direct --host-port=18788
+          CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
           B_ID="$(docker inspect "$CID" --format '{{.Image}}')"
           echo "IMAGE_B=$B_ID" >> "$GITHUB_ENV"
           echo "image A=$A_ID image B=$B_ID"
