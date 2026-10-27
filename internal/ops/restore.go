@@ -220,12 +220,14 @@ func Restore(ctx context.Context, opts RestoreOptions) (RestoreResult, error) {
 		stamp := opts.Now().UTC().Format("20060102T150405.000000000Z")
 		preRestore = targetAbs + ".pre-restore-" + stamp
 		if err := os.Rename(targetAbs, preRestore); err != nil {
+			_ = clearRestoreMarker(targetAbs)
 			return res, fmt.Errorf("restore: move existing target aside: %w", err)
 		}
 		movedWAL := false
 		if _, err := os.Lstat(walPath); err == nil {
 			if err := os.Rename(walPath, preRestore+"-wal"); err != nil {
 				_ = os.Rename(preRestore, targetAbs)
+				_ = clearRestoreMarker(targetAbs)
 				return res, fmt.Errorf("restore: move old WAL aside: %w", err)
 			}
 			movedWAL = true
@@ -236,6 +238,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (RestoreResult, error) {
 					_ = os.Rename(preRestore+"-wal", walPath)
 				}
 				_ = os.Rename(preRestore, targetAbs)
+				_ = clearRestoreMarker(targetAbs)
 				return res, fmt.Errorf("restore: move old SHM aside: %w", err)
 			}
 		}
@@ -374,8 +377,14 @@ var restorePublishHook func(stage string)
 
 func writeRestoreMarker(target, snapshot string, now time.Time) error {
 	marker := target + restoreMarkerSuffix
-	f, err := os.OpenFile(marker, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	// O_EXCL, never O_TRUNC: a marker that already exists - including a symlink
+	// planted at this path - must not be followed or truncated, because a restore
+	// normally runs as root against a directory the service account can write.
+	f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists; a previous restore did not complete - inspect it and remove it before retrying", marker)
+		}
 		return err
 	}
 	if _, err := fmt.Fprintf(f, "%s\n%s\n", filepath.Base(snapshot), now.UTC().Format(time.RFC3339)); err != nil {

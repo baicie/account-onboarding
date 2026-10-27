@@ -147,3 +147,32 @@ func TestRestoreSuccessClearsMarkerAndFirstInstallStillWorks(t *testing.T) {
 		t.Fatalf("first install did not create a database: %v", err)
 	}
 }
+
+// N-1: the restore marker must never follow a pre-existing path. A symlink planted
+// at <target>.restore-in-progress must not be truncated, and the restore must fail.
+func TestRestoreMarkerRefusesPlantedSymlink(t *testing.T) {
+	f := newRestoreFixture(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "state.sqlite")
+	victim := filepath.Join(dir, "victim.txt")
+	const sentinel = "IMPORTANT-ROOT-OWNED-CONTENT"
+	if err := os.WriteFile(victim, []byte(sentinel), 0o600); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	if err := os.Symlink(victim, target+restoreMarkerSuffix); err != nil {
+		t.Fatalf("plant symlink: %v", err)
+	}
+	if _, err := Restore(context.Background(), restoreOpts(f, target)); err == nil {
+		t.Fatal("restore must refuse a pre-existing marker path")
+	}
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("victim file disappeared: %v", err)
+	}
+	if string(got) != sentinel {
+		t.Fatalf("victim file was modified through the marker symlink: %q", string(got))
+	}
+	if _, err := os.Lstat(target + restoreMarkerSuffix); err != nil {
+		t.Fatalf("the planted path must be left alone for the operator: %v", err)
+	}
+}

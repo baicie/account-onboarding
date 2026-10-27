@@ -176,20 +176,12 @@ if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" = "0" ]; then
     echo "DISK_FULL_RAN"
     rm -f "$FULL/filler"; umount "$FULL" 2>/dev/null
   else
-    if [ "$REQUIRE_DISK_FULL" = "1" ]; then
-      bad "disk full: required but this environment cannot mount a tmpfs (BLOCKED, not PASS)"
-    else
-      skip "disk full: tmpfs mount unavailable"
-      echo "DISK_FULL_SKIPPED"
-    fi
-  fi
-else
-  if [ "$REQUIRE_DISK_FULL" = "1" ]; then
-    bad "disk full: required but this test is not running as root on Linux (BLOCKED, not PASS)"
-  else
-    skip "disk full: requires root on Linux"
+    skip "disk full: tmpfs mount unavailable (BLOCKED, not PASS)"
     echo "DISK_FULL_SKIPPED"
   fi
+else
+  skip "disk full: requires root on Linux (BLOCKED, not PASS)"
+  echo "DISK_FULL_SKIPPED"
 fi
 echo "INTERRUPTED_RESTORE_COVERED_BY_GO_TESTS"
 echo "  crash before/between/after publish is covered deterministically by"

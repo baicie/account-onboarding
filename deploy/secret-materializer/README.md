@@ -56,6 +56,18 @@ actually copied and a concurrent replacement of the path cannot redirect them:
 - the copied size must equal the fstat size;
 - the file name must match `[A-Za-z0-9_.-]` (no dot files, no separators).
 
+## Revoking a secret
+
+Dropping a name from the source set does **not** delete it from the target: a
+projection that is briefly empty must never erase a working credential. Removal
+is an explicit, auditable operation:
+
+    materialize_secrets.sh --source-dir SRC --target-dir DST --revoke NAME
+
+It removes only that name, refuses anything outside `[A-Za-z0-9_.-]`, requires
+the live entry to be a regular file, writes an `R` journal record with a
+hard-linked copy first, and therefore rolls back with the rest of the
+transaction if the run dies. Repeating it for a name that is gone is a no-op.
 ## Kubernetes projected volumes
 
 `--allow-k8s-projection` permits following a source symlink, which is how a

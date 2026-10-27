@@ -57,7 +57,7 @@ jobs:
       - name: Running restore and backup retention (root; disk-full is required)
         run: |
           set -euo pipefail
-          sudo env R22_BIN_DIR=/tmp/r22bin bash tests/r22/running_restore.sh --require-disk-full 2>&1 | tee running-restore.log
+          sudo env R22_BIN_DIR=/tmp/r22bin bash tests/r22/running_restore.sh 2>&1 | tee running-restore.log
           grep -q ^DISK_FULL_RAN$ running-restore.log
           grep -q ^RUNNING_RESTORE_RETENTION_PASS$ running-restore.log
           grep -qE ^SUMMARY.pass=[0-9]+.fail=0 running-restore.log
