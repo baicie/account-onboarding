@@ -43,6 +43,9 @@ jobs:
           PLAYWRIGHT_CHANNEL: ""
           BROWSER_EVIDENCE_PATH: ${{ github.workspace }}/browser-evidence/browser-evidence.json
           ONBOARD_BROWSER_MATRIX: "1"
+          # The browser matrix asserts English copy; the console defaults to Chinese and that
+          # default is pinned by internal/api TestUIDefaultsToChinese.
+          ONBOARD_UI_LANG: "en"
         run: |
           mkdir -p browser-evidence
           bash tests/browser/run.sh
