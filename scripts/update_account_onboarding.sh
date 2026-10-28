@@ -392,7 +392,7 @@ ops_run() { # ops_run <backup|verify|restore> <args...>
   run dk run --rm -e CGO_ENABLED=1 -e "GOPROXY=$GO_PROXY" \
     -v "$APP:/src:ro" -v "$BACKUPS:/backups" -v "$DATA:/data:ro" -v "$SECRETS:/secrets:ro" -v "$RUNTIME/ops:/out" \
     -w /src --entrypoint /bin/sh "$img" \
-    -c 'go build -buildvcs=false -o /out/ops-"$0" ./internal/ops/cmd/"$0" && exec /out/ops-"$0" "${@:1}"' "$tool" "$@"
+    -c 'go build -buildvcs=false -o /out/ops-"$0" ./internal/ops/cmd/"$0" && exec /out/ops-"$0" "$@"' "$tool" "$@"
 }
 
 take_backup() {
