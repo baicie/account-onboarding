@@ -24,3 +24,7 @@
 # Local env files
 .env
 .env.*
+
+# Frontend dependencies are installed inside the build stage, never copied from the host
+/web/node_modules
+/web/dist

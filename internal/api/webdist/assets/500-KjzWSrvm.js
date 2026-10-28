@@ -1,0 +1,1 @@
+import{c as e}from"./index-CDgPOO91.js";var t=e;export{t as component};

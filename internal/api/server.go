@@ -127,10 +127,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/ops/alerts/resolve", s.apiAuth(true, true, s.handleOpsAlertResolve))
 	mux.HandleFunc("POST /v1/ops/alerts/reconcile", s.apiAuth(true, true, s.handleOpsAlertReconcile))
 	mux.HandleFunc("GET /v1/ops/alerts/outbox", s.apiAuth(false, true, s.handleAlertOutbox))
+	mux.HandleFunc("GET /v1/ops/alerts/outbox/{id}", s.apiAuth(false, true, s.handleAlertOutboxDetail))
+	mux.HandleFunc("POST /v1/ops/alerts/outbox/rearm", s.apiAuth(true, true, s.handleAlertOutboxRearm))
+	mux.HandleFunc("POST /v1/ops/alerts/outbox/resolve", s.apiAuth(true, true, s.handleAlertOutboxResolve))
 	mux.HandleFunc("POST /v1/ops/alerts/outbox/dispatch", s.apiAuth(true, true, s.handleAlertOutboxDispatch))
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)
+	mux.HandleFunc("GET /ui/api/session", s.handleUISession)
+	mux.HandleFunc("GET /ui/app", s.handleSPA)
+	mux.HandleFunc("GET /ui/app/", s.handleSPA)
 	mux.HandleFunc("GET /ui/login", s.handleLoginPage)
 	mux.HandleFunc("POST /ui/login", s.handleLoginSubmit)
 	mux.HandleFunc("POST /ui/logout", s.uiAuth(s.handleLogout))
@@ -229,7 +235,9 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		if strings.HasPrefix(r.URL.Path, "/ui/") || r.URL.Path == "/" {
 			h.Set("Content-Security-Policy",
-				"default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+				"default-src 'none'; script-src 'self'; style-src 'self'; "+
+					"img-src 'self' data:; connect-src 'self'; form-action 'self'; "+
+					"base-uri 'none'; frame-ancestors 'none'")
 			h.Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)

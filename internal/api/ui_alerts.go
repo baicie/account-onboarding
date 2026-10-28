@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baicie/account-onboarding/internal/alerts"
+	"github.com/baicie/account-onboarding/internal/errs"
 	"github.com/baicie/account-onboarding/internal/security"
 	"github.com/baicie/account-onboarding/internal/storage"
 )
@@ -289,4 +290,29 @@ func (s *Server) handleAlertRearmUI(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Store.Audit(r.Context(), info.Actor, "alert.rearm", "", map[string]any{"rule": rule, "rearmed": n})
 	s.alertRedirect(w, r, url.Values{"notice": {"re-armed " + strconv.FormatInt(n, 10) + " terminal row(s); delivery history preserved"}})
+}
+
+// handleAlertOutboxDetail mirrors the server-rendered alert detail page for the React
+// console: the same id validation, the same store reads, JSON instead of HTML.
+func (s *Server) handleAlertOutboxDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if len(id) > 128 || !strings.HasPrefix(id, "al-") {
+		writeError(w, r, errs.New(errs.ClassValidation, "alert.detail", "invalid alert id"))
+		return
+	}
+	it, err := s.Store.GetAlertOutbox(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, r, errs.New(errs.ClassNotFound, "alert.detail", "alert not found"))
+			return
+		}
+		writeError(w, r, errs.Wrap(errs.ClassInternal, "alert.detail", "could not load alert outbox", err))
+		return
+	}
+	deliveries, err := s.Store.ListAlertDeliveries(r.Context(), id)
+	if err != nil {
+		writeError(w, r, errs.Wrap(errs.ClassInternal, "alert.detail", "could not load delivery history", err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": toAlertRow(it), "deliveries": deliveries})
 }
