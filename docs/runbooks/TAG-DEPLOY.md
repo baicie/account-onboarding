@@ -84,6 +84,12 @@ The application keeps its own console login (`/ui/login`, admin token as the pas
 10 attempts per minute per client IP). `ONBOARD_TRUST_PROXY_HEADERS` is set to `true` so
 that limit is applied per real client behind the proxy instead of to 127.0.0.1.
 
+The console compares the browser Origin against the request Host, so the proxy must pass the
+Host header **with its port**: `proxy_set_header Host $http_host;`. Passing `$host` strips the
+port, the comparison fails, and the login page answers `Origin check failed.` for every submit.
+Behind a trusted proxy (the app itself only listens on loopback) keep
+`ONBOARD_TRUST_PROXY_HEADERS: "true"` so the login rate limit is applied per client IP.
+
 Residual risk: this is **plain HTTP**, so the Basic Auth password and the admin token cross
 the network in clear text. Moving to TLS only requires a domain: point it at the host, add a
 `listen 443 ssl` server block (or Caddy) and keep the same upstream.
