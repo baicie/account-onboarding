@@ -384,11 +384,15 @@ ops_image() { sed -n "s/^ARG GOLANG_IMAGE=//p" "$APP/Dockerfile" | head -1; }
 
 ops_run() { # ops_run <backup|verify|restore> <args...>
   local tool="$1"; shift
-  local img; img="$(ops_image)"
+  local img
+  img="$(ops_image)"
   [ -n "$img" ] || die "cannot read ARG GOLANG_IMAGE from the Dockerfile" 2
+  # The container script is single quoted, so the host shell never interpolates the
+  # arguments; the tool name is $0 and the remaining arguments are positional.
   run dk run --rm -e CGO_ENABLED=1 -e "GOPROXY=$GO_PROXY" \
     -v "$APP:/src:ro" -v "$BACKUPS:/backups" -v "$DATA:/data:ro" -v "$SECRETS:/secrets:ro" -v "$RUNTIME/ops:/out" \
-    -w /src "$img" sh -ec "go build -buildvcs=false -o /out/ops-$tool ./internal/ops/cmd/$tool && /out/ops-$tool $*"
+    -w /src --entrypoint /bin/sh "$img" \
+    -c 'go build -buildvcs=false -o /out/ops-"$0" ./internal/ops/cmd/"$0" && exec /out/ops-"$0" "${@:1}"' "$tool" "$@"
 }
 
 take_backup() {
