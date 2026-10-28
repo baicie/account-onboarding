@@ -48,7 +48,7 @@ test.describe('operator matrix on the console', () => {
     await login(page);
     await page.goto('/ui/?template=sandbox-email-verify-oidc');
     await expect(page.locator('table')).toBeVisible();
-    await page.goto('/ui/?status=NOPE');
+    await page.goto('/ui/?status=FAILED_TERMINAL');
     await expect(page.getByText('暂无运行')).toBeVisible({ timeout: 20000 });
   });
 
@@ -60,8 +60,8 @@ test.describe('operator matrix on the console', () => {
     await login(page);
     await page.goto(`/ui/runs/${runId}`);
     await expect(page.getByRole('heading', { name: /运行/ })).toBeVisible({ timeout: 20000 });
-    await expect(page.getByText('步骤')).toBeVisible();
-    await expect(page.getByText('事件时间线')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: '步骤' })).toBeVisible();
+    await expect(page.getByText('事件时间线').first()).toBeVisible();
     await expect(page.getByRole('button', { name: '恢复运行' })).toBeVisible();
     await expect(page.getByRole('button', { name: '取消运行' })).toBeVisible();
   });
