@@ -30,7 +30,7 @@ FETCH_RETRIES=3
 
 usage() {
   cat <<USAGE
-Usage: $PROG [--preflight|--build-only|--deploy|--status|--rollback|--backup-only]
+Usage: $PROG [--preflight|--build-only|--deploy|--status|--rollback|--backup-only|--reconcile]
                     [--offline] [--expected-sha=SHA] [--dry-run] [--no-fetch]
                     [--root=DIR] [--host-port=PORT] [--go-proxy=URL] [--apt-mirror=HOST]
                     [--allow-schema-forward]
@@ -41,6 +41,7 @@ Usage: $PROG [--preflight|--build-only|--deploy|--status|--rollback|--backup-onl
   --status       print the recorded deployment state and the live service state
   --rollback     restore the previous image (binary rollback only; schema checked)
   --backup-only  take and verify an encrypted snapshot, change nothing else
+  --reconcile    read a persisted mutation intent and commit state only if the live image matches
   --offline      no network: requires --expected-sha with a full 40-char commit
   --expected-sha full commit SHA that build and deploy must both use
   --dry-run      print every command instead of running it
@@ -62,6 +63,7 @@ while [ $# -gt 0 ]; do
     --status) ACTION="status" ;;
     --rollback) ACTION="rollback" ;;
     --backup-only) ACTION="backup" ;;
+    --reconcile) ACTION="reconcile" ;;
     --offline) OFFLINE=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --no-fetch) NO_FETCH=1 ;;
@@ -92,7 +94,7 @@ esac
 if [ -L "$ROOT" ]; then die "$ROOT is a symlink; refusing to deploy through it" 3; fi
 APP="$ROOT/app"; RUNTIME="$ROOT/runtime"; DATA="$RUNTIME/data"; SECRETS_SRC="$RUNTIME/secrets-src"
 SECRETS="$RUNTIME/secrets"; BACKUPS="$ROOT/backups"; DEPLOY="$ROOT/deploy"; LOGS="$ROOT/logs"
-STATE="$DEPLOY/deployment-state.json"; OVERRIDE="$DEPLOY/compose.override.yml"
+STATE="$DEPLOY/deployment-state.json"; ATTEMPT="$DEPLOY/deployment-attempt.json"; OVERRIDE="$DEPLOY/compose.override.yml"
 BASE_COMPOSE="$DEPLOY/compose.base.yml"
 MARKER="# managed-by: scripts/update_account_onboarding.sh -- generated file, edits are overwritten"
 
@@ -239,6 +241,7 @@ write_overrides() {
     printf "  onboard_admin_token:\n    file: %s/onboard_admin_token\n" "$SECRETS"
   } > "$OVERRIDE.tmp"
   mv -f "$OVERRIDE.tmp" "$OVERRIDE"
+  sync 2>/dev/null || true
 }
 
 compose() { export ONBOARD_HOST_PORT="$HOST_PORT"; dk compose -p account-onboarding -f "$BASE_COMPOSE" -f "$OVERRIDE" --env-file /dev/null "$@"; }
@@ -433,12 +436,13 @@ build_image() {
 }
 
 # ---- state -----------------------------------------------------------------------
-write_state() { # write_state <image_tag> <image_id> <sha> <schema_version> [previous_image] [previous_sha]
+write_state() { # write_state <image_tag> <image_id> <sha> <schema_version> [previous_image] [previous_sha] [previous_schema] [previous_image_id]
   [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would record $1 $3"; return 0; }
   local ts; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  local prev_image="${5:-}" prev_sha="${6:-}" prev_schema="${7:-}"
+  local prev_image="${5:-}" prev_sha="${6:-}" prev_schema="${7:-}" prev_id="${8:-}"
   {
     printf "{\n"
+    printf "  \"state_version\": 2,\n"
     printf "  \"image\": \"%s\",\n" "$1"
     printf "  \"image_id\": \"%s\",\n" "$2"
     printf "  \"commit\": \"%s\",\n" "$3"
@@ -447,12 +451,42 @@ write_state() { # write_state <image_tag> <image_id> <sha> <schema_version> [pre
     printf "  \"root\": \"%s\",\n" "$ROOT"
     printf "  \"host_port\": %s,\n" "$HOST_PORT"
     printf "  \"previous_image\": \"%s\",\n" "$prev_image"
+    printf "  \"previous_image_id\": \"%s\",\n" "$prev_id"
     printf "  \"previous_commit\": \"%s\",\n" "$prev_sha"
     printf "  \"previous_schema_version\": %s\n" "${prev_schema:-0}"
     printf "}\n"
   } > "$STATE.tmp"
   mv -f "$STATE.tmp" "$STATE"
+  sync 2>/dev/null || true
 }
+
+write_attempt() { # write_attempt <status>; detail globals are set by do_deploy
+  [ "$DRY_RUN" = "1" ] && return 0
+  local status="$1" ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  {
+    printf "{\n"
+    printf "  \"attempt_id\": \"%s\",\n" "$ATTEMPT_ID"
+    printf "  \"status\": \"%s\",\n" "$status"
+    printf "  \"operation\": \"deploy\",\n"
+    printf "  \"requested_commit\": \"%s\",\n" "$TARGET_SHA"
+    printf "  \"image_tag\": \"%s\",\n" "$IMAGE_TAG"
+    printf "  \"expected_image_id\": \"%s\",\n" "$IMAGE_ID"
+    printf "  \"previous_image\": \"%s\",\n" "$ATTEMPT_PREV_IMAGE"
+    printf "  \"previous_image_id\": \"%s\",\n" "$ATTEMPT_PREV_ID"
+    printf "  \"previous_commit\": \"%s\",\n" "$ATTEMPT_PREV_SHA"
+    printf "  \"previous_schema_version\": %s,\n" "${ATTEMPT_PREV_SCHEMA:-0}"
+    printf "  \"snapshot\": \"%s\",\n" "$ATTEMPT_SNAPSHOT"
+    printf "  \"created_at\": \"%s\",\n" "$ts"
+    printf "  \"last_transition\": \"%s\"\n" "$ts"
+    printf "}\n"
+  } > "$ATTEMPT.tmp"
+  mv -f "$ATTEMPT.tmp" "$ATTEMPT"
+  sync 2>/dev/null || true
+}
+
+attempt_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$ATTEMPT" 2>/dev/null | head -1; }
+
 
 state_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$STATE" 2>/dev/null | head -1; }
 state_num()   { sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" "$STATE" 2>/dev/null | head -1; }
@@ -536,9 +570,9 @@ do_backup() {
 
 do_deploy() {
   do_preflight
-  local prev_image prev_sha prev_schema
+  local prev_image prev_sha prev_schema prev_id
   prev_image="$(state_field image || true)"; prev_sha="$(state_field commit || true)"
-  prev_schema="$(state_num schema_version || true)"
+  prev_schema="$(state_num schema_version || true)"; prev_id="$(state_field image_id || true)"
   take_backup
   build_image "$TARGET_SHA"
   write_overrides "$IMAGE_TAG"
@@ -547,16 +581,22 @@ do_deploy() {
     compose_valid
     materialize_secrets "$IMAGE_TAG"
   fi
-[ "$DRY_RUN" = "1" ] || compose up -d --no-build --no-deps --force-recreate onboarding
   [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would start the service"; return 0; }
+  ATTEMPT_ID="deploy-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  ATTEMPT_PREV_IMAGE="$prev_image"; ATTEMPT_PREV_ID="$prev_id"; ATTEMPT_PREV_SHA="$prev_sha"
+  ATTEMPT_PREV_SCHEMA="${prev_schema:-0}"; ATTEMPT_SNAPSHOT="$(cat "$BACKUPS/LATEST" 2>/dev/null || true)"
+  write_attempt mutation_started || die "cannot persist deployment intent; refusing to change the service" 3
+  compose up -d --no-build --no-deps --force-recreate onboarding
   if ! wait_healthy; then
+    write_attempt failed || true
     dump_diagnostics
     warn "deployment is not healthy; keeping the database and evidence, the container is left as-is for inspection"
     warn "to go back: $PROG --rollback (binary rollback; database restore is a separate, destructive decision)"
     exit 3
   fi
   local schema; schema="$(sqlite_user_version "$DATA/state.sqlite" || echo 0)"
-  write_state "$IMAGE_TAG" "$IMAGE_ID" "$TARGET_SHA" "$schema" "$prev_image" "$prev_sha" "$prev_schema"
+  write_state "$IMAGE_TAG" "$IMAGE_ID" "$TARGET_SHA" "$schema" "$prev_image" "$prev_sha" "$prev_schema" "$prev_id"
+  write_attempt committed || warn "deployment is healthy but the attempt commit marker could not be written; run --status"
   log "deployed $IMAGE_TAG from $TARGET_SHA (schema $schema)"
 }
 
@@ -593,6 +633,35 @@ do_rollback() {
   log "rolled back to $prev_image"
 }
 
+do_reconcile() {
+  detect_docker
+  [ -f "$STATE" ] || die "no deployment state; nothing to reconcile" 1
+  [ -f "$ATTEMPT" ] || die "no deployment attempt; nothing to reconcile" 1
+  local status expected actual c schema
+  status="$(attempt_field status)"
+  [ "$status" = "mutation_started" ] || { log "attempt is $status; no reconcile needed"; return 0; }
+  expected="$(attempt_field expected_image_id)"
+  [ -n "$expected" ] || die "attempt has no expected image id; refusing to infer it" 3
+  c="$(detect_existing_container)"
+  [ -n "$c" ] || die "no running container for the persisted attempt" 3
+  actual="$(dk inspect "$c" --format "{{.Image}}" 2>/dev/null || true)"
+  if [ "$actual" != "$expected" ]; then
+    die "IMAGE_MISMATCH: persisted attempt expected $expected but container is $actual; no state was written" 4
+  fi
+  wait_healthy || die "container image matches the attempt but health/readiness did not pass; no state was written" 3
+  schema="$(sqlite_user_version "$DATA/state.sqlite" || true)"
+  [ -n "$schema" ] || die "cannot read schema during reconcile; no state was written" 3
+  ATTEMPT_ID="$(attempt_field attempt_id)"; ATTEMPT_PREV_IMAGE="$(attempt_field previous_image)"
+  ATTEMPT_PREV_ID="$(attempt_field previous_image_id)"; ATTEMPT_PREV_SHA="$(attempt_field previous_commit)"
+  ATTEMPT_PREV_SCHEMA="$(sed -n 's/.*"previous_schema_version": *\([0-9][0-9]*\).*/\1/p' "$ATTEMPT" | head -1)"
+  ATTEMPT_SNAPSHOT="$(attempt_field snapshot)"
+  TARGET_SHA="$(attempt_field requested_commit)"; IMAGE_TAG="$(attempt_field image_tag)"; IMAGE_ID="$expected"
+  write_state "$IMAGE_TAG" "$expected" "$TARGET_SHA" "$schema" \
+    "$ATTEMPT_PREV_IMAGE" "$ATTEMPT_PREV_SHA" "${ATTEMPT_PREV_SCHEMA:-0}" "$ATTEMPT_PREV_ID"
+  write_attempt committed || die "state written but attempt marker failed" 3
+  log "reconciled persisted attempt $ATTEMPT_ID to healthy image $expected"
+}
+
 do_status() {
   local rp
   rp="$(state_num host_port || true)"
@@ -609,6 +678,19 @@ do_status() {
   log "container: $c"
   dk inspect "$c" --format "{{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} image={{.Config.Image}} id={{.Image}}"
   log "healthz: $(api_probe /healthz)  readyz: $(api_probe /readyz)"
+  if [ -f "$ATTEMPT" ]; then
+    local astatus aexpected aid
+    astatus="$(attempt_field status)"; aexpected="$(attempt_field expected_image_id)"; aid="$(attempt_field attempt_id)"
+    log "attempt: id=$aid status=$astatus expected_image=$aexpected"
+    if [ "$astatus" = "mutation_started" ]; then
+      local actual; actual="$(dk inspect "$c" --format "{{.Image}}" 2>/dev/null || true)"
+      if [ -n "$aexpected" ] && [ "$actual" != "$aexpected" ]; then
+        warn "RECOVERY_REQUIRED: IMAGE_MISMATCH (actual=$actual expected=$aexpected); run --reconcile only after review"
+      else
+        warn "INCOMPLETE_ATTEMPT: image matches but LastKnownGood was not committed; run --reconcile"
+      fi
+    fi
+  fi
   if db_file_exists "$DATA/state.sqlite"; then log "database schema: $(sqlite_user_version "$DATA/state.sqlite" || echo unknown)"; fi
 }
 
@@ -697,5 +779,6 @@ case "$ACTION" in
   backup) do_backup ;;
   rollback) do_rollback ;;
   status) do_status ;;
+  reconcile) do_reconcile ;;
   *) die "unhandled action $ACTION" 1 ;;
 esac

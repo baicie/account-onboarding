@@ -23,6 +23,7 @@ if [ "$cmd" = "inspect" ]; then
     *"/app/data"*) echo "${STUB_MOUNT_DATA:-}"; exit 0 ;;
     *"/run/secrets"*) echo "${STUB_MOUNT_SECRETS:-}"; exit 0 ;;
     *"{{.Id}}"*) echo "sha256:stubimage"; exit 0 ;;
+    *"{{.Image}}"*) echo "${STUB_CONTAINER_IMAGE:-sha256:stubimage}"; exit 0 ;;
     *ExitCode*) echo "exit=${STUB_EXIT_CODE:-0} restarts=${STUB_RESTARTS:-0}"; exit 0 ;;
   esac
   echo "exit=0 restarts=0"; exit 0
@@ -128,6 +129,18 @@ if grep -q DOCKER_RUN "$LOG"; then bad "build-only materialized secrets"; else o
 mkroot; run --deploy --dry-run --root="$ROOT"; want "dry-run deploy ok" 0 "DRY-RUN"
 if grep -q COMPOSE_UP "$LOG"; then bad "dry-run started a container"; else ok "dry-run started nothing"; fi
 mkroot; run --status --root="$ROOT"; want "status without state ok" 0 "no deployment state"
+mkroot
+python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+db.execute("INSERT INTO schema_migrations(version) VALUES (6)")
+db.commit(); db.close()
+PY
+printf '{\n  "image": "account-onboarding:local-abc",\n  "image_id": "sha256:stubimage",\n  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",\n  "schema_version": 6,\n  "previous_image": "",\n  "previous_image_id": "",\n  "previous_commit": "",\n  "previous_schema_version": 0\n}\n' > "$ROOT/deploy/deployment-state.json"
+printf '{\n  "attempt_id": "deploy-stub",\n  "status": "mutation_started",\n  "operation": "deploy",\n  "requested_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",\n  "image_tag": "account-onboarding:local-abc",\n  "expected_image_id": "sha256:stubimage",\n  "previous_image": "",\n  "previous_image_id": "",\n  "previous_commit": "",\n  "previous_schema_version": 0,\n  "snapshot": "snapshot-1"\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+STUB_CONTAINER=account-onboarding run --reconcile --root="$ROOT"; want "reconcile commits a matching healthy attempt" 0 "reconciled persisted attempt"
+grep -q '"status": "committed"' "$ROOT/deploy/deployment-attempt.json" || bad "reconcile did not mark the attempt committed"
 mkroot; STUB_CONTAINER=account-onboarding STUB_REQUIRE_AUTH=1 run --status --root="$ROOT"; want "status authenticates readiness with the source token" 0 "readyz: 200"
 mkroot; run --rollback --root="$ROOT"; want "rollback without state refused" 1 "nothing to roll back"
 mkroot; run --backup-only --root="$ROOT"; want "backup-only without a database is a no-op" 0 "no database to back up"
