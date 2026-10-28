@@ -1,11 +1,10 @@
 package api_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
-	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -170,9 +169,12 @@ func TestTwoAdminsUIResolutionRace(t *testing.T) {
 	clientB := &http.Client{Jar: jarB, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	csrfA := loginUISessionClient(t, e, clientA)
 	csrfB := loginUISessionClient(t, e, clientB)
-	form := func(csrf, resolution string) url.Values {
-		return url.Values{"csrf": {csrf}, "expected_version": {strconv.FormatInt(op.Version, 10)},
-			"resolution": {resolution}, "reason": {"ui race"}}
+	payload := func(resolution string) []byte {
+		raw, err := json.Marshal(map[string]any{"expected_version": op.Version, "resolution": resolution, "reason": "ui race"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
 	}
 	results := make(chan int, 2)
 	var wg sync.WaitGroup
@@ -184,9 +186,10 @@ func TestTwoAdminsUIResolutionRace(t *testing.T) {
 			if i == 1 {
 				csrf, client = csrfB, clientB
 			}
-			req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/ops/external/"+op.ID+"/resolve",
-				strings.NewReader(form(csrf, resolution).Encode()))
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/v1/ops/external/"+op.ID+"/resolve",
+				bytes.NewReader(payload(resolution)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-CSRF-Token", csrf)
 			req.Header.Set("Origin", e.ts.URL)
 			resp, err := client.Do(req)
 			if err != nil {
@@ -200,10 +203,19 @@ func TestTwoAdminsUIResolutionRace(t *testing.T) {
 	}
 	wg.Wait()
 	close(results)
+	winners, conflicts := 0, 0
 	for status := range results {
-		if status != http.StatusSeeOther {
+		switch status {
+		case http.StatusOK:
+			winners++
+		case http.StatusConflict:
+			conflicts++
+		default:
 			t.Fatalf("UI race status=%d", status)
 		}
+	}
+	if winners != 1 || conflicts != 1 {
+		t.Fatalf("race winners=%d conflicts=%d, want exactly one of each", winners, conflicts)
 	}
 	after, err := e.store.GetExternalOperationByID(t.Context(), op.ID)
 	if err != nil || after.Status != storage.ExternalResolved {

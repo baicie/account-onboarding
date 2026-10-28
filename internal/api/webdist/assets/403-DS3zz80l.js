@@ -1,0 +1,1 @@
+import{t as e}from"./forbidden-B16Rfkg5.js";var t=e;export{t as component};

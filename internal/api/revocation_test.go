@@ -51,11 +51,12 @@ func login(t *testing.T, e *env) (cookieValue, csrf string) {
 		}
 	}
 	dash.Body.Close()
-	m := csrfPattern.FindSubmatch(body)
-	if len(m) != 2 {
+	_ = body
+	csrfToken, ok := sessionCSRF(t, e)
+	if !ok {
 		t.Fatal("csrf token missing from dashboard")
 	}
-	return cookieValue, string(m[1])
+	return cookieValue, csrfToken
 }
 
 func postLogout(t *testing.T, client *http.Client, base, cookieValue, csrf string) int {
@@ -77,7 +78,7 @@ func postLogout(t *testing.T, client *http.Client, base, cookieValue, csrf strin
 
 func getDashboardWithCookie(t *testing.T, client *http.Client, base, cookieValue string) (int, string) {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, base+"/ui/", nil)
+	req, _ := http.NewRequest(http.MethodGet, base+"/ui/api/session", nil)
 	req.Header.Set("Cookie", "onboard_session="+cookieValue)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -108,7 +109,7 @@ func TestLogoutRevocationPersistsAcrossRestart(t *testing.T) {
 	}
 	ts2 := newTestServer(t, srv2)
 	status, location := getDashboardWithCookie(t, e.client, ts2, cookieValue)
-	if status != http.StatusSeeOther || !strings.Contains(location, "/ui/login") {
+	if status != http.StatusUnauthorized {
 		t.Fatalf("old cookie after restart = %d location=%q", status, location)
 	}
 	// Sanity: a fresh login on the restarted server works (revocation is scoped
@@ -148,7 +149,7 @@ func TestConcurrentAndRepeatedLogout(t *testing.T) {
 		t.Fatalf("repeated logout = %d", status)
 	}
 	status, location := getDashboardWithCookie(t, e.client, e.ts.URL, cookieValue)
-	if status != http.StatusSeeOther || !strings.Contains(location, "/ui/login") {
+	if status != http.StatusUnauthorized {
 		t.Fatalf("revoked cookie still accepted: %d %q", status, location)
 	}
 	if n, _ := e.store.CountSessionRevocations(context.Background()); n != 1 {
@@ -215,7 +216,7 @@ func TestSessionRejectedWhenRevocationStoreUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, location := getDashboardWithCookie(t, e.client, e.ts.URL, cookieValue)
-	if status != http.StatusSeeOther || !strings.Contains(location, "/ui/login") {
+	if status != http.StatusUnauthorized {
 		t.Fatalf("cookie accepted while revocation store is unavailable: %d %q", status, location)
 	}
 }
@@ -257,7 +258,7 @@ func TestLogoutRevocationOutlivesShortenedSessionTTL(t *testing.T) {
 	if cookieValue == "" {
 		t.Fatal("no session cookie")
 	}
-	dashReq, _ := http.NewRequest(http.MethodGet, base+"/ui/", nil)
+	dashReq, _ := http.NewRequest(http.MethodGet, base+"/ui/api/session", nil)
 	dashReq.Header.Set("Cookie", "onboard_session="+cookieValue)
 	dash, err := e.client.Do(dashReq)
 	if err != nil {
@@ -265,11 +266,12 @@ func TestLogoutRevocationOutlivesShortenedSessionTTL(t *testing.T) {
 	}
 	body, _ := io.ReadAll(dash.Body)
 	dash.Body.Close()
-	m := csrfPattern.FindSubmatch(body)
-	if len(m) != 2 {
+	_ = body
+	csrfNow, ok := sessionCSRF(t, e)
+	if !ok {
 		t.Fatal("csrf token missing")
 	}
-	if status := postLogout(t, e.client, base, cookieValue, string(m[1])); status != http.StatusSeeOther {
+	if status := postLogout(t, e.client, base, cookieValue, csrfNow); status != http.StatusSeeOther {
 		t.Fatalf("logout = %d", status)
 	}
 	// Wait past the *new* (1s) TTL, then trigger the opportunistic prune via a
@@ -278,8 +280,8 @@ func TestLogoutRevocationOutlivesShortenedSessionTTL(t *testing.T) {
 	if status := postLoginRaw(t, e.client, base); status != http.StatusSeeOther {
 		t.Fatalf("fresh login = %d", status)
 	}
-	if status, location := getDashboardWithCookie(t, e.client, base, cookieValue); status != http.StatusSeeOther || !strings.Contains(location, "/ui/login") {
-		t.Fatalf("revocation expired before the cookie did: %d %q", status, location)
+	if status, _ := getDashboardWithCookie(t, e.client, base, cookieValue); status != http.StatusUnauthorized {
+		t.Fatalf("revocation expired before the cookie did: %d", status)
 	}
 	if n, _ := e.store.CountSessionRevocations(context.Background()); n != 1 {
 		t.Fatalf("revocation rows = %d, want 1", n)

@@ -180,14 +180,16 @@ func TestHTTPHardeningHeadersAndCSP(t *testing.T) {
 func TestHTTPUIRedirects(t *testing.T) {
 	st := newTestStack(t)
 	base := st.HTTPBaseURL()
+	// The console is a single-page app: the shell is public, the data is not.
 	for _, path := range []string{"/ui/", "/ui/runs/does-not-exist"} {
 		resp, _ := doHTTP(t, http.MethodGet, base+path, nil, nil)
-		if resp.StatusCode != http.StatusSeeOther {
-			t.Fatalf("%s status = %d, want 503", path, resp.StatusCode)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200 from the SPA shell", path, resp.StatusCode)
 		}
-		if loc := resp.Header.Get("Location"); loc != "/ui/login" {
-			t.Fatalf("%s Location = %q, want /ui/login", path, loc)
-		}
+	}
+	resp, _ := doHTTP(t, http.MethodGet, base+"/ui/api/session", nil, nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous session probe = %d, want 401", resp.StatusCode)
 	}
 }
 
@@ -568,8 +570,8 @@ func TestHTTPRateLimitLogin(t *testing.T) {
 	}
 	for i := 0; i < 3; i++ {
 		resp, _ := login()
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("attempt %d = %d, want 501", i+1, resp.StatusCode)
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("attempt %d = %d, want 303 back to the console login", i+1, resp.StatusCode)
 		}
 	}
 	resp, raw := login()

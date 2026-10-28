@@ -21,7 +21,7 @@ func TestSPAAssetsResolveFromTheMountPoint(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("index = %d", resp.StatusCode)
 	}
-	m := regexp.MustCompile(`/ui/app/assets/[A-Za-z0-9._-]+\.js`).FindString(string(body))
+	m := regexp.MustCompile(`/ui/assets/[A-Za-z0-9._-]+\.js`).FindString(string(body))
 	if m == "" {
 		t.Fatalf("index.html does not reference an /ui/app asset: %s", body)
 	}

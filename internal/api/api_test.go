@@ -454,6 +454,22 @@ func TestRunDetailEventsAndList(t *testing.T) {
 
 var csrfPattern = regexp.MustCompile(`name="csrf" value="([^"]+)"`)
 
+func sessionCSRF(t *testing.T, e *env) (string, bool) {
+	t.Helper()
+	resp, err := e.client.Get(e.ts.URL + "/ui/api/session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		CSRF string `json:"csrf"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", false
+	}
+	return body.CSRF, body.CSRF != ""
+}
+
 func TestUILoginAndCSRFProtection(t *testing.T) {
 	e := newEnv(t, nil)
 	// Wrong token is rejected.
@@ -463,8 +479,8 @@ func TestUILoginAndCSRFProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("bad login status = %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusSeeOther || !strings.Contains(resp.Header.Get("Location"), "/ui/login?error=") {
+		t.Fatalf("bad login = %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
 
 	// Correct token with same-origin Origin header.
@@ -496,19 +512,19 @@ func TestUILoginAndCSRFProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dashboard, _ := io.ReadAll(resp.Body)
+	_, _ = io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("dashboard status = %d", resp.StatusCode)
 	}
-	m := csrfPattern.FindSubmatch(dashboard)
-	if len(m) != 2 {
-		t.Fatal("CSRF token not rendered")
+	csrfToken, ok := sessionCSRF(t, e)
+	if !ok {
+		t.Fatal("session endpoint returned no CSRF token")
 	}
-	csrf = string(m[1])
+	csrf = csrfToken
 
 	// A mutation without the CSRF token is rejected.
-	badReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/runs", strings.NewReader(url.Values{
+	badReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/v1/runs", strings.NewReader(url.Values{
 		"template": {"sandbox-email-verify-oidc"}, "mailbox_provider": {"fake-mailbox"},
 		"identity_provider": {"fake-identity"}, "oauth_provider": {"fake-oauth"},
 	}.Encode()))
@@ -523,28 +539,25 @@ func TestUILoginAndCSRFProtection(t *testing.T) {
 		t.Fatalf("POST without CSRF = %d (want 403)", resp.StatusCode)
 	}
 
-	// With the CSRF token and a same-origin request it succeeds.
-	goodReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/runs", strings.NewReader(url.Values{
-		"csrf": {csrf}, "template": {"sandbox-email-verify-oidc"},
-		"mailbox_provider": {"fake-mailbox"}, "identity_provider": {"fake-identity"},
-		"oauth_provider": {"fake-oauth"}, "idempotency_key": {"ui-run-0001"},
-	}.Encode()))
-	goodReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// With the CSRF token and a same-origin request it succeeds against the JSON API.
+	goodBody := `{"template":"sandbox-email-verify-oidc","mode":"sandbox-e2e","mailbox_provider":"fake-mailbox","identity_provider":"fake-identity","oauth_provider":"fake-oauth"}`
+	goodReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/v1/runs", strings.NewReader(goodBody))
+	goodReq.Header.Set("Content-Type", "application/json")
+	goodReq.Header.Set("X-CSRF-Token", csrf)
 	goodReq.Header.Set("Origin", e.ts.URL)
+	goodReq.Header.Set("Idempotency-Key", "ui-run-0001")
 	resp, err = e.client.Do(goodReq)
 	if err != nil {
 		t.Fatal(err)
 	}
+	created, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("POST with CSRF = %d", resp.StatusCode)
-	}
-	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "/ui/runs/") {
-		t.Fatalf("unexpected redirect %q", loc)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST with CSRF = %d body=%s", resp.StatusCode, created)
 	}
 
 	// A cookie-authenticated mutation without Origin or Referer is rejected.
-	noOriginReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/runs", strings.NewReader(url.Values{
+	noOriginReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/v1/runs", strings.NewReader(url.Values{
 		"csrf": {csrf}, "template": {"sandbox-email-verify-oidc"},
 	}.Encode()))
 	noOriginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -558,7 +571,7 @@ func TestUILoginAndCSRFProtection(t *testing.T) {
 	}
 
 	// Cross-origin mutation is rejected even with a valid session.
-	crossReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/runs", strings.NewReader(url.Values{
+	crossReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/v1/runs", strings.NewReader(url.Values{
 		"csrf": {csrf}, "template": {"sandbox-email-verify-oidc"},
 	}.Encode()))
 	crossReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -686,8 +699,8 @@ func TestLoginRateLimit(t *testing.T) {
 		resp.Body.Close()
 		lastStatus = resp.StatusCode
 		lastHeader = resp.Header
-		if i < 3 && resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("attempt %d = %d (want 401)", i+1, resp.StatusCode)
+		if i < 3 && resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("attempt %d = %d (want 303 back to the console login)", i+1, resp.StatusCode)
 		}
 	}
 	if lastStatus != http.StatusTooManyRequests {
@@ -792,14 +805,11 @@ func TestLogoutRevokesSession(t *testing.T) {
 		resp.Body.Close()
 	}
 	// Logout (CSRF + Origin required for cookie mutations).
-	dashResp, _ := e.client.Get(e.ts.URL + "/ui/")
-	dashBody, _ := io.ReadAll(dashResp.Body)
-	dashResp.Body.Close()
-	m := csrfPattern.FindSubmatch(dashBody)
-	if len(m) != 2 {
+	csrfToken, ok := sessionCSRF(t, e)
+	if !ok {
 		t.Fatal("csrf token missing")
 	}
-	logoutReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/logout", strings.NewReader(url.Values{"csrf": {string(m[1])}}.Encode()))
+	logoutReq, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/logout", strings.NewReader(url.Values{"csrf": {csrfToken}}.Encode()))
 	logoutReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	logoutReq.Header.Set("Origin", e.ts.URL)
 	resp, err = e.client.Do(logoutReq)
@@ -811,15 +821,15 @@ func TestLogoutRevokesSession(t *testing.T) {
 		t.Fatalf("logout = %d", resp.StatusCode)
 	}
 	// Replaying the pre-logout cookie must be rejected server-side.
-	replay, _ := http.NewRequest(http.MethodGet, e.ts.URL+"/ui/", nil)
+	replay, _ := http.NewRequest(http.MethodGet, e.ts.URL+"/ui/api/session", nil)
 	replay.Header.Set("Cookie", "onboard_session="+sessionValue)
 	resp, err = e.client.Do(replay)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || !strings.Contains(resp.Header.Get("Location"), "/ui/login") {
-		t.Fatalf("revoked session replay = %d location=%q", resp.StatusCode, resp.Header.Get("Location"))
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("revoked session replay = %d, want 401", resp.StatusCode)
 	}
 }
 
@@ -1121,7 +1131,7 @@ func seedPendingExternalOperation(t *testing.T, e *env) (storage.ExternalOperati
 
 func TestReconciliationUISecurityAndAuditHistory(t *testing.T) {
 	e := newEnv(t, nil)
-	op, run, _ := seedPendingExternalOperation(t, e)
+	op, _, _ := seedPendingExternalOperation(t, e)
 	ctx := context.Background()
 	// A malicious-looking reason is persisted and must be rendered escaped.
 	if _, err := e.store.ResolveExternalOperation(ctx, op.ID, storage.ExternalResolution{
@@ -1140,14 +1150,14 @@ func TestReconciliationUISecurityAndAuditHistory(t *testing.T) {
 	if status, _ := e2.request(t, http.MethodGet, "/v1/ops/external/"+op.ID+"/audit", nil, viewer, nil); status != http.StatusForbidden {
 		t.Fatalf("viewer audit = %d, want 403", status)
 	}
-	// Unauthenticated UI redirects.
-	resp, err := e.client.Get(e.ts.URL + "/ui/ops/external")
+	// The console shell is a static bundle anyone may load; the data behind it is not.
+	resp, err := e.client.Get(e.ts.URL + "/ui/api/session")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || !strings.Contains(resp.Header.Get("Location"), "/ui/login") {
-		t.Fatalf("anonymous UI = %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous session probe = %d, want 401", resp.StatusCode)
 	}
 	// Login obtains a session cookie in the jar.
 	req, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/login", strings.NewReader(url.Values{"token": {adminToken}}.Encode()))
@@ -1161,29 +1171,25 @@ func TestReconciliationUISecurityAndAuditHistory(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("login = %d", resp.StatusCode)
 	}
-	resp, err = e.client.Get(e.ts.URL + "/ui/ops/external/" + op.ID)
-	if err != nil {
+	// The console renders this JSON with React, which escapes by default; the API stores and
+	// returns operator text verbatim, so the audit read must round-trip it unchanged.
+	status, audit := e.request(t, http.MethodGet, "/v1/ops/external/"+op.ID+"/audit", nil, adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("audit = %d %s", status, audit)
+	}
+	var decoded any
+	if err := json.Unmarshal(audit, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	detail, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("detail = %d %s", resp.StatusCode, detail)
+	if !strings.Contains(fmt.Sprint(decoded), `external_operation.review`) {
+		t.Fatal("audit history missing the review action")
 	}
-	if strings.Contains(string(detail), `<script>alert("x")</script>`) {
-		t.Fatal("detail page embedded raw operator text")
+	if !strings.Contains(fmt.Sprint(decoded), `<script>alert("x")</script>`) {
+		t.Fatal("audit history did not round-trip the operator text verbatim")
 	}
-	if !strings.Contains(string(detail), "&lt;script&gt;") {
-		t.Fatal("detail page did not escape operator text")
-	}
-	if !strings.Contains(string(detail), "external_operation.review") {
-		t.Fatal("detail page missing audit history")
-	}
-	if !strings.Contains(string(detail), run.ID) {
-		t.Fatal("detail page missing run link")
-	}
+
 	// Cookie mutation without CSRF is rejected.
-	noCSRF, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/ui/ops/external/"+op.ID+"/resolve", strings.NewReader(url.Values{
+	noCSRF, _ := http.NewRequest(http.MethodPost, e.ts.URL+"/v1/ops/external/"+op.ID+"/resolve", strings.NewReader(url.Values{
 		"resolution": {"UNRESOLVED"}, "reason": {"x"}, "expected_version": {strconv.FormatInt(op.Version+1, 10)},
 	}.Encode()))
 	noCSRF.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1194,7 +1200,7 @@ func TestReconciliationUISecurityAndAuditHistory(t *testing.T) {
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("UI resolve without CSRF = %d, want 403", resp.StatusCode)
+		t.Fatalf("resolve without CSRF = %d, want 403", resp.StatusCode)
 	}
 }
 
