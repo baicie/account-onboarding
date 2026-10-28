@@ -653,9 +653,23 @@ do_rollback() {
   [ -n "$prev_image" ] || prev_image="$(state_field previous_image || true)"
   prev_sha="$(state_field last_good_commit || true)"
   [ -n "$prev_sha" ] || prev_sha="$(state_field previous_commit || true)"
-  log "rolling back to $prev_image ($prev_sha)"
   prev_id="$(state_field previous_image_id || true)"
   recorded_schema="$(state_num previous_schema_version || true)"
+  # A failed attempt must return to the release it replaced, not to an older generation.
+  local attempt_status ai
+  attempt_status="$(attempt_field status 2>/dev/null || true)"
+  if [ -f "$ATTEMPT" ] && [ "$attempt_status" != "committed" ]; then
+    ai="$(attempt_field previous_image || true)"
+    if [ -n "$ai" ]; then prev_image="$ai"; fi
+    ai="$(attempt_field previous_image_id || true)"
+    if [ -n "$ai" ]; then prev_id="$ai"; fi
+    ai="$(attempt_field previous_commit || true)"
+    if [ -n "$ai" ]; then prev_sha="$ai"; fi
+    ai="$(attempt_field previous_schema_version || true)"
+    if [ -n "$ai" ]; then recorded_schema="$ai"; fi
+    warn "an unfinished deployment attempt is on record; returning to the release it replaced ($prev_image)"
+  fi
+  log "rolling back to $prev_image ($prev_sha)"
   [ -n "$prev_image" ] || die "no previous image recorded; roll back by restoring a snapshot with the documented procedure" 1
   if [ -z "$recorded_schema" ]; then die "the recorded state has no schema version for the previous release; refusing to roll back blindly" 3; fi
   current_schema="$(sqlite_user_version "$DATA/state.sqlite" || true)"

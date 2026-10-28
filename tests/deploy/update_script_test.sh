@@ -210,6 +210,18 @@ run --status --root="$ROOT"; grep -q "recovery: run --rollback" "$LOG" && ok "--
 # mismatch with no attempt file must be an explicit refusal, never a silent abort
 mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
 run --rollback --root="$ROOT"; want "a mismatch without an attempt is refused with 3" 3 "does not match the recorded current image"
+
+# --- the recovery destination is the release the failed attempt replaced ---
+mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-A",\n  "last_good_commit": "aaa",\n  "last_good_schema_version": 5,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
+printf '{\n  "attempt_id": "deploy-1",\n  "status": "failed",\n  "expected_image_id": "sha256:stubimage",\n  "previous_image": "account-onboarding:local-B",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)]); db.commit(); db.close()
+PY
+STUB_CONTAINER=account-onboarding run --rollback --root="$ROOT"
+if grep -q "rolling back to account-onboarding:local-B" "$LOG"; then ok "recovery returns to the replaced release (B), not the older last-good (A)"; else bad "recovery targets the wrong release"; sed "s/^/    | /" "$LOG" | tail -6; fi
+
 printf "\nSUMMARY pass=%d fail=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo DEPLOY_TOOLING_TESTS_PASS || echo DEPLOY_TOOLING_TESTS_FAIL
 [ "$FAIL" -eq 0 ]
