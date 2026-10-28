@@ -25,6 +25,9 @@ export ONBOARD_POLL_INTERVAL=200ms
 export ONBOARD_TICK_INTERVAL=50ms
 export ONBOARD_LOG_LEVEL=warn
 export ONBOARD_LOGIN_RATE_LIMIT_PER_MINUTE=1000
+# The suite loads several pages per test from one address; the request limiter is a
+# production concern and is covered by the Go tests.
+export ONBOARD_RATE_LIMIT_PER_MINUTE=20000
 export PLAYWRIGHT_CHANNEL="${PLAYWRIGHT_CHANNEL-chrome}"
 export ONBOARD_BROWSER_BASE_URL="http://127.0.0.1:$PORT"
 export ONBOARD_TEST_ADMIN_TOKEN="$(cat "$WORK/admin.token")"

@@ -5,10 +5,10 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
-// The bundle is embedded by the Go binary and served at /ui/app.
+// The bundle is embedded by the Go binary and served at /ui.
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/ui/app/',
+  base: '/ui/',
   build: {
     outDir: path.resolve(__dirname, '../internal/api/webdist'),
     emptyOutDir: true,

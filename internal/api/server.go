@@ -49,8 +49,6 @@ type Server struct {
 	StartedAt           time.Time
 	Version             string
 
-	pages map[string]*page
-
 	generalLimiter *rateLimiter
 	loginLimiter   *rateLimiter
 
@@ -64,10 +62,6 @@ type Server struct {
 func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 	registry *provider.Registry, sec *secrets.Service, log *slog.Logger,
 	signer *security.SessionSigner, redactor *security.Redactor) (*Server, error) {
-	pages, err := loadPages(normalizeUILang(cfg.UILang))
-	if err != nil {
-		return nil, err
-	}
 	if log == nil {
 		log = slog.Default()
 	}
@@ -89,7 +83,6 @@ func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 		AlertOutboxNotifier: nil,
 		StartedAt:           time.Now().UTC(),
 		Version:             Version,
-		pages:               pages,
 		generalLimiter:      newRateLimiter(cfg.RateLimitPerMinute, time.Minute),
 		loginLimiter:        newRateLimiter(cfg.LoginRateLimitPerMinute, time.Minute),
 	}, nil
@@ -133,28 +126,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/ops/alerts/outbox/dispatch", s.apiAuth(true, true, s.handleAlertOutboxDispatch))
 
 	// Minimal operator UI.
-	mux.HandleFunc("GET /", s.handleRoot)
+	mux.HandleFunc("GET /{$}", s.handleRoot)
+	// Every other unknown path is a JSON 404, never a redirect to the console.
+	mux.HandleFunc("/", s.handleNotFound)
 	mux.HandleFunc("GET /ui/api/session", s.handleUISession)
-	mux.HandleFunc("GET /ui/app", s.handleSPA)
-	mux.HandleFunc("GET /ui/app/", s.handleSPA)
-	mux.HandleFunc("GET /ui/login", s.handleLoginPage)
+	mux.HandleFunc("GET /ui/login", s.handleSPA)
 	mux.HandleFunc("POST /ui/login", s.handleLoginSubmit)
 	mux.HandleFunc("POST /ui/logout", s.uiAuth(s.handleLogout))
-	mux.HandleFunc("GET /ui/", s.uiAuth(s.handleDashboard))
-	mux.HandleFunc("GET /ui/runs/{id}", s.uiAuth(s.handleRunPage))
-	mux.HandleFunc("GET /ui/alerts/outbox", s.uiAuth(s.handleAlertsPage))
-	mux.HandleFunc("GET /ui/alerts/outbox/{id}", s.uiAuth(s.handleAlertDetail))
-	mux.HandleFunc("POST /ui/alerts/reconcile", s.uiAuth(s.handleAlertReconcileUI))
-	mux.HandleFunc("POST /ui/alerts/outbox/dispatch", s.uiAuth(s.handleAlertDispatchUI))
-	mux.HandleFunc("POST /ui/alerts/outbox/resolve", s.uiAuth(s.handleAlertResolveUI))
-	mux.HandleFunc("POST /ui/alerts/outbox/rearm", s.uiAuth(s.handleAlertRearmUI))
-	mux.HandleFunc("GET /ui/ops/external", s.uiAuth(s.handleOpsExternalPage))
-	mux.HandleFunc("POST /ui/ops/external/{id}/resolve", s.uiAuth(s.handleOpsExternalResolveUI))
-	mux.HandleFunc("GET /ui/ops/external/{id}", s.uiAuth(s.handleOpsExternalDetail))
-	mux.HandleFunc("POST /ui/runs", s.uiAuth(s.handleCreateRunUI))
-	mux.HandleFunc("POST /ui/runs/{id}/resume", s.uiAuth(s.handleResumeUI))
-	mux.HandleFunc("POST /ui/runs/{id}/cancel", s.uiAuth(s.handleCancelUI))
-	mux.HandleFunc("GET /ui/static/app.css", s.handleCSS)
+	mux.HandleFunc("GET /ui/", s.handleSPA)
 
 	return s.securityHeaders(s.requestLogger(s.recoverer(s.rateLimit(s.maintenanceGate(mux)))))
 }

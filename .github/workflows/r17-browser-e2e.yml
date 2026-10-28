@@ -46,6 +46,8 @@ jobs:
           # The browser matrix asserts English copy; the console defaults to Chinese and that
           # default is pinned by internal/api TestUIDefaultsToChinese.
           ONBOARD_UI_LANG: "en"
+          # The suite signs in once per test; the per-IP login limit is covered by the Go tests.
+          ONBOARD_LOGIN_RATE_LIMIT_PER_MINUTE: "120"
         run: |
           mkdir -p browser-evidence
           bash tests/browser/run.sh
