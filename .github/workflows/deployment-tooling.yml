@@ -150,19 +150,28 @@ jobs:
           CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
           test "$(docker inspect "$CID" --format '{{.Image}}')" = "$IMAGE_A"
 
-      - name: Negative - an attempt whose image is not the running one is refused
+      - name: Negative - a recorded image that disagrees with the container is refused
         run: |
           set -euo pipefail
-          printf '{\n  "attempt_id": "e2e-guard",\n  "status": "failed",\n  "expected_image_id": "sha256:0000",\n  "previous_image": "account-onboarding:local-none",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+          cp "$ROOT/deploy/deployment-state.json" /tmp/state.bak
+          python3 - "$ROOT/deploy/deployment-state.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["current_image_id"] = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+json.dump(d, open(p, "w"), indent=2)
+PY
+          printf '{\n  "attempt_id": "e2e-guard",\n  "status": "failed",\n  "expected_image_id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",\n  "previous_image": "account-onboarding:local-none",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
           set +e
           bash scripts/update_account_onboarding.sh --rollback --root="$ROOT" > attempt-guard.log 2>&1
           rc=$?
           set -e
           echo "rollback rc=$rc"
-          cat attempt-guard.log | tail -5
+          tail -5 attempt-guard.log
           test "$rc" -eq 3
           grep -q "does not match the recorded current image" attempt-guard.log
           docker ps --filter name=account-onboarding --format "{{.Status}}" | grep -q "Up"
+          cp /tmp/state.bak "$ROOT/deploy/deployment-state.json"
           rm -f "$ROOT/deploy/deployment-attempt.json"
 
       - name: The database survived every step
