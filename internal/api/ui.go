@@ -453,7 +453,7 @@ func (s *Server) handleRunPage(w http.ResponseWriter, r *http.Request) {
 	status := state.RunState(run.Status)
 	if err := s.pages["run"].render(w, http.StatusOK, runPage{
 		pageData: pageData{
-			Title:     "Run " + shortID(run.ID),
+			Title:     s.t("page.run_prefix") + shortID(run.ID),
 			Version:   s.Version,
 			CSRFToken: info.CSRF,
 			SignedIn:  true,

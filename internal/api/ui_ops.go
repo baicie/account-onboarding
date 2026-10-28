@@ -185,7 +185,7 @@ func (s *Server) handleOpsExternalDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	data := opsExternalDetailPage{
-		pageData: pageData{Title: "Operation " + op.OperationKey, Version: Version, CSRFToken: info.CSRF,
+		pageData: pageData{Title: s.t("page.operation_prefix") + op.OperationKey, Version: Version, CSRFToken: info.CSRF,
 			SignedIn: true, Actor: info.Actor, Error: r.URL.Query().Get("error"),
 			Notice: r.URL.Query().Get("notice")},
 		Op: op, ReturnStatus: r.URL.Query().Get("status"),

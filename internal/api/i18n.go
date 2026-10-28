@@ -176,6 +176,9 @@ var messages = map[string][2]string{
 	"page.reconciliation":       {"\u5bf9\u8d26", "Reconciliation"},
 	"t.mode":                    {"\u6a21\u5f0f", "Mode"},
 	"t.actions2":                {"\u52a8\u4f5c", "Actions"},
+	"page.run_prefix":           {"\u8fd0\u884c ", "Run "},
+	"page.alert_prefix":         {"\u544a\u8b66 ", "Alert "},
+	"page.operation_prefix":     {"\u64cd\u4f5c ", "Operation "},
 }
 
 // localize resolves key for lang, falling back to English and then to the key itself.
