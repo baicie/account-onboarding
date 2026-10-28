@@ -188,12 +188,12 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	// A successful login lands on the React console; the classic server-rendered
 	// pages stay available under /ui/ for compatibility and for the browser matrix.
-	http.Redirect(w, r, "/ui/app", http.StatusSeeOther)
+	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	if info, ok := s.authenticate(r); ok && info.Via == "cookie" {
-		http.Redirect(w, r, "/ui/app", http.StatusSeeOther)
+		http.Redirect(w, r, "/ui/", http.StatusSeeOther)
 		return
 	}
 	s.renderLogin(w, http.StatusOK, "")
@@ -240,7 +240,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(s.Cfg.SessionTTL.Seconds()),
 	})
 	_ = s.Store.Audit(r.Context(), "operator", "auth.login", "", nil)
-	http.Redirect(w, r, "/ui/app", http.StatusSeeOther)
+	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, status int, message string) {

@@ -151,7 +151,7 @@ func TestHTTPHardeningHeadersAndCSP(t *testing.T) {
 		t.Fatalf("login page status = %d, want 200", resp.StatusCode)
 	}
 	csp := resp.Header.Get("Content-Security-Policy")
-	for _, want := range []string{"default-src 'none'", "frame-ancestors 'none'", "form-action 'self'", "base-uri 'none'"} {
+	for _, want := range []string{"default-src 'none'", "script-src 'self'", "style-src 'self'", "connect-src 'self'", "frame-ancestors 'none'", "form-action 'self'", "base-uri 'none'"} {
 		if !strings.Contains(csp, want) {
 			t.Fatalf("login CSP %q missing %q", csp, want)
 		}
@@ -168,8 +168,8 @@ func TestHTTPHardeningHeadersAndCSP(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("root status = %d, want 503", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/ui/app" {
-		t.Fatalf("root Location = %q, want /ui/app", loc)
+	if loc := resp.Header.Get("Location"); loc != "/ui/" {
+		t.Fatalf("root Location = %q, want /ui/", loc)
 	}
 	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Fatalf("root CSP = %q", csp)

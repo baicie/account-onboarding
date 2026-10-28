@@ -235,7 +235,9 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		if strings.HasPrefix(r.URL.Path, "/ui/") || r.URL.Path == "/" {
 			h.Set("Content-Security-Policy",
-				"default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+				"default-src 'none'; script-src 'self'; style-src 'self'; "+
+					"img-src 'self' data:; connect-src 'self'; form-action 'self'; "+
+					"base-uri 'none'; frame-ancestors 'none'")
 			h.Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)

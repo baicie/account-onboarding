@@ -9,7 +9,7 @@ const fx = fixturesPath && fs.existsSync(fixturesPath) ? JSON.parse(fs.readFileS
 async function login(page) {
   await page.goto('/ui/login');
   await page.fill('#token', token);
-  await Promise.all([page.waitForURL(/\/ui\/(app)?$/), page.click('button[type=submit]')]);
+  await Promise.all([page.waitForURL('**/ui/'), page.click('button[type=submit]')]);
 }
 
 test.describe('deterministic operator matrix', () => {

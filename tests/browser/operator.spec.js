@@ -6,7 +6,7 @@ if (!token) throw new Error('ONBOARD_TEST_ADMIN_TOKEN is required');
 async function login(page) {
   await page.goto('/ui/login');
   await page.fill('#token', token);
-  await Promise.all([page.waitForURL(/\/ui\/(app)?$/), page.click('button[type=submit]')]);
+  await Promise.all([page.waitForURL('**/ui/'), page.click('button[type=submit]')]);
 }
 
 test('invalid token is rejected without a session', async ({ page }) => {
