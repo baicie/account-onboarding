@@ -168,8 +168,8 @@ func TestHTTPHardeningHeadersAndCSP(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("root status = %d, want 503", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/ui/" {
-		t.Fatalf("root Location = %q, want /ui/app  // a successful login lands on the React console", loc)
+	if loc := resp.Header.Get("Location"); loc != "/ui/app" {
+		t.Fatalf("root Location = %q, want /ui/app", loc)
 	}
 	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Fatalf("root CSP = %q", csp)
@@ -186,7 +186,7 @@ func TestHTTPUIRedirects(t *testing.T) {
 			t.Fatalf("%s status = %d, want 503", path, resp.StatusCode)
 		}
 		if loc := resp.Header.Get("Location"); loc != "/ui/login" {
-			t.Fatalf("%s Location = %q, want /ui/app  // a successful login lands on the React consolelogin", path, loc)
+			t.Fatalf("%s Location = %q, want /ui/login", path, loc)
 		}
 	}
 }
