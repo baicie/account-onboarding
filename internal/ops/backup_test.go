@@ -232,3 +232,56 @@ func TestInspectStorageHelperBackupInterop(t *testing.T) {
 		t.Fatalf("interop census = %+v", info.Counts)
 	}
 }
+
+func TestEncryptedWALSnapshotRestoresCommittedRows(t *testing.T) {
+	st := newTestStack(t)
+	ctx := context.Background()
+	seeded := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		seeded = append(seeded, seedRun(t, st, "wal-encrypted-"+string(rune('a'+i))).ID)
+	}
+	outDir := t.TempDir()
+	stop := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				done <- nil
+				return
+			default:
+			}
+			params, err := st.Engine.PrepareRun(sandboxRunRequest(), "operator", time.Now().UTC())
+			if err != nil {
+				done <- err
+				return
+			}
+			params.IdempotencyKey = "wal-encrypted-live-" + time.Now().Format("150405.000000") + string(rune('a'+i%26))
+			if _, _, err := st.Store.CreateRun(ctx, params); err != nil {
+				done <- err
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	res, err := Backup(ctx, BackupOptions{DBPath: st.DBPath, OutDir: outDir, Encrypt: true, Ring: st.KeyRing})
+	close(stop)
+	if writeErr := <-done; writeErr != nil {
+		t.Fatalf("concurrent writer: %v", writeErr)
+	}
+	if err != nil {
+		t.Fatalf("encrypted WAL backup: %v", err)
+	}
+	keyPath := writeRawKeyFile(t, st.MasterKey)
+	target := filepath.Join(t.TempDir(), "restored.sqlite")
+	if _, err := Restore(ctx, RestoreOptions{SnapshotPath: res.SnapshotPath, TargetPath: target, KeyRingPath: keyPath, Force: true}); err != nil {
+		t.Fatalf("restore encrypted WAL snapshot: %v", err)
+	}
+	restored := recoveryStore(t, target)
+	defer restored.Close()
+	for _, id := range seeded {
+		if _, err := restored.GetRun(ctx, id); err != nil {
+			t.Fatalf("seeded run %s missing after restore: %v", id, err)
+		}
+	}
+}
