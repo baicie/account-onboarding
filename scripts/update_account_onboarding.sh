@@ -637,11 +637,12 @@ do_rollback() {
     die "the running image ($running_id) does not match the recorded current image ($recorded_id); refusing to roll back blindly - run --status and reconcile first" 3
   fi
   [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
-  local prev_image prev_sha recorded_schema current_schema
+  local prev_image prev_sha prev_id recorded_schema current_schema
   prev_image="$(state_field last_good_image || true)"
   [ -n "$prev_image" ] || prev_image="$(state_field previous_image || true)"
   prev_sha="$(state_field last_good_commit || true)"
   [ -n "$prev_sha" ] || prev_sha="$(state_field previous_commit || true)"
+  prev_id="$(state_field previous_image_id || true)"
   recorded_schema="$(state_num previous_schema_version || true)"
   [ -n "$prev_image" ] || die "no previous image recorded; roll back by restoring a snapshot with the documented procedure" 1
   current_schema="$(sqlite_user_version "$DATA/state.sqlite" || true)"
@@ -650,6 +651,11 @@ do_rollback() {
   fi
   if [ -n "$recorded_schema" ] && [ "$current_schema" -gt "$recorded_schema" ] && [ "$ALLOW_SCHEMA_FORWARD" != "1" ]; then
     die "database schema $current_schema is newer than the recorded $recorded_schema for the previous release; running the old binary on a migrated database is not a safe rollback. Restore the matching snapshot with internal/ops/cmd/restore during a maintenance window (destructive) or pass --allow-schema-forward after verifying compatibility" 3
+  fi
+  if [ -n "$prev_id" ]; then
+    local actual_prev_id
+    actual_prev_id="$(dk image inspect "$prev_image" --format "{{.Id}}" 2>/dev/null || true)"
+    [ "$actual_prev_id" = "$prev_id" ] || die "the rollback image tag now resolves to $actual_prev_id, but the recorded previous image id is $prev_id; refusing to use a replaced tag" 3
   fi
   log "rolling back to $prev_image ($prev_sha)"
   if [ "$DRY_RUN" != "1" ]; then

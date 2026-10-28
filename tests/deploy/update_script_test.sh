@@ -185,6 +185,11 @@ db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)]
 db.commit(); db.close()
 PY
 run --rollback --root="$ROOT"; grep -q "rolling back to account-onboarding:local-old" "$LOG" && ok "--rollback targets last_good_image" || bad "--rollback did not target last_good_image"
+mkroot; printf '{\n  "image": "account-onboarding:local-new",\n  "current_image_id": "sha256:stubimage",\n  "host_port": 8788,\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_commit": "abc",\n  "last_good_schema_version": 6,\n  "previous_image_id": "sha256:wrongimage",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-state.json"; python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)"); db.execute("INSERT INTO schema_migrations(version) VALUES (6)"); db.commit(); db.close()
+PY
+STUB_CONTAINER=account-onboarding run --rollback --root="$ROOT"; want "rollback refuses a replaced image tag" 3 "recorded previous image id"
 mkroot; printf '{\n  "image": "account-onboarding:local-new",\n  "current_image_id": "sha256:stubimage",\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
 run --rollback --root="$ROOT"; want "--rollback refuses without a last known good" 1 "no previous image recorded"
 
