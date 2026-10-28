@@ -345,3 +345,58 @@ func (s *Server) handleOpsAlerts(w http.ResponseWriter, r *http.Request) {
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "count": len(alerts), "queue": s.AlertQueue.Status()})
 }
+
+// handleAlertOutboxRearm mirrors the server-rendered re-arm action for the single-page
+// console: the same 128-byte rule bound, the same store call and audit entry, JSON instead
+// of a redirect. It turns DELIVERED/DEAD_LETTER rows into RESOLVED so a later reconcile may
+// enqueue a fresh row; delivery history is preserved.
+func (s *Server) handleAlertOutboxRearm(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	var body struct {
+		Rule string `json:"rule"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	rule := strings.TrimSpace(body.Rule)
+	if rule == "" || len(rule) > 128 {
+		writeError(w, r, errs.New(errs.ClassValidation, "alert.rearm", "rearm requires a rule of at most 128 bytes"))
+		return
+	}
+	n, err := s.Store.RearmAlertOutbox(r.Context(), rule, time.Now().UTC().UnixMilli())
+	if err != nil {
+		writeError(w, r, errs.Wrap(errs.ClassInternal, "alert.rearm", "could not re-arm the rule", err))
+		return
+	}
+	_ = s.Store.Audit(r.Context(), info.Actor, "alert.rearm", "", map[string]any{"rule": rule, "rearmed": n})
+	writeJSON(w, http.StatusOK, map[string]any{"rearmed": n})
+}
+
+// handleAlertOutboxResolve closes the active rows of one rule and keeps the queue in step,
+// exactly like the server-rendered action.
+func (s *Server) handleAlertOutboxResolve(w http.ResponseWriter, r *http.Request) {
+	info, _ := authInfoFrom(r)
+	var body struct {
+		Rule string `json:"rule"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	rule := strings.TrimSpace(body.Rule)
+	if rule == "" || len(rule) > 128 {
+		writeError(w, r, errs.New(errs.ClassValidation, "alert.resolve", "resolve requires a rule of at most 128 bytes"))
+		return
+	}
+	n, err := s.Store.ResolveAlertOutbox(r.Context(), rule, time.Now().UTC().UnixMilli())
+	if err != nil {
+		writeError(w, r, errs.Wrap(errs.ClassInternal, "alert.resolve", "could not resolve the rule", err))
+		return
+	}
+	if s.AlertQueue != nil {
+		s.AlertQueue.Resolve(rule)
+	}
+	_ = s.Store.Audit(r.Context(), info.Actor, "alert.resolve", "", map[string]any{"rule": rule, "resolved": n})
+	writeJSON(w, http.StatusOK, map[string]any{"resolved": n})
+}

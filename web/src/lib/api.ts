@@ -41,6 +41,9 @@ export const api = {
   providers: () => request<any>('/v1/providers'),
   outbox: () => request<any>('/v1/ops/alerts/outbox'),
   dispatch: () => request<any>('/v1/ops/alerts/outbox/dispatch', { method: 'POST', body: '{}' }),
+  rearm: (rule: string) => request<any>('/v1/ops/alerts/outbox/rearm', { method: 'POST', body: JSON.stringify({ rule }) }),
+  resolveRule: (rule: string) => request<any>('/v1/ops/alerts/outbox/resolve', { method: 'POST', body: JSON.stringify({ rule }) }),
   external: () => request<any>('/v1/ops/external'),
+  externalAudit: (id: string) => request<any>(`/v1/ops/external/${id}/audit`),
   resolveExternal: (id: string, body: unknown) => request<any>(`/v1/ops/external/${id}/resolve`, { method: 'POST', body: JSON.stringify(body) }),
 }
