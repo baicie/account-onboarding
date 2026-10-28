@@ -639,9 +639,10 @@ do_rollback() {
   fi
   if [ -n "$running_id" ] && [ -n "$recorded_id" ] && [ "$running_id" != "$recorded_id" ]; then
     local pending_id
-    pending_id="$(sed -n 's/.*"image_id": *"\([^"]*\)".*/\1/p' "$STATE.pending" 2>/dev/null | head -1)"
+    pending_id="$(sed -n 's/.*"expected_image_id": *"\([^"]*\)".*/\1/p' "$ATTEMPT" 2>/dev/null || true)"
+    pending_id="$(printf %s "$pending_id" | head -1)"
     if [ -n "$pending_id" ] && [ "$running_id" = "$pending_id" ]; then
-      warn "the running container is the pending candidate (a switch that did not become healthy); returning to the last known good image"
+      warn "the running container is the image of an unfinished deployment attempt; returning to the last known good image"
     else
       die "the running image ($running_id) does not match the recorded current image ($recorded_id); refusing to roll back blindly - run --status and reconcile first" 3
     fi

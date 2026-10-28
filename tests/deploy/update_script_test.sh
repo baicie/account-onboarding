@@ -195,17 +195,21 @@ run --rollback --root="$ROOT"; want "--rollback refuses without a last known goo
 
 # --- failed deploy: the container runs the candidate, rollback must recover ---
 mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_commit": "abc",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
-printf '{\n  "tag": "account-onboarding:local-new",\n  "image_id": "sha256:stubimage",\n  "commit": "def",\n  "started_at": "2026-01-01T00:00:00Z"\n}\n' > "$ROOT/deploy/deployment-state.json.pending"
+printf '{\n  "attempt_id": "deploy-1",\n  "status": "failed",\n  "image_tag": "account-onboarding:local-new",\n  "expected_image_id": "sha256:stubimage",\n  "previous_image": "account-onboarding:local-old"\n}\n' > "$ROOT/deploy/deployment-attempt.json"
 python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
 db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)]); db.commit(); db.close()
 PY
-run --rollback --root="$ROOT"; grep -q "pending candidate" "$LOG" && ok "a failed switch is recoverable by rollback" || bad "failed switch recovery missing"
+STUB_CONTAINER=account-onboarding run --rollback --root="$ROOT"; grep -q "unfinished deployment attempt" "$LOG" && ok "a failed switch is recoverable by rollback" || bad "failed switch recovery missing"
 mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
 printf '{\n  "image_id": "sha256:stubimage",\n  "started_at": "x"\n}\n' > "$ROOT/deploy/deployment-state.json.pending"
 run --status --root="$ROOT"; grep -q "recovery: run --rollback" "$LOG" && ok "--status gives a recovery instruction" || bad "--status recovery instruction missing"
 
+
+# mismatch with no attempt file must be an explicit refusal, never a silent abort
+mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
+run --rollback --root="$ROOT"; want "a mismatch without an attempt is refused with 3" 3 "does not match the recorded current image"
 printf "\nSUMMARY pass=%d fail=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo DEPLOY_TOOLING_TESTS_PASS || echo DEPLOY_TOOLING_TESTS_FAIL
 [ "$FAIL" -eq 0 ]
