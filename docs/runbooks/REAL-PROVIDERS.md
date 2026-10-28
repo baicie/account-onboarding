@@ -89,6 +89,21 @@ sudo bash /opt/account-onboarding/scripts/update_account_onboarding.sh --root /o
 # 再看一次服务方页/接口：live 应为 true
 ```
 
+## 4.1 让运行详情显示收到的邮件（可选）
+
+默认**不保存**邮件内容（`docs/08` 的约束）。若希望在运行详情页看到收到的验证邮件：
+
+```yaml
+ONBOARD_MAIL_SNAPSHOT: "true"
+```
+
+开启后，`wait_email` 会把匹配到的那封邮件的**发件人、主题、验证链接、收信时间**写入
+`mail_snapshots` 表；**正文仍然不落库**。控制台运行详情会出现「收到的邮件」卡片，
+`GET /v1/runs/{id}/mails` 返回同样内容并附带 `enabled` 字段。关闭时接口返回
+`{"items":[],"enabled":false}`，一行都不写。
+
+> 注意：验证链接本身是一次性凭据，能打开邮件链接的人就能完成验证。开这个开关等于把该凭据
+> 存进数据库，请确保数据库访问与备份同样受控。
 ## 5. 边界（务必知悉）
 
 - **不会自动注册 GitHub 账号**：只校验/绑定你已持有的账号。
