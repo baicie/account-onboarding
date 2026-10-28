@@ -50,6 +50,44 @@ Optional: to pin the values instead of generating them, write
 script keeps existing files and only generates what is missing, so re-deploys never
 rotate a key by accident.
 
+### Public access (nginx + password)
+
+The panel is published on `http://82.156.234.84:18788` behind HTTP Basic Auth. The
+layout on the host is:
+
+```
+internet :18788  ->  nginx (0.0.0.0:18788, auth_basic, site /etc/nginx/sites-available/onboard-panel)
+                 ->  127.0.0.1:18789  ->  container account-onboarding:8788
+```
+
+The container no longer binds 18788 (nginx owns it), so `HOST_PORT` in
+`.github/workflows/deploy-release.yml` must stay `18789`. If a deploy brings the container
+back to 18788, nginx fails to bind and the panel goes down.
+
+Credentials:
+
+```bash
+sudo cat /root/onboard-panel-credentials.txt      # user: onboard, password: ...
+```
+
+The password file is `/etc/nginx/onboard.htpasswd` (root:www-data, 0640). Rotate it with:
+
+```bash
+PASS=$(openssl rand -base64 24 | tr -dc "A-Za-z0-9" | cut -c1-20)
+printf "onboard:%s\n" "$(openssl passwd -apr1 "$PASS")" | sudo tee /etc/nginx/onboard.htpasswd
+sudo chown root:www-data /etc/nginx/onboard.htpasswd && sudo chmod 640 /etc/nginx/onboard.htpasswd
+sudo systemctl reload nginx
+printf "user: onboard\npassword: %s\n" "$PASS" | sudo tee /root/onboard-panel-credentials.txt
+```
+
+The application keeps its own console login (`/ui/login`, admin token as the password,
+10 attempts per minute per client IP). `ONBOARD_TRUST_PROXY_HEADERS` is set to `true` so
+that limit is applied per real client behind the proxy instead of to 127.0.0.1.
+
+Residual risk: this is **plain HTTP**, so the Basic Auth password and the admin token cross
+the network in clear text. Moving to TLS only requires a domain: point it at the host, add a
+`listen 443 ssl` server block (or Caddy) and keep the same upstream.
+
 ## GitHub configuration
 
 | Kind | Name | Notes |

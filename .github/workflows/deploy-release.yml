@@ -36,7 +36,8 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
   CONTAINER: account-onboarding
   DEPLOY_DIR: /opt/account-onboarding
-  HOST_PORT: "18788"
+  # nginx owns the public 18788; the container stays on loopback 18789
+  HOST_PORT: "18789"
 
 jobs:
   build:
