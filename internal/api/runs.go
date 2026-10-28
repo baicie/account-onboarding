@@ -163,10 +163,19 @@ func formatMS(ms *int64) *string {
 	return &s
 }
 
+// resourceDTO exposes what a run created (for example the mailbox address) without ever
+// returning a secret reference: only the display alias the operator is meant to see.
+type resourceDTO struct {
+	Kind         string  `json:"kind"`
+	DisplayAlias string  `json:"display_alias,omitempty"`
+	CreatedAt    *string `json:"created_at,omitempty"`
+}
+
 type runDetailResponse struct {
 	workflow.RunSummary
-	Steps []stepDTO         `json:"steps"`
-	Links map[string]string `json:"links"`
+	Steps     []stepDTO         `json:"steps"`
+	Resources []resourceDTO     `json:"resources"`
+	Links     map[string]string `json:"links"`
 }
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
@@ -185,10 +194,20 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, errs.Wrap(errs.ClassInternal, "run.get", "could not load steps", err))
 		return
 	}
+	resources, err := s.Store.ListResources(r.Context(), id, "")
+	if err != nil {
+		writeError(w, r, errs.Wrap(errs.ClassInternal, "run.get", "could not load resources", err))
+		return
+	}
+	dtos := make([]resourceDTO, 0, len(resources))
+	for _, res := range resources {
+		dtos = append(dtos, resourceDTO{Kind: res.Kind, DisplayAlias: res.DisplayAlias, CreatedAt: formatMS(&res.CreatedAtMS)})
+	}
 	info, _ := authInfoFrom(r)
 	resp := runDetailResponse{
 		RunSummary: s.summarizeFor(r.Context(), run, info.Role),
 		Steps:      toStepDTOs(steps),
+		Resources:  dtos,
 		Links: map[string]string{
 			"self":   "/v1/runs/" + id,
 			"events": "/v1/runs/" + id + "/events",

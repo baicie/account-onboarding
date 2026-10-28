@@ -21,6 +21,7 @@ export function RunDetailPage({ runId }: { runId: string }) {
 
   const r = run.data?.run ?? run.data
   const steps: any[] = r?.steps ?? []
+  const resources: any[] = run.data?.resources ?? []
   const list: any[] = events.data?.items ?? []
 
   return (
@@ -40,6 +41,29 @@ export function RunDetailPage({ runId }: { runId: string }) {
       </div>
 
       {act.error && <p className='text-destructive text-sm'>{(act.error as Error).message}</p>}
+
+      <Card>
+        <CardHeader className='pb-3'><CardTitle className='text-sm font-medium'>资源</CardTitle></CardHeader>
+        <CardContent className='p-0'>
+          <Table>
+            <TableHeader>
+              <TableRow><TableHead>类型</TableHead><TableHead>标识</TableHead><TableHead>创建时间</TableHead></TableRow>
+            </TableHeader>
+            <TableBody>
+              {resources.map((res: any, i: number) => (
+                <TableRow key={i}>
+                  <TableCell>{res.kind}</TableCell>
+                  <TableCell className='font-mono text-xs'>{res.display_alias ?? '—'}</TableCell>
+                  <TableCell className='text-muted-foreground'>{res.created_at ?? '—'}</TableCell>
+                </TableRow>
+              ))}
+              {resources.length === 0 && (
+                <TableRow><TableCell colSpan={3} className='text-muted-foreground py-6 text-center text-sm'>本次运行还没有创建资源</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className='pb-3'><CardTitle className='text-sm font-medium'>步骤</CardTitle></CardHeader>
