@@ -5,11 +5,11 @@
 <table>
 <tbody>
 <tr><th>ID</th><td>{{.Op.ID}}</td></tr>
-<tr><th>Run</th><td><a href="/ui/runs/{{.Op.RunID}}">{{.Op.RunID}}</a></td></tr>
-<tr><th>Provider / type</th><td>{{.Op.Provider}} / {{.Op.OperationType}}</td></tr>
-<tr><th>Current status</th><td><span class="pill {{if or (eq .Op.Status "OUTCOME_UNKNOWN") (eq .Op.Status "RECONCILIATION_REQUIRED") (eq .Op.Status "CONFIRMED")}}warning{{else}}ok{{end}}">{{.Op.Status}}</span></td></tr>
-<tr><th>Version</th><td>{{.Op.Version}}</td></tr>
-<tr><th>Last terminal resolution</th><td>{{if .Op.Resolution}}{{.Op.Resolution}} — {{.Op.ResolutionReason}} ({{.Op.ResolvedBy}}){{else}}—{{end}}</td></tr>
+<tr><th>{{T "t.run"}}</th><td><a href="/ui/runs/{{.Op.RunID}}">{{.Op.RunID}}</a></td></tr>
+<tr><th>{{T "oed.provider_type"}}</th><td>{{.Op.Provider}} / {{.Op.OperationType}}</td></tr>
+<tr><th>{{T "oed.current"}}</th><td><span class="pill {{if or (eq .Op.Status "OUTCOME_UNKNOWN") (eq .Op.Status "RECONCILIATION_REQUIRED") (eq .Op.Status "CONFIRMED")}}warning{{else}}ok{{end}}">{{.Op.Status}}</span></td></tr>
+<tr><th>{{T "t.version"}}</th><td>{{.Op.Version}}</td></tr>
+<tr><th>{{T "oed.last_terminal"}}</th><td>{{if .Op.Resolution}}{{.Op.Resolution}} — {{.Op.ResolutionReason}} ({{.Op.ResolvedBy}}){{else}}—{{end}}</td></tr>
 </tbody>
 </table>
 {{if or (eq .Op.Status "OUTCOME_UNKNOWN") (eq .Op.Status "RECONCILIATION_REQUIRED") (eq .Op.Status "CONFIRMED")}}
@@ -20,31 +20,31 @@
   <input type="hidden" name="return_provider" value="{{.ReturnProvider}}">
   <input type="hidden" name="return_cursor" value="{{.ReturnCursor}}">
   <input type="hidden" name="return_run_id" value="{{.ReturnRunID}}">
-  <label>Decision</label>
+  <label>{{T "oed.decision"}}</label>
   <select name="resolution">
-    <option value="UNRESOLVED">UNRESOLVED — review only, stays pending</option>
-    <option value="RESOURCE_CONFIRMED">RESOURCE_CONFIRMED — verified remote resource exists; close</option>
-    {{if ne .Op.Status "CONFIRMED"}}<option value="NO_RESOURCE_CREATED">NO_RESOURCE_CREATED — verified nothing was created; close</option>{{end}}
-    <option value="MANUAL_COMPENSATION_COMPLETED">MANUAL_COMPENSATION_COMPLETED — manual compensation done; close</option>
+    <option value="UNRESOLVED">{{T "oed.opt_unresolved"}}</option>
+    <option value="RESOURCE_CONFIRMED">{{T "oed.opt_confirmed"}}</option>
+    {{if ne .Op.Status "CONFIRMED"}}<option value="NO_RESOURCE_CREATED">{{T "oed.opt_none"}}</option>{{end}}
+    <option value="MANUAL_COMPENSATION_COMPLETED">{{T "oed.opt_comp"}}</option>
   </select>
-  <label>Reason (required)</label>
+  <label>{{T "t.reason"}}</label>
   <input name="reason" required maxlength="2000">
-  <label>Evidence reference (ticket/console reference; never a token)</label>
+  <label>{{T "oed.evidence_ref"}}</label>
   <input name="evidence_reference" maxlength="512">
-  <button type="submit">Record decision</button>
+  <button type="submit">{{T "oed.record"}}</button>
 </form>
-{{else}}<p class="muted">This operation is not currently resolvable.</p>{{end}}
+{{else}}<p class="muted">{{T "oed.not_resolvable"}}</p>{{end}}
 </section>
 <section class="card">
-<h2>Audit history</h2>
+<h2>{{T "oed.audit"}}</h2>
 <table>
-<thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>From → To</th><th>Resolution</th><th>Reason</th><th>Evidence</th></tr></thead>
+<thead><tr><th>{{T "t.time"}}</th><th>{{T "oed.actor"}}</th><th>{{T "oed.action"}}</th><th>{{T "oed.from_to"}}</th><th>{{T "t.resolution"}}</th><th>{{T "t.reason_short"}}</th><th>{{T "oed.evidence"}}</th></tr></thead>
 <tbody>
 {{range .Audits}}
 <tr><td>{{fmtUnix .CreatedAt}}</td><td>{{.Actor}}</td><td>{{.Action}}</td><td>{{.FromStatus}} → {{.ToStatus}}</td><td>{{.Resolution}}</td><td>{{.Reason}}</td><td>{{.Evidence}}</td></tr>
-{{else}}<tr><td colspan="7" class="muted">No audit history.</td></tr>{{end}}
+{{else}}<tr><td colspan="7" class="muted">{{T "oed.empty"}}</td></tr>{{end}}
 </tbody>
 </table>
 </section>
-<p><a href="/ui/ops/external?status={{urlquery .ReturnStatus}}&provider={{urlquery .ReturnProvider}}&run_id={{urlquery .ReturnRunID}}&cursor={{urlquery .ReturnCursor}}">Back to reconciliation</a></p>
+<p><a href="/ui/ops/external?status={{urlquery .ReturnStatus}}&provider={{urlquery .ReturnProvider}}&run_id={{urlquery .ReturnRunID}}&cursor={{urlquery .ReturnCursor}}">{{T "oed.back"}}</a></p>
 {{end}}

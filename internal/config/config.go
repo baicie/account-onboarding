@@ -124,6 +124,7 @@ type Config struct {
 	TickInterval      time.Duration
 	MaxStepAttempts   int
 	AllowedOrigins    []string
+	UILang            string
 	Domains           []string
 	SenderAllowlist   []string
 	AllowPublicListen bool
@@ -171,6 +172,7 @@ func Default() Config {
 		Domains:                 []string{"moonbyte.top"},
 		SenderAllowlist:         []string{"moonbyte.test", "idp.fake.test", "github.com", "noreply.github.com", "accounts.google.com"},
 		AllowedOrigins:          nil,
+		UILang:                  "zh-CN",
 		Cloudflare: CloudflareConfig{
 			Enabled: false,
 			BaseURL: "https://api.moonbyte.top",
@@ -330,6 +332,9 @@ func LoadFrom(environ []string) (Config, error) {
 	}
 	if v := get("ONBOARD_SENDER_ALLOWLIST"); v != "" {
 		cfg.SenderAllowlist = splitCSV(v)
+	}
+	if v := get("ONBOARD_UI_LANG"); v != "" {
+		cfg.UILang = v
 	}
 	if v := get("ONBOARD_ALLOWED_ORIGINS"); v != "" {
 		cfg.AllowedOrigins = splitCSV(v)

@@ -26,8 +26,9 @@ const sessionCookieName = "onboard_session"
 
 type page struct{ tmpl *template.Template }
 
-func loadPages() (map[string]*page, error) {
+func loadPages(lang string) (map[string]*page, error) {
 	funcs := template.FuncMap{
+		"T": func(key string) string { return localize(lang, key) },
 		"fmtMS": func(ms *int64) string {
 			if ms == nil || *ms == 0 {
 				return "—"
@@ -197,26 +198,26 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := r.ParseForm(); err != nil {
-		s.renderLogin(w, http.StatusBadRequest, "Invalid form submission.")
+		s.renderLogin(w, http.StatusBadRequest, s.t("error.form"))
 		return
 	}
 	if !s.originAllowed(r) {
-		s.renderLogin(w, http.StatusForbidden, "Origin check failed.")
+		s.renderLogin(w, http.StatusForbidden, s.t("error.origin"))
 		return
 	}
 	token := strings.TrimSpace(r.PostFormValue("token"))
 	if s.Cfg.AdminToken == "" {
-		s.renderLogin(w, http.StatusServiceUnavailable, "Admin token is not configured; the console is locked.")
+		s.renderLogin(w, http.StatusServiceUnavailable, s.t("error.token_missing"))
 		return
 	}
 	if token == "" || !security.ConstantTimeEqual(token, s.Cfg.AdminToken) {
 		_ = s.Store.Audit(r.Context(), "anonymous", "auth.login_failed", "", nil)
-		s.renderLogin(w, http.StatusUnauthorized, "Invalid operator token.")
+		s.renderLogin(w, http.StatusUnauthorized, s.t("error.invalid_token"))
 		return
 	}
 	value, _, sessionID, err := s.Signer.IssueWithID(time.Now().Unix())
 	if err != nil {
-		s.renderLogin(w, http.StatusInternalServerError, "Could not create a session.")
+		s.renderLogin(w, http.StatusInternalServerError, s.t("error.session"))
 		return
 	}
 	// Opportunistically prune expired revocations so the table stays bounded
@@ -240,7 +241,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, status int, message string) {
 	if err := s.pages["login"].render(w, status, pageData{
-		Title:   "Sign in",
+		Title:   s.t("page.signin"),
 		Version: s.Version,
 		Error:   message,
 	}); err != nil {
@@ -345,7 +346,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.pages["dashboard"].render(w, http.StatusOK, dashboardPage{
 		pageData: pageData{
-			Title:     "Runs",
+			Title:     s.t("page.runs"),
 			Version:   s.Version,
 			CSRFToken: info.CSRF,
 			SignedIn:  true,
@@ -403,7 +404,7 @@ func (s *Server) renderDashboardError(w http.ResponseWriter, status int, message
 		templates = append(templates, templateRow{Name: t.Name, Mode: t.Mode, Steps: len(t.Steps)})
 	}
 	if err := s.pages["dashboard"].render(w, status, dashboardPage{
-		pageData:  pageData{Title: "Runs", Version: s.Version, Error: message},
+		pageData:  pageData{Title: s.t("page.runs"), Version: s.Version, Error: message},
 		Templates: templates, Providers: s.Registry.Catalog(),
 	}); err != nil {
 		s.Log.Error("render dashboard error", "error", err)
@@ -452,7 +453,7 @@ func (s *Server) handleRunPage(w http.ResponseWriter, r *http.Request) {
 	status := state.RunState(run.Status)
 	if err := s.pages["run"].render(w, http.StatusOK, runPage{
 		pageData: pageData{
-			Title:     "Run " + shortID(run.ID),
+			Title:     s.t("page.run_prefix") + shortID(run.ID),
 			Version:   s.Version,
 			CSRFToken: info.CSRF,
 			SignedIn:  true,
