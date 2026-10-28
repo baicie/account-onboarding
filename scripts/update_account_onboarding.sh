@@ -514,6 +514,55 @@ attempt_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$ATTEMPT" 2>/dev/
 attempt_num()   { sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" "$ATTEMPT" 2>/dev/null | head -1; }
 
 
+validate_json_state() {
+  [ -f "$STATE" ] || return 0
+  python3 - "$STATE" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(1)
+if not isinstance(d, dict):
+    sys.exit(1)
+for key in ("image", "image_id", "commit", "previous_image", "previous_image_id", "previous_commit"):
+    if key in d and not isinstance(d[key], str):
+        sys.exit(1)
+for key in ("state_version", "schema_version", "previous_schema_version", "host_port"):
+    if key in d and (not isinstance(d[key], int) or isinstance(d[key], bool)):
+        sys.exit(1)
+if d.get("state_version") is not None:
+    if not isinstance(d.get("image"), str) or not d["image"] or not isinstance(d.get("image_id"), str) or not d["image_id"]:
+        sys.exit(1)
+    if not isinstance(d.get("commit"), str):
+        sys.exit(1)
+    if d["state_version"] > 2:
+        sys.exit(1)
+else:
+    # Legacy v0.1 states predate current_image/image_id. They may be used for
+    # a guarded rollback, but only when a recognizable image identity remains.
+    if not any(isinstance(d.get(k), str) and d[k] for k in ("image", "previous_image", "last_good_image")):
+        sys.exit(1)
+PY
+}
+
+validate_json_attempt() {
+  [ -f "$ATTEMPT" ] || return 0
+  python3 - "$ATTEMPT" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(1)
+if not isinstance(d, dict):
+    sys.exit(1)
+for key in ("attempt_id", "status", "expected_image_id", "image_tag", "requested_commit"):
+    if not isinstance(d.get(key), str) or not d[key]:
+        sys.exit(1)
+if d["status"] not in ("mutation_started", "failed", "committed"):
+    sys.exit(1)
+PY
+}
+
 state_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$STATE" 2>/dev/null | head -1; }
 state_num()   { sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" "$STATE" 2>/dev/null | head -1; }
 
@@ -563,6 +612,8 @@ do_preflight() {
   detect_docker
   [ -d "$APP/.git" ] || die "$APP is not a git checkout" 2
   check_worktree
+  validate_json_state || die "deployment state JSON is invalid or unsupported; refusing to continue" 3
+  validate_json_attempt || die "deployment attempt JSON is invalid; refusing to continue" 3
   git_fetch
   resolve_sha
   log "target commit: $TARGET_SHA"
@@ -635,6 +686,8 @@ do_rollback() {
   running_id="$(dk inspect "$(detect_existing_container)" --format "{{.Image}}" 2>/dev/null || true)"
   recorded_id="$(state_field current_image_id || true)"
   [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
+  validate_json_state || die "deployment state JSON is invalid or unsupported; refusing to roll back" 3
+  validate_json_attempt || die "deployment attempt JSON is invalid; refusing to roll back" 3
   if [ -z "$recorded_id" ]; then
     die "the recorded state has no current image id; refusing to roll back blindly - reconcile the state first" 3
   fi
@@ -709,6 +762,8 @@ do_reconcile() {
   detect_docker
   [ -f "$STATE" ] || die "no deployment state; nothing to reconcile" 1
   [ -f "$ATTEMPT" ] || die "no deployment attempt; nothing to reconcile" 1
+  validate_json_state || die "deployment state JSON is invalid or unsupported; refusing to reconcile" 3
+  validate_json_attempt || die "deployment attempt JSON is invalid; refusing to reconcile" 3
   local status expected actual c schema
   status="$(attempt_field status)"
   [ "$status" = "mutation_started" ] || { log "attempt is $status; no reconcile needed"; return 0; }

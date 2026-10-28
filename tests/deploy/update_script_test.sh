@@ -146,6 +146,8 @@ STUB_CONTAINER=account-onboarding run --reconcile --root="$ROOT"; want "reconcil
 grep -q '"status": "committed"' "$ROOT/deploy/deployment-attempt.json" || bad "reconcile did not mark the attempt committed"
 mkroot; STUB_CONTAINER=account-onboarding STUB_REQUIRE_AUTH=1 run --status --root="$ROOT"; want "status authenticates readiness with the source token" 0 "readyz: 200"
 mkroot; run --rollback --root="$ROOT"; want "rollback without state refused" 1 "nothing to roll back"
+mkroot; printf '{broken json' > "$ROOT/deploy/deployment-state.json"; run --rollback --root="$ROOT"; want "corrupt deployment state is refused" 3 "state JSON is invalid"
+mkroot; printf '{\n  "image": "account-onboarding:local-abc",\n  "image_id": "sha256:stubimage",\n  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n}\n' > "$ROOT/deploy/deployment-state.json"; printf '{broken' > "$ROOT/deploy/deployment-attempt.json"; run --rollback --root="$ROOT"; want "corrupt deployment attempt is refused" 3 "attempt JSON is invalid"
 mkroot; run --backup-only --root="$ROOT"; want "backup-only without a database is a no-op" 0 "no database to back up"
 mkroot
 (
@@ -197,7 +199,7 @@ run --rollback --root="$ROOT"; want "--rollback refuses without a last known goo
 
 # --- failed deploy: the container runs the candidate, rollback must recover ---
 mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_commit": "abc",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
-printf '{\n  "attempt_id": "deploy-1",\n  "status": "failed",\n  "image_tag": "account-onboarding:local-new",\n  "expected_image_id": "sha256:stubimage",\n  "previous_image": "account-onboarding:local-old"\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+printf '{\n  "attempt_id": "deploy-1",\n  "status": "failed",\n  "requested_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",\n  "image_tag": "account-onboarding:local-new",\n  "expected_image_id": "sha256:stubimage",\n  "previous_image": "account-onboarding:local-old"\n}\n' > "$ROOT/deploy/deployment-attempt.json"
 python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
@@ -215,7 +217,7 @@ run --rollback --root="$ROOT"; want "a mismatch without an attempt is refused wi
 
 # --- the recovery destination is the release the failed attempt replaced ---
 mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-A",\n  "last_good_commit": "aaa",\n  "last_good_schema_version": 5,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
-printf '{\n  "attempt_id": "deploy-1",\n  "status": "failed",\n  "expected_image_id": "sha256:stubimage",\n  "previous_image": "account-onboarding:local-B",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+printf '{\n  "attempt_id": "deploy-1",\n  "status": "failed",\n  "requested_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",\n  "image_tag": "account-onboarding:local-B",\n  "expected_image_id": "sha256:stubimage",\n  "previous_image": "account-onboarding:local-B",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
 python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
@@ -227,7 +229,7 @@ if grep -q "rolling back to account-onboarding:local-B" "$LOG" && ! grep -q "not
 
 # --- a stale attempt must not retarget while the running image matches the record ---
 mkroot; printf '{\n  "current_image": "account-onboarding:local-A",\n  "current_image_id": "sha256:stubimage",\n  "last_good_image": "account-onboarding:local-A",\n  "last_good_commit": "aaa",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
-printf '{\n  "attempt_id": "deploy-2",\n  "status": "mutation_started",\n  "expected_image_id": "sha256:other",\n  "previous_image": "account-onboarding:local-B",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+printf '{\n  "attempt_id": "deploy-2",\n  "status": "mutation_started",\n  "requested_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",\n  "image_tag": "account-onboarding:local-B",\n  "expected_image_id": "sha256:other",\n  "previous_image": "account-onboarding:local-B",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
 python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
