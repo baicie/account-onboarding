@@ -1,0 +1,198 @@
+# Deployment tooling: shellcheck, failure-scenario tests and a real Docker E2E.
+# The E2E is a sandbox: it builds the image from the checkout, deploys it into a
+# throwaway root under the runner temp directory and never touches a real host.
+name: deployment-tooling
+
+on:
+  push:
+    branches: [main, feat/v0.1-compose-deployment]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - name: Lint the deployment scripts
+        run: shellcheck -S warning scripts/update_account_onboarding.sh tests/deploy/update_script_test.sh
+
+  scenario-tests:
+    name: failure scenarios (stubbed docker and git)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Run the failure-scenario suite
+        run: bash tests/deploy/update_script_test.sh | tee scenario.log
+      - name: Assert every scenario passed
+        run: |
+          set -euo pipefail
+          grep -q "^SUMMARY pass=[1-9][0-9]* fail=0$" scenario.log
+          grep -q "^DEPLOY_TOOLING_TESTS_PASS$" scenario.log
+
+  docker-e2e:
+    name: real docker E2E (first install, update, failure injection, rollback)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Prepare an isolated deployment root
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/ao-deploy"
+          mkdir -p "$ROOT"
+          git clone --quiet --no-hardlinks "$PWD" "$ROOT/app"
+          git -C "$ROOT/app" checkout --quiet "$GITHUB_SHA"
+          mkdir -p "$ROOT/runtime/secrets-src" "$ROOT/backups" "$ROOT/deploy" "$ROOT/logs"
+          sudo install -d -o 10001 -g 10001 -m 0700 "$ROOT/runtime/data"
+          openssl rand 32 > "$ROOT/runtime/secrets-src/onboarding_master_key"
+          openssl rand -hex 32 > "$ROOT/runtime/secrets-src/onboard_admin_token"
+          chmod 0400 "$ROOT/runtime/secrets-src/"*
+          if sudo -u nobody test -r "$ROOT/runtime/secrets-src/onboarding_master_key"; then echo "secret source is world readable"; exit 1; fi
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+      - name: First install (build, snapshot is skipped without a database, deploy, health)
+        run: |
+          set -euo pipefail
+          bash scripts/update_account_onboarding.sh --deploy --offline \
+            --expected-sha="$GITHUB_SHA" --root="$ROOT" \
+            --go-proxy=https://proxy.golang.org,direct --host-port=18788
+
+      - name: Status reports the live deployment
+        run: |
+          set -euo pipefail
+          bash scripts/update_account_onboarding.sh --status --root="$ROOT" | tee status.log
+          grep -q "healthz: 200" status.log
+          grep -q "readyz: 200" status.log
+
+      - name: The database actually exists and is a real SQLite file
+        run: |
+          set -euo pipefail
+          # The runtime directory is intentionally 0700:10001; verify persisted
+          # state through the host root without loosening that boundary.
+          sudo test -s "$ROOT/runtime/data/state.sqlite"
+          sudo head -c 15 "$ROOT/runtime/data/state.sqlite" | grep -q "SQLite format 3"
+
+      - name: Second deploy builds a distinguishable image, snapshots and records it
+        run: |
+          set -euo pipefail
+          CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
+          A_ID="$(docker inspect "$CID" --format '{{.Image}}')"
+          echo "IMAGE_A=$A_ID" >> "$GITHUB_ENV"
+          ONBOARD_BUILD_VERSION=0.1.1-e2e bash scripts/update_account_onboarding.sh --deploy --offline \
+            --expected-sha="$GITHUB_SHA" --root="$ROOT" \
+            --go-proxy=https://proxy.golang.org,direct --host-port=18788
+          CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
+          B_ID="$(docker inspect "$CID" --format '{{.Image}}')"
+          echo "IMAGE_B=$B_ID" >> "$GITHUB_ENV"
+          echo "image A=$A_ID image B=$B_ID"
+          test "$A_ID" != "$B_ID"
+          snap="$(ls -1 "$ROOT"/backups/*/*.enc | head -1)"
+          test -n "$snap"
+          ls -1 "$ROOT"/backups/*/*.manifest.json | head -1
+          grep -q "previous_image" "$ROOT/deploy/deployment-state.json"
+
+      - name: Rollback really returns to image A and stays healthy
+        run: |
+          set -euo pipefail
+          bash scripts/update_account_onboarding.sh --rollback --root="$ROOT"
+          CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
+          C_ID="$(docker inspect "$CID" --format '{{.Image}}')"
+          echo "after rollback image=$C_ID expected=$IMAGE_A"
+          test "$C_ID" = "$IMAGE_A"
+          test "$C_ID" != "$IMAGE_B"
+          bash scripts/update_account_onboarding.sh --status --root="$ROOT" | tee rollback-status.log
+          grep -q "healthz: 200" rollback-status.log
+          grep -q "readyz: 200" rollback-status.log
+
+      - name: Failure injection - a wrong SHA must be refused before anything changes
+        run: |
+          set -euo pipefail
+          set +e
+          bash scripts/update_account_onboarding.sh --deploy --offline \
+            --expected-sha=0000000000000000000000000000000000000000 --root="$ROOT" \
+            --host-port=18788 > refuse.log 2>&1
+          rc=$?
+          set -e
+          echo "rc=$rc"; grep -q -e "not present locally" -e "was required" refuse.log
+          test "$rc" -ne 0
+          docker ps --filter name=account-onboarding --format "{{.Status}}" | grep -q "Up"
+
+      - name: Failure injection - a hand written override must never be overwritten
+        run: |
+          set -euo pipefail
+          cp "$ROOT/deploy/compose.override.yml" /tmp/generated.yml
+          printf "services: {}\n" > "$ROOT/deploy/compose.override.yml"
+          set +e
+          bash scripts/update_account_onboarding.sh --build-only --offline \
+            --expected-sha="$GITHUB_SHA" --root="$ROOT" --host-port=18788 > hand.log 2>&1
+          rc=$?
+          set -e
+          echo "rc=$rc"; test "$rc" -eq 3
+          grep -q "not generated by this script" hand.log
+          cp /tmp/generated.yml "$ROOT/deploy/compose.override.yml"
+
+      - name: The rollback target stays healthy after failure injection
+        run: |
+          set -euo pipefail
+          bash scripts/update_account_onboarding.sh --status --root="$ROOT" | tee rollback-status.log
+          grep -q "healthz: 200" rollback-status.log
+          grep -q "readyz: 200" rollback-status.log
+          CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
+          test "$(docker inspect "$CID" --format '{{.Image}}')" = "$IMAGE_A"
+
+      - name: Negative - a recorded image that disagrees with the container is refused
+        run: |
+          set -euo pipefail
+          cp "$ROOT/deploy/deployment-state.json" /tmp/state.bak
+          python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["current_image_id"]="sha256:0000000000000000000000000000000000000000000000000000000000000000"; json.dump(d,open(p,"w"),indent=2)' "$ROOT/deploy/deployment-state.json"
+          printf '{\n  "attempt_id": "e2e-guard",\n  "status": "failed",\n  "expected_image_id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",\n  "previous_image": "account-onboarding:local-none",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+          set +e
+          bash scripts/update_account_onboarding.sh --rollback --root="$ROOT" > attempt-guard.log 2>&1
+          rc=$?
+          set -e
+          echo "rollback rc=$rc"
+          tail -5 attempt-guard.log
+          test "$rc" -eq 3
+          grep -q "does not match the recorded current image" attempt-guard.log
+          docker ps --filter name=account-onboarding --format "{{.Status}}" | grep -q "Up"
+          cp /tmp/state.bak "$ROOT/deploy/deployment-state.json"
+          rm -f "$ROOT/deploy/deployment-attempt.json"
+
+      - name: The database survived every step
+        run: |
+          set -euo pipefail
+          # The runtime directory is intentionally 0700:10001; verify persisted
+          # state through the host root without loosening that boundary.
+          sudo test -s "$ROOT/runtime/data/state.sqlite"
+          sudo head -c 15 "$ROOT/runtime/data/state.sqlite" | grep -q "SQLite format 3"
+          ls -1 "$ROOT"/backups/*/*.manifest.json | head -1
+
+      - name: Collect evidence
+        if: always()
+        run: |
+          { docker ps -a --format "{{.Names}} {{.Status}}";
+            echo "--- state"; cat "$ROOT/deploy/deployment-state.json" 2>/dev/null;
+            echo "--- logs"; docker logs --tail 40 account-onboarding 2>&1 | tail -40; } > evidence.log || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: deployment-e2e-evidence
+          path: evidence.log
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          set -euo pipefail
+          docker compose -p account-onboarding down --remove-orphans
+          test -z "$(docker ps -aq --filter name=account-onboarding)"
