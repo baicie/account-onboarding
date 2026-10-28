@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { loadSession, type Session } from './lib/api'
 import Runs from './pages/Runs'
+import CreateRun from './pages/CreateRun'
 import RunDetail from './pages/RunDetail'
 import Alerts from './pages/Alerts'
 import Ops from './pages/Ops'
@@ -74,6 +75,7 @@ export default function App() {
         <main className='min-w-0 flex-1 p-6'>
           <Routes>
             <Route path='/' element={<Runs />} />
+            <Route path='/create' element={<CreateRun />} />
             <Route path='/runs/:id' element={<RunDetail />} />
             <Route path='/alerts' element={<Alerts />} />
             <Route path='/ops' element={<Ops />} />

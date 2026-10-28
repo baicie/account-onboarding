@@ -25,7 +25,10 @@ export default function Runs() {
   const runs: any[] = data.runs ?? data.items ?? []
   return (
     <div className='space-y-4'>
-      <h1 className='text-xl font-semibold'>运行</h1>
+      <div className='flex items-center justify-between'>
+        <h1 className='text-xl font-semibold'>运行</h1>
+        <Link to='/create' className='rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground'>创建运行</Link>
+      </div>
       <Card>
         <CardHeader>
           <span className='text-sm font-medium'>最近运行</span>
