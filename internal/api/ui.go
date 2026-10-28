@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -229,7 +231,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    value,
-		Path:     "/ui",
+		Path:     "/",
 		HttpOnly: true,
 		Secure:   s.secureCookie(r),
 		SameSite: http.SameSiteStrictMode,
@@ -277,7 +279,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookieName, Value: "", Path: "/ui", HttpOnly: true, MaxAge: -1,
+		Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, MaxAge: -1,
 		SameSite: http.SameSiteStrictMode,
 	})
 	_ = s.Store.Audit(r.Context(), "operator", "auth.logout", "", nil)
@@ -549,4 +551,49 @@ func shortID(id string) string {
 		return id[:12]
 	}
 	return id
+}
+
+// handleUISession lets the single-page console bootstrap: who am I, which CSRF token to
+// send on mutations, which build and language the server runs.
+func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if info, ok := s.authenticate(r); ok {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"authenticated": true,
+			"actor":         info.Actor,
+			"role":          info.Role,
+			"csrf":          info.CSRF,
+			"version":       s.Version,
+			"lang":          s.Cfg.UILang,
+		})
+		return
+	}
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": false})
+}
+
+//go:embed all:webdist
+var webDistFS embed.FS
+
+// handleSPA serves the Vite build mounted at /ui/app and falls back to index.html so
+// client-side routes survive a reload. Assets are embedded, so the binary stays single-file.
+func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
+	rel := strings.TrimPrefix(r.URL.Path, "/ui/app")
+	if rel == "" || rel == "/" {
+		rel = "/index.html"
+	}
+	if data, err := webDistFS.ReadFile("webdist" + rel); err == nil {
+		if ct := mime.TypeByExtension(filepath.Ext(rel)); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+		_, _ = w.Write(data)
+		return
+	}
+	index, err := webDistFS.ReadFile("webdist/index.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(index)
 }

@@ -11,6 +11,14 @@
 #   - /run/secrets/onboarding_master_key is the read-only master key
 ARG GOLANG_IMAGE=golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
 ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+# Frontend assets (Vite + React + Tailwind) are compiled into internal/api/webdist and
+# embedded by go:embed, so the runtime image still ships a single binary.
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json* ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
 FROM ${GOLANG_IMAGE} AS build
 
 ARG VERSION=0.1.0
@@ -25,6 +33,7 @@ RUN go mod download
 
 COPY . .
 
+COPY --from=web /internal/api/webdist ./internal/api/webdist
 RUN CGO_ENABLED=1 GOOS=linux go build -trimpath \
     -ldflags="-s -w -X github.com/baicie/account-onboarding/internal/api.Version=${VERSION} -X github.com/baicie/account-onboarding/internal/api.Commit=${COMMIT}" \
     -o /out/onboardd ./cmd/onboardd

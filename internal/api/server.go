@@ -131,6 +131,9 @@ func (s *Server) Handler() http.Handler {
 
 	// Minimal operator UI.
 	mux.HandleFunc("GET /", s.handleRoot)
+	mux.HandleFunc("GET /ui/api/session", s.handleUISession)
+	mux.HandleFunc("GET /ui/app", s.handleSPA)
+	mux.HandleFunc("GET /ui/app/", s.handleSPA)
 	mux.HandleFunc("GET /ui/login", s.handleLoginPage)
 	mux.HandleFunc("POST /ui/login", s.handleLoginSubmit)
 	mux.HandleFunc("POST /ui/logout", s.uiAuth(s.handleLogout))
