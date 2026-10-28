@@ -92,6 +92,58 @@ BASE_COMPOSE="$DEPLOY/compose.base.yml"
 MARKER="# managed-by: scripts/update_account_onboarding.sh -- generated file, edits are overwritten"
 
 mkdir -p "$BACKUPS" "$DEPLOY" "$LOGS" "$DATA" "$SECRETS" "$SECRETS_SRC" 2>/dev/null || true
+
+# Host-wide operation lock. The Compose project name is fixed, so two different
+# ROOT values must still serialize against the same host resource. Use flock
+# (released by the kernel on SIGKILL); macOS development falls back to an atomic
+# PID directory with stale-owner detection.
+LOCK_FILE="${ONBOARD_LOCK_FILE:-/var/tmp/account-onboarding-operation.lock}"
+LOCK_DIR_FALLBACK="$LOCK_FILE.lock.d"
+LOCK_OWNED=0
+
+release_operation_lock() {
+  [ "$LOCK_OWNED" = "1" ] || return 0
+  if [ -n "${LOCK_FD_OPEN:-}" ]; then
+    exec 9<&-
+  else
+    rm -rf -- "$LOCK_DIR_FALLBACK" 2>/dev/null || true
+  fi
+  LOCK_OWNED=0
+}
+
+acquire_operation_lock() {
+  [ "$ACTION" = "status" ] && return 0
+  [ "$ACTION" = "preflight" ] && return 0
+  if [ -L "$LOCK_FILE" ] || [ -L "$LOCK_DIR_FALLBACK" ]; then
+    die "operation lock path is a symlink; refusing to continue" 3
+  fi
+  if command -v flock >/dev/null 2>&1; then
+    if [ ! -e "$LOCK_FILE" ]; then
+      ( umask 022; : > "$LOCK_FILE" ) || die "cannot create operation lock $LOCK_FILE" 3
+    fi
+    exec 9<"$LOCK_FILE" || die "cannot open operation lock $LOCK_FILE" 3
+    if ! flock -n 9; then
+      exec 9<&-
+      die "another deploy, rollback, backup, or build operation is running (lock $LOCK_FILE)" 3
+    fi
+    LOCK_FD_OPEN=1
+  else
+    if ! mkdir "$LOCK_DIR_FALLBACK" 2>/dev/null; then
+      local holder=""
+      [ -f "$LOCK_DIR_FALLBACK/pid" ] && holder="$(cat "$LOCK_DIR_FALLBACK/pid" 2>/dev/null || true)"
+      if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+        die "another deploy, rollback, backup, or build operation is running (pid $holder)" 3
+      fi
+      rm -rf -- "$LOCK_DIR_FALLBACK" 2>/dev/null || die "stale operation lock cannot be removed: $LOCK_DIR_FALLBACK" 3
+      mkdir "$LOCK_DIR_FALLBACK" 2>/dev/null || die "another operation took the lock" 3
+    fi
+    printf "%s\n" "$$" > "$LOCK_DIR_FALLBACK/pid" || { rm -rf -- "$LOCK_DIR_FALLBACK"; die "cannot write operation lock pid" 3; }
+  fi
+  LOCK_OWNED=1
+  trap release_operation_lock EXIT INT TERM
+}
+
+acquire_operation_lock
 if [ "$DRY_RUN" != "1" ]; then
   exec > >(tee -a "$LOGS/deploy-$(date -u +%Y%m%dT%H%M%SZ).log") 2>&1
 fi
@@ -560,13 +612,16 @@ ensure_data_owner() {
 }
 
 require_readable_data() {
+  # The runtime dir is intentionally private. A non-root deployer may need the
+  # host root/sudo boundary to inspect it; permission failure is not evidence
+  # that the database is absent.
   if [ -d "$DATA" ] && [ ! -x "$DATA" ]; then
-    die "$DATA is not readable by the current user; run with root or passwordless sudo (refusing to treat the existing database as absent)" 3
+    as_root test -x "$DATA" 2>/dev/null || die "$DATA is not readable by the current user; run with root or passwordless sudo (refusing to treat the existing database as absent)" 3
   fi
   local f
   for f in state.sqlite state.sqlite-wal state.sqlite-shm state.sqlite.restore-in-progress; do
-    if [ -e "$DATA/$f" ] && [ ! -r "$DATA/$f" ]; then
-      die "$DATA/$f exists but is not readable by the current user; refusing to treat it as absent" 3
+    if db_file_exists "$DATA/$f" && [ ! -r "$DATA/$f" ]; then
+      as_root test -r "$DATA/$f" 2>/dev/null || die "$DATA/$f exists but is not readable by the current user; refusing to treat it as absent" 3
     fi
   done
 }

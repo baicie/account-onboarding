@@ -28,7 +28,7 @@ if [ "$cmd" = "inspect" ]; then
   echo "exit=0 restarts=0"; exit 0
 fi
 if [ "$cmd" = "image" ]; then echo "sha256:stubimage"; exit 0; fi
-if [ "$cmd" = "build" ]; then exit "${STUB_BUILD_RC:-0}"; fi
+if [ "$cmd" = "build" ]; then sleep "${STUB_BUILD_SLEEP:-0}"; exit "${STUB_BUILD_RC:-0}"; fi
 if [ "$cmd" = "run" ]; then echo "DOCKER_RUN"; exit "${STUB_RUN_RC:-0}"; fi
 if [ "$cmd" != "compose" ]; then echo "stub: unimplemented docker command: $cmd" >&2; exit 127; fi
 # compose: walk the arguments to find the subcommand, ignoring flag values
@@ -131,6 +131,22 @@ mkroot; run --status --root="$ROOT"; want "status without state ok" 0 "no deploy
 mkroot; STUB_CONTAINER=account-onboarding STUB_REQUIRE_AUTH=1 run --status --root="$ROOT"; want "status authenticates readiness with the source token" 0 "readyz: 200"
 mkroot; run --rollback --root="$ROOT"; want "rollback without state refused" 1 "nothing to roll back"
 mkroot; run --backup-only --root="$ROOT"; want "backup-only without a database is a no-op" 0 "no database to back up"
+mkroot
+(
+  PATH="$STUB:/usr/bin:/bin" ONBOARD_LOCK_FILE="$TMP/race.lock" STUB_BUILD_SLEEP=2 ONBOARD_RETRY_SLEEP=0 "$SCRIPT" --build-only --root="$ROOT" >"$TMP/race1.log" 2>&1
+  echo $? >"$TMP/race1.rc"
+) &
+RACE_PID=$!
+sleep 0.2
+PATH="$STUB:/usr/bin:/bin" ONBOARD_LOCK_FILE="$TMP/race.lock" ONBOARD_RETRY_SLEEP=0 "$SCRIPT" --build-only --root="$ROOT" >"$TMP/race2.log" 2>&1
+RACE2_RC=$?
+wait "$RACE_PID"
+RACE1_RC="$(cat "$TMP/race1.rc")"
+if [ "$RACE1_RC" = "0" ] && [ "$RACE2_RC" -ne 0 ] && grep -q "operation is running" "$TMP/race2.log"; then
+  ok "concurrent build-only is excluded by the operation lock"
+else
+  bad "concurrent build-only is excluded by the operation lock (first=$RACE1_RC second=$RACE2_RC)"
+fi
 mkroot; : > "$ROOT/runtime/data/state.sqlite"; STUB_RUN_RC=1 run --backup-only --root="$ROOT"; want "backup failure aborts" 3 "backup failed"
 mkroot; printf "not a database" > "$ROOT/runtime/data/state.sqlite"; printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5\n}\n' > "$ROOT/deploy/deployment-state.json"; run --rollback --root="$ROOT"; want "corrupt database fails the schema read" 3 "cannot read the schema version"
 mkroot; python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
