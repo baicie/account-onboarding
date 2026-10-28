@@ -75,6 +75,8 @@ const queryClient = new QueryClient({
 // Create a new router instance
 const router = createRouter({
   routeTree,
+  // The bundle is mounted at /ui/app, so the router must strip that prefix.
+  basepath: '/ui/app',
   context: { queryClient },
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
