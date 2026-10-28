@@ -162,7 +162,7 @@ else
   bad "concurrent build-only is excluded by the operation lock (first=$RACE1_RC second=$RACE2_RC)"
 fi
 mkroot; : > "$ROOT/runtime/data/state.sqlite"; STUB_RUN_RC=1 run --backup-only --root="$ROOT"; want "backup failure aborts" 3 "backup failed"
-mkroot; printf "not a database" > "$ROOT/runtime/data/state.sqlite"; printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5\n}\n' > "$ROOT/deploy/deployment-state.json"; run --rollback --root="$ROOT"; want "corrupt database fails the schema read" 3 "cannot read the schema version"
+mkroot; printf "not a database" > "$ROOT/runtime/data/state.sqlite"; printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5,\n  "current_image_id": "sha256:stubimage"\n}\n' > "$ROOT/deploy/deployment-state.json"; run --rollback --root="$ROOT"; want "corrupt database fails the schema read" 3 "cannot read the schema version"
 mkroot; python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1])
@@ -170,7 +170,7 @@ db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
 db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (5,), (6,)])
 db.commit(); db.close()
 PY
-printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5\n}\n' > "$ROOT/deploy/deployment-state.json"
+printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5,\n  "current_image_id": "sha256:stubimage"\n}\n' > "$ROOT/deploy/deployment-state.json"
 run --rollback --root="$ROOT"; want "schema 6 refuses rollback to a schema 5 release" 3 "not a safe rollback"
 # --- deployment state protocol ---
 mkroot; printf '{\n  "image": "account-onboarding:local-new",\n  "image_id": "sha256:stubimage",\n  "commit": "abc",\n  "schema_version": 6,\n  "host_port": 8788,\n  "current_image_id": "sha256:stubimage",\n  "last_good_image": "account-onboarding:local-old"\n}\n' > "$ROOT/deploy/deployment-state.json"
@@ -192,6 +192,19 @@ PY
 STUB_CONTAINER=account-onboarding run --rollback --root="$ROOT"; want "rollback refuses a replaced image tag" 3 "recorded previous image id"
 mkroot; printf '{\n  "image": "account-onboarding:local-new",\n  "current_image_id": "sha256:stubimage",\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
 run --rollback --root="$ROOT"; want "--rollback refuses without a last known good" 1 "no previous image recorded"
+
+# --- failed deploy: the container runs the candidate, rollback must recover ---
+mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_commit": "abc",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
+printf '{\n  "tag": "account-onboarding:local-new",\n  "image_id": "sha256:stubimage",\n  "commit": "def",\n  "started_at": "2026-01-01T00:00:00Z"\n}\n' > "$ROOT/deploy/deployment-state.json.pending"
+python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)]); db.commit(); db.close()
+PY
+run --rollback --root="$ROOT"; grep -q "pending candidate" "$LOG" && ok "a failed switch is recoverable by rollback" || bad "failed switch recovery missing"
+mkroot; printf '{\n  "current_image_id": "sha256:lastgood",\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
+printf '{\n  "image_id": "sha256:stubimage",\n  "started_at": "x"\n}\n' > "$ROOT/deploy/deployment-state.json.pending"
+run --status --root="$ROOT"; grep -q "recovery: run --rollback" "$LOG" && ok "--status gives a recovery instruction" || bad "--status recovery instruction missing"
 
 printf "\nSUMMARY pass=%d fail=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo DEPLOY_TOOLING_TESTS_PASS || echo DEPLOY_TOOLING_TESTS_FAIL

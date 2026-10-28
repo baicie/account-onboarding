@@ -633,8 +633,18 @@ do_rollback() {
   local running_id recorded_id
   running_id="$(dk inspect "$(detect_existing_container)" --format "{{.Image}}" 2>/dev/null || true)"
   recorded_id="$(state_field current_image_id || true)"
+  [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
+  if [ -z "$recorded_id" ]; then
+    die "the recorded state has no current image id; refusing to roll back blindly - reconcile the state first" 3
+  fi
   if [ -n "$running_id" ] && [ -n "$recorded_id" ] && [ "$running_id" != "$recorded_id" ]; then
-    die "the running image ($running_id) does not match the recorded current image ($recorded_id); refusing to roll back blindly - run --status and reconcile first" 3
+    local pending_id
+    pending_id="$(sed -n 's/.*"image_id": *"\([^"]*\)".*/\1/p' "$STATE.pending" 2>/dev/null | head -1)"
+    if [ -n "$pending_id" ] && [ "$running_id" = "$pending_id" ]; then
+      warn "the running container is the pending candidate (a switch that did not become healthy); returning to the last known good image"
+    else
+      die "the running image ($running_id) does not match the recorded current image ($recorded_id); refusing to roll back blindly - run --status and reconcile first" 3
+    fi
   fi
   [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
   local prev_image prev_sha prev_id recorded_schema current_schema
@@ -642,9 +652,11 @@ do_rollback() {
   [ -n "$prev_image" ] || prev_image="$(state_field previous_image || true)"
   prev_sha="$(state_field last_good_commit || true)"
   [ -n "$prev_sha" ] || prev_sha="$(state_field previous_commit || true)"
+  log "rolling back to $prev_image ($prev_sha)"
   prev_id="$(state_field previous_image_id || true)"
   recorded_schema="$(state_num previous_schema_version || true)"
   [ -n "$prev_image" ] || die "no previous image recorded; roll back by restoring a snapshot with the documented procedure" 1
+  if [ -z "$recorded_schema" ]; then die "the recorded state has no schema version for the previous release; refusing to roll back blindly" 3; fi
   current_schema="$(sqlite_user_version "$DATA/state.sqlite" || true)"
   if [ -z "$current_schema" ]; then
     die "cannot read the schema version from $DATA/state.sqlite; refusing to roll back blindly. Restore the matching snapshot with internal/ops/cmd/restore instead" 3
@@ -657,7 +669,6 @@ do_rollback() {
     actual_prev_id="$(dk image inspect "$prev_image" --format "{{.Id}}" 2>/dev/null || true)"
     [ "$actual_prev_id" = "$prev_id" ] || die "the rollback image tag now resolves to $actual_prev_id, but the recorded previous image id is $prev_id; refusing to use a replaced tag" 3
   fi
-  log "rolling back to $prev_image ($prev_sha)"
   if [ "$DRY_RUN" != "1" ]; then
     prepare_deploy
     take_backup
@@ -705,6 +716,11 @@ do_reconcile() {
 
 do_status() {
   if [ -f "$STATE.pending" ]; then log "pending deployment (unfinished switch)"; cat "$STATE.pending"; fi
+  if [ -f "$STATE.pending" ]; then
+    local lkg
+    lkg="$(state_field last_good_image || true)"
+    if [ -n "$lkg" ]; then log "recovery: run --rollback to return to $lkg"; else log "recovery: no last known good image is recorded; inspect the container and the backups"; fi
+  fi
   local rp
   rp="$(state_num host_port || true)"
   if [ -n "$rp" ]; then HOST_PORT="$rp"; fi
