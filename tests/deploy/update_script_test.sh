@@ -220,7 +220,7 @@ db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (v
 db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)]); db.commit(); db.close()
 PY
 STUB_CONTAINER=account-onboarding run --rollback --root="$ROOT"
-if grep -q "rolling back to account-onboarding:local-B" "$LOG"; then ok "recovery returns to the replaced release (B), not the older last-good (A)"; else bad "recovery targets the wrong release"; sed "s/^/    | /" "$LOG" | tail -6; fi
+if [ "$RC" != "3" ] && grep -q "rolling back to account-onboarding:local-B" "$LOG" && ! grep -q "not a safe rollback" "$LOG"; then ok "recovery returns to the replaced release (B) and the schema guard accepts it"; else bad "recovery targets the wrong release or the schema guard refuses it (rc=$RC)"; sed "s/^/    | /" "$LOG" | tail -8; fi
 
 printf "\nSUMMARY pass=%d fail=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo DEPLOY_TOOLING_TESTS_PASS || echo DEPLOY_TOOLING_TESTS_FAIL

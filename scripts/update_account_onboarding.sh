@@ -642,7 +642,8 @@ do_rollback() {
     pending_id="$(sed -n 's/.*"expected_image_id": *"\([^"]*\)".*/\1/p' "$ATTEMPT" 2>/dev/null || true)"
     pending_id="$(printf %s "$pending_id" | head -1)"
     if [ -n "$pending_id" ] && [ "$running_id" = "$pending_id" ]; then
-      warn "the running container is the image of an unfinished deployment attempt; returning to the last known good image"
+      RECOVERING=1
+      warn "the running container is the image of an unfinished deployment attempt; returning to the release that attempt replaced"
     else
       die "the running image ($running_id) does not match the recorded current image ($recorded_id); refusing to roll back blindly - run --status and reconcile first" 3
     fi
@@ -658,14 +659,14 @@ do_rollback() {
   # A failed attempt must return to the release it replaced, not to an older generation.
   local attempt_status ai
   attempt_status="$(attempt_field status 2>/dev/null || true)"
-  if [ -f "$ATTEMPT" ] && [ "$attempt_status" != "committed" ]; then
+  if [ "${RECOVERING:-0}" = "1" ] && [ -f "$ATTEMPT" ] && [ "$attempt_status" != "committed" ]; then
     ai="$(attempt_field previous_image || true)"
     if [ -n "$ai" ]; then prev_image="$ai"; fi
     ai="$(attempt_field previous_image_id || true)"
     if [ -n "$ai" ]; then prev_id="$ai"; fi
     ai="$(attempt_field previous_commit || true)"
     if [ -n "$ai" ]; then prev_sha="$ai"; fi
-    ai="$(attempt_field previous_schema_version || true)"
+    ai="$(sed -n 's/.*"previous_schema_version": *\([0-9][0-9]*\).*/\1/p' "$ATTEMPT" 2>/dev/null | head -1)"
     if [ -n "$ai" ]; then recorded_schema="$ai"; fi
     warn "an unfinished deployment attempt is on record; returning to the release it replaced ($prev_image)"
   fi
