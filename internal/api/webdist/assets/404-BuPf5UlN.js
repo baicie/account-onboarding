@@ -1,0 +1,1 @@
+import{s as e}from"./index-CImG1bPT.js";var t=e;export{t as component};

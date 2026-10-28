@@ -54,8 +54,8 @@ const queryClient = new QueryClient({
         if (error.response?.status === 401) {
           toast.error('Session expired!')
           useAuthStore.getState().auth.reset()
-          const redirect = `${router.history.location.href}`
-          router.navigate({ to: '/sign-in', search: { redirect } })
+      // The console has no in-app auth screen: the Go service serves it.
+      window.location.href = '/ui/login'
         }
         if (error.response?.status === 500) {
           toast.error('Internal Server Error!')
