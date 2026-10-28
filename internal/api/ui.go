@@ -186,7 +186,9 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		notFoundResponse(w, r)
 		return
 	}
-	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
+	// A successful login lands on the React console; the classic server-rendered
+	// pages stay available under /ui/ for compatibility and for the browser matrix.
+	http.Redirect(w, r, "/ui/app", http.StatusSeeOther)
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
