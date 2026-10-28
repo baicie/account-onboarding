@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, Input, Table } from '../components/ui'
 
@@ -57,7 +58,7 @@ export default function Alerts() {
           <Table head={['规则', '严重级别', '状态', '尝试', '最近错误']}>
             {rows.map((r, i) => (
               <tr key={i} className='border-b border-border/60 last:border-0'>
-                <td className='px-3 py-2'>{r.rule ?? r.rule_name}</td>
+                <td className='px-3 py-2'><Link className='text-primary hover:underline' to={`/alerts/${r.id}`}>{r.rule ?? r.rule_name}</Link></td>
                 <td className='px-3 py-2 text-muted-foreground'>{r.severity ?? '—'}</td>
                 <td className='px-3 py-2'><Badge tone={String(r.status).includes('DEAD') ? 'bad' : 'muted'}>{r.status}</Badge></td>
                 <td className='px-3 py-2 text-muted-foreground'>{r.attempts ?? 0}</td>

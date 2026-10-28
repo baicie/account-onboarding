@@ -5,6 +5,7 @@ import Runs from './pages/Runs'
 import CreateRun from './pages/CreateRun'
 import RunDetail from './pages/RunDetail'
 import Alerts from './pages/Alerts'
+import AlertsDetail from './pages/AlertsDetail'
 import Ops from './pages/Ops'
 import OpsDetail from './pages/OpsDetail'
 import { cx } from './components/ui'
@@ -79,6 +80,7 @@ export default function App() {
             <Route path='/create' element={<CreateRun />} />
             <Route path='/runs/:id' element={<RunDetail />} />
             <Route path='/alerts' element={<Alerts />} />
+            <Route path='/alerts/:id' element={<AlertsDetail />} />
             <Route path='/ops' element={<Ops />} />
             <Route path='/ops/:id' element={<OpsDetail />} />
           </Routes>
