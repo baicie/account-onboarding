@@ -393,6 +393,16 @@ ops_run() { # ops_run <backup|verify|restore> <args...>
     -v "$APP:/src:ro" -v "$BACKUPS:/backups" -v "$DATA:/data:ro" -v "$SECRETS:/secrets:ro" -v "$RUNTIME/ops:/out" \
     -w /src --entrypoint /bin/sh "$img" \
     -c 'go build -buildvcs=false -o /out/ops-"$0" ./internal/ops/cmd/"$0" && exec /out/ops-"$0" "$@"' "$tool" "$@"
+  # One retry: module proxies occasionally return a transport error mid-stream,
+  # which Go does not fail over between proxies. Backup and verify are idempotent.
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    warn "ops tool $tool failed (rc=$rc); retrying once against the same proxy"
+    run dk run --rm -e CGO_ENABLED=1 -e "GOPROXY=$GO_PROXY" \
+      -v "$APP:/src:ro" -v "$BACKUPS:/backups" -v "$DATA:/data:ro" -v "$SECRETS:/secrets:ro" -v "$RUNTIME/ops:/out" \
+      -w /src --entrypoint /bin/sh "$img" \
+      -c 'go build -buildvcs=false -o /out/ops-"$0" ./internal/ops/cmd/"$0" && exec /out/ops-"$0" "$@"' "$tool" "$@"
+  fi
 }
 
 take_backup() {

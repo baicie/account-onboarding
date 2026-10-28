@@ -104,7 +104,8 @@ jobs:
       - name: Rollback really returns to image A and stays healthy
         run: |
           set -euo pipefail
-          bash scripts/update_account_onboarding.sh --rollback --root="$ROOT"
+          bash scripts/update_account_onboarding.sh --rollback --root="$ROOT" \
+            --go-proxy=https://proxy.golang.org,direct
           CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
           C_ID="$(docker inspect "$CID" --format '{{.Image}}')"
           echo "after rollback image=$C_ID expected=$IMAGE_A"
