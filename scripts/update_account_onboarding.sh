@@ -444,6 +444,7 @@ wait_healthy() { # 0 healthy, non-zero otherwise; never exits the process
 
 # ---- actions ---------------------------------------------------------------------
 do_preflight() {
+  require_readable_data
   detect_docker
   [ -d "$APP/.git" ] || die "$APP is not a git checkout" 2
   check_worktree
@@ -471,6 +472,7 @@ do_build() {
 }
 
 do_backup() {
+  require_readable_data
   detect_docker
   take_backup
   backup_is_usable || ! db_file_exists "$DATA/state.sqlite" || die "no usable snapshot after the backup step" 3
@@ -557,8 +559,22 @@ ensure_data_owner() {
   fi
 }
 
+require_readable_data() {
+  if [ -d "$DATA" ] && [ ! -x "$DATA" ]; then
+    die "$DATA is not readable by the current user; run with root or passwordless sudo (refusing to treat the existing database as absent)" 3
+  fi
+  local f
+  for f in state.sqlite state.sqlite-wal state.sqlite-shm state.sqlite.restore-in-progress; do
+    if [ -e "$DATA/$f" ] && [ ! -r "$DATA/$f" ]; then
+      die "$DATA/$f exists but is not readable by the current user; refusing to treat it as absent" 3
+    fi
+  done
+}
+
 prepare_deploy() { # only for a real deploy or rollback, never build-only or preflight
   local owner mode f
+  require_readable_data
+  ensure_data_owner
   owner="$(db_file_owner "$DATA")"
   [ "$owner" = "10001" ] || die "$DATA is owned by $owner, not 10001; refusing to start" 2
   mode="$(db_file_mode "$DATA")"
