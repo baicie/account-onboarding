@@ -572,7 +572,11 @@ do_rollback() {
     die "database schema $current_schema is newer than the recorded $recorded_schema for the previous release; running the old binary on a migrated database is not a safe rollback. Restore the matching snapshot with internal/ops/cmd/restore during a maintenance window (destructive) or pass --allow-schema-forward after verifying compatibility" 3
   fi
   log "rolling back to $prev_image ($prev_sha)"
-  if [ "$DRY_RUN" != "1" ]; then prepare_deploy; fi
+  if [ "$DRY_RUN" != "1" ]; then
+    prepare_deploy
+    take_backup
+    backup_is_usable || die "no usable snapshot after the rollback protection backup; refusing to change the service" 3
+  fi
   write_overrides "$prev_image"
   compose_valid
   materialize_secrets "$prev_image"
