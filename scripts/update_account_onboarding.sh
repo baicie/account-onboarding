@@ -77,6 +77,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+case "$HOST_PORT" in
+  ""|*[!0-9]*) die "--host-port must be a TCP port number" 1 ;;
+esac
+if [ "$HOST_PORT" -lt 1 ] || [ "$HOST_PORT" -gt 65535 ]; then die "--host-port must be between 1 and 65535" 1; fi
+
 case "$ROOT" in
   /*) ;;
   *) die "--root must be an absolute path" 1 ;;
@@ -226,8 +231,6 @@ write_overrides() {
     printf "    pull_policy: never\n"
     printf "    volumes:\n"
     printf "      - %s:/app/data\n" "$DATA"
-    printf "    ports:\n"
-    printf "      - 127.0.0.1:%s:8788\n" "$HOST_PORT"
     printf "    secrets:\n"
     printf "      - onboarding_master_key\n"
     printf "      - onboard_admin_token\n"
@@ -238,7 +241,7 @@ write_overrides() {
   mv -f "$OVERRIDE.tmp" "$OVERRIDE"
 }
 
-compose() { dk compose -p account-onboarding -f "$BASE_COMPOSE" -f "$OVERRIDE" --env-file /dev/null "$@"; }
+compose() { export ONBOARD_HOST_PORT="$HOST_PORT"; dk compose -p account-onboarding -f "$BASE_COMPOSE" -f "$OVERRIDE" --env-file /dev/null "$@"; }
 
 compose_valid() {
   compose config --quiet 2>&1 || die "compose configuration is invalid (see docker compose config output above)" 2
@@ -417,7 +420,7 @@ short_sha() { printf "%s" "${1:0:12}"; }
 build_image() {
   local sha
   local sha="$1" ver tag
-  ver="$(printf %s "${ONBOARD_BUILD_VERSION:-0.1.0}" | tr . -)"
+  ver="$(printf %s "${ONBOARD_BUILD_VERSION:-0.1.0}" | tr '.' '-')"
   tag="account-onboarding:local-$(short_sha "$1")-$ver"
   log "building $tag from $sha"
   local args=(--build-arg "VERSION=${ONBOARD_BUILD_VERSION:-0.1.0}" --build-arg "COMMIT=$sha" --build-arg "GOPROXY=$GO_PROXY")
@@ -558,6 +561,9 @@ do_deploy() {
 }
 
 do_rollback() {
+  local rp
+  rp="$(state_num host_port || true)"
+  if [ -n "$rp" ]; then HOST_PORT="$rp"; fi
   detect_docker
   [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
   local prev_image prev_sha recorded_schema current_schema
@@ -588,6 +594,9 @@ do_rollback() {
 }
 
 do_status() {
+  local rp
+  rp="$(state_num host_port || true)"
+  if [ -n "$rp" ]; then HOST_PORT="$rp"; fi
   if [ -f "$STATE" ]; then
     log "recorded deployment state:"
     cat "$STATE"
@@ -630,8 +639,27 @@ require_readable_data() {
   done
 }
 
+harden_secret_source() {
+  local f mode owner
+  mkdir -p "$SECRETS_SRC"
+  chmod 0700 "$SECRETS_SRC" || die "cannot restrict $SECRETS_SRC to 0700" 2
+  for f in onboarding_master_key onboard_admin_token; do
+    [ -f "$SECRETS_SRC/$f" ] || continue
+    if [ -L "$SECRETS_SRC/$f" ]; then die "$SECRETS_SRC/$f is a symlink; refusing" 2; fi
+    mode="$(stat -c %a "$SECRETS_SRC/$f" 2>/dev/null || stat -f %Lp "$SECRETS_SRC/$f")"
+    case "$mode" in
+      400|600) ;;
+      444|644)
+        # readable by every local user: tighten it, the materializer runs as root
+        chmod 0400 "$SECRETS_SRC/$f" || die "cannot restrict $SECRETS_SRC/$f to 0400 (run as its owner or with sudo)" 2 ;;
+      *) die "$SECRETS_SRC/$f has mode $mode; expected 0400 or 0600" 2 ;;
+    esac
+  done
+}
+
 prepare_deploy() { # only for a real deploy or rollback, never build-only or preflight
   local owner mode f
+  harden_secret_source
   require_readable_data
   ensure_data_owner
   owner="$(db_file_owner "$DATA")"

@@ -62,7 +62,7 @@ services:
     ports:
       # Loopback-only publishing. Do not change to "8788:8788" without a
       # reviewed TLS ingress proxy and a private-network boundary.
-      - "127.0.0.1:8788:8788"
+      - "127.0.0.1:${ONBOARD_HOST_PORT:-8788}:8788"
 
     volumes:
       # SQLite + WAL is the only writable path. Create it on the host owned by

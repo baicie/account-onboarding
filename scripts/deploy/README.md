@@ -42,7 +42,7 @@ It never deploys by accident: the default action only builds.
 
 The script operates on a `--root` directory (default `/opt/account-onboarding`) laid out as
 `app/` (git checkout), `runtime/data` (SQLite + WAL), `runtime/secrets` (materialized 0400),
-`runtime/secrets-src` (0444 source projection), `backups/`, `deploy/` (generated override +
+`runtime/secrets-src` (0400 source projection, directory 0700), `backups/`, `deploy/` (generated override +
 state) and `logs/`. Source and data are separate, so a pull, branch switch or deleted
 checkout never touches the database, the keyring or the tokens.
 

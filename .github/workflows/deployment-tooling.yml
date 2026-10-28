@@ -57,7 +57,8 @@ jobs:
           sudo install -d -o 10001 -g 10001 -m 0700 "$ROOT/runtime/data"
           openssl rand 32 > "$ROOT/runtime/secrets-src/onboarding_master_key"
           openssl rand -hex 32 > "$ROOT/runtime/secrets-src/onboard_admin_token"
-          chmod 0444 "$ROOT/runtime/secrets-src/"*
+          chmod 0400 "$ROOT/runtime/secrets-src/"*
+          if sudo -u nobody test -r "$ROOT/runtime/secrets-src/onboarding_master_key"; then echo "secret source is world readable"; exit 1; fi
           echo "ROOT=$ROOT" >> "$GITHUB_ENV"
       - name: First install (build, snapshot is skipped without a database, deploy, health)
         run: |
