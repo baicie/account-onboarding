@@ -660,11 +660,11 @@ do_rollback() {
   write_overrides "$prev_image"
   compose_valid
   materialize_secrets "$prev_image"
-  write_pending "$IMAGE_TAG" "$IMAGE_ID" "$TARGET_SHA"
+  write_pending "$prev_image" "$(dk image inspect "$prev_image" --format "{{.Id}}" 2>/dev/null || true)" "$prev_sha"
   [ "$DRY_RUN" = "1" ] || compose up -d --no-build --no-deps --force-recreate onboarding
   [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would roll back"; return 0; }
   wait_healthy || die "rollback target $prev_image is not healthy either; the database is untouched, inspect the logs" 3
-  write_state "$prev_image" "$(dk image inspect "$prev_image" --format "{{.Id}}")" "$prev_sha" "$current_schema" "" "" ""
+  write_state "$prev_image" "$(dk image inspect "$prev_image" --format "{{.Id}}" 2>/dev/null || echo unknown)" "$prev_sha" "$current_schema" "" "" ""
   log "rolled back to $prev_image"
 }
 
