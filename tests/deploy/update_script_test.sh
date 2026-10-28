@@ -22,6 +22,7 @@ if [ "$cmd" = "inspect" ]; then
   case "$args" in
     *"/app/data"*) echo "${STUB_MOUNT_DATA:-}"; exit 0 ;;
     *"/run/secrets"*) echo "${STUB_MOUNT_SECRETS:-}"; exit 0 ;;
+    *"{{.Image}}"*) echo "sha256:stubimage"; exit 0 ;;
     *"{{.Id}}"*) echo "sha256:stubimage"; exit 0 ;;
     *"{{.Image}}"*) echo "${STUB_CONTAINER_IMAGE:-sha256:stubimage}"; exit 0 ;;
     *ExitCode*) echo "exit=${STUB_EXIT_CODE:-0} restarts=${STUB_RESTARTS:-0}"; exit 0 ;;
@@ -171,6 +172,22 @@ db.commit(); db.close()
 PY
 printf '{\n  "previous_image": "account-onboarding:local-old",\n  "previous_commit": "abc",\n  "previous_schema_version": 5\n}\n' > "$ROOT/deploy/deployment-state.json"
 run --rollback --root="$ROOT"; want "schema 6 refuses rollback to a schema 5 release" 3 "not a safe rollback"
+# --- deployment state protocol ---
+mkroot; printf '{\n  "image": "account-onboarding:local-new",\n  "image_id": "sha256:stubimage",\n  "commit": "abc",\n  "schema_version": 6,\n  "host_port": 8788,\n  "current_image_id": "sha256:stubimage",\n  "last_good_image": "account-onboarding:local-old"\n}\n' > "$ROOT/deploy/deployment-state.json"
+printf '{\n  "tag": "account-onboarding:local-new",\n  "image_id": "sha256:stubimage",\n  "commit": "abc",\n  "started_at": "2026-01-01T00:00:00Z"\n}\n' > "$ROOT/deploy/deployment-state.json.pending"
+run --status --root="$ROOT"; want "--status reports a pending deployment" 0 "pending deployment"
+mkroot; printf '{\n  "image": "account-onboarding:local-new",\n  "current_image_id": "sha256:stubimage",\n  "host_port": 8788,\n  "last_good_image": "account-onboarding:local-old",\n  "last_good_commit": "abc",\n  "last_good_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-state.json"
+python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)])
+db.commit(); db.close()
+PY
+run --rollback --root="$ROOT"; grep -q "rolling back to account-onboarding:local-old" "$LOG" && ok "--rollback targets last_good_image" || bad "--rollback did not target last_good_image"
+mkroot; printf '{\n  "image": "account-onboarding:local-new",\n  "current_image_id": "sha256:stubimage",\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
+run --rollback --root="$ROOT"; want "--rollback refuses without a last known good" 1 "no previous image recorded"
+
 printf "\nSUMMARY pass=%d fail=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo DEPLOY_TOOLING_TESTS_PASS || echo DEPLOY_TOOLING_TESTS_FAIL
 [ "$FAIL" -eq 0 ]

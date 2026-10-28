@@ -630,6 +630,12 @@ do_rollback() {
   rp="$(state_num host_port || true)"
   if [ -n "$rp" ]; then HOST_PORT="$rp"; fi
   detect_docker
+  local running_id recorded_id
+  running_id="$(dk inspect "$(detect_existing_container)" --format "{{.Image}}" 2>/dev/null || true)"
+  recorded_id="$(state_field current_image_id || true)"
+  if [ -n "$running_id" ] && [ -n "$recorded_id" ] && [ "$running_id" != "$recorded_id" ]; then
+    die "the running image ($running_id) does not match the recorded current image ($recorded_id); refusing to roll back blindly - run --status and reconcile first" 3
+  fi
   [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
   local prev_image prev_sha recorded_schema current_schema
   prev_image="$(state_field last_good_image || true)"
@@ -692,6 +698,7 @@ do_reconcile() {
 }
 
 do_status() {
+  if [ -f "$STATE.pending" ]; then log "pending deployment (unfinished switch)"; cat "$STATE.pending"; fi
   local rp
   rp="$(state_num host_port || true)"
   if [ -n "$rp" ]; then HOST_PORT="$rp"; fi
@@ -704,7 +711,6 @@ do_status() {
   detect_docker 2>/dev/null || { warn "docker unavailable: live state unknown"; return 0; }
   local c; c="$(detect_existing_container)"
   if [ -z "$c" ]; then log "no container for the account-onboarding compose project"; return 0; fi
-  if [ -f "$STATE.pending" ]; then log "pending deployment (unfinished switch):"; cat "$STATE.pending"; fi
   log "container: $c"
   dk inspect "$c" --format "{{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} image={{.Config.Image}} id={{.Image}}"
   log "healthz: $(api_probe /healthz)  readyz: $(api_probe /readyz)"
