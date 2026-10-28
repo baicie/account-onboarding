@@ -1,23 +1,23 @@
 {{define "layout"}}
 <!doctype html>
-<html lang="en">
+<html lang="{{T "html.lang"}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · Account Onboarding</title>
+<title>{{.Title}} · {{T "brand.name"}}</title>
 <link rel="stylesheet" href="/ui/static/app.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><a href="/ui/">Account Onboarding</a> <span class="badge">v{{.Version}}</span></div>
+  <div class="brand"><a href="/ui/">{{T "brand.name"}}</a> <span class="badge">v{{.Version}}</span></div>
   {{if .SignedIn}}
   <nav>
-    <a href="/ui/">Runs</a>
-    <a href="/ui/ops/external">Reconciliation</a>
-    <a href="/ui/alerts/outbox">Alerts</a>
+    <a href="/ui/">{{T "nav.runs"}}</a>
+    <a href="/ui/ops/external">{{T "nav.reconciliation"}}</a>
+    <a href="/ui/alerts/outbox">{{T "nav.alerts"}}</a>
     <form method="post" action="/ui/logout" class="inline">
       <input type="hidden" name="csrf" value="{{.CSRFToken}}">
-      <button type="submit" class="link">Sign out</button>
+      <button type="submit" class="link">{{T "nav.signout"}}</button>
     </form>
   </nav>
   {{end}}
@@ -28,9 +28,9 @@
 {{template "content" .}}
 </main>
 <footer>
-  <span>Loopback operator console</span>
+  <span>{{T "footer.loopback"}}</span>
   <span>·</span>
-  <span>Events are redacted; secrets are never displayed</span>
+  <span>{{T "footer.redacted"}}</span>
 </footer>
 </body>
 </html>

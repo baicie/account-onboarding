@@ -64,7 +64,7 @@ type Server struct {
 func New(cfg config.Config, store *storage.Store, engine *workflow.Engine,
 	registry *provider.Registry, sec *secrets.Service, log *slog.Logger,
 	signer *security.SessionSigner, redactor *security.Redactor) (*Server, error) {
-	pages, err := loadPages()
+	pages, err := loadPages(normalizeUILang(cfg.UILang))
 	if err != nil {
 		return nil, err
 	}
