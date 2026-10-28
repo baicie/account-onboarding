@@ -22,9 +22,8 @@ if [ "$cmd" = "inspect" ]; then
   case "$args" in
     *"/app/data"*) echo "${STUB_MOUNT_DATA:-}"; exit 0 ;;
     *"/run/secrets"*) echo "${STUB_MOUNT_SECRETS:-}"; exit 0 ;;
-    *"{{.Image}}"*) echo "sha256:stubimage"; exit 0 ;;
-    *"{{.Id}}"*) echo "sha256:stubimage"; exit 0 ;;
     *"{{.Image}}"*) echo "${STUB_CONTAINER_IMAGE:-sha256:stubimage}"; exit 0 ;;
+    *"{{.Id}}"*) echo "sha256:stubimage"; exit 0 ;;
     *ExitCode*) echo "exit=${STUB_EXIT_CODE:-0} restarts=${STUB_RESTARTS:-0}"; exit 0 ;;
   esac
   echo "exit=0 restarts=0"; exit 0
@@ -83,7 +82,7 @@ case "$*" in
 esac
 STUB
 # sudo is never available in the fixture: the guards must fail closed the same way
-on a developer machine and on a CI runner.
+# on a developer machine and on a CI runner.
 printf "#!/usr/bin/env bash\nexit 1\n" > "$STUB/sudo"
 chmod +x "$STUB"/*
 
@@ -223,8 +222,19 @@ db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (v
 db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)]); db.commit(); db.close()
 PY
 STUB_CONTAINER=account-onboarding run --rollback --root="$ROOT"
-if grep -q "rolling back to account-onboarding:local-B" "$LOG" && ! grep -q "not a safe rollback" "$LOG"; then ok "recovery returns to the replaced release (B) and the schema guard accepts it"; else bad "recovery targets the wrong release or the schema guard refuses it (rc=$RC; ownership checks may also fire on CI)"; sed "s/^/    | /" "$LOG" | tail -8; fi
+if grep -q "rolling back to account-onboarding:local-B" "$LOG" && ! grep -q "not a safe rollback" "$LOG" && ! grep -q "no schema version for the previous release" "$LOG"; then ok "recovery returns to the replaced release (B) and the schema guard accepts it"; else bad "recovery targets the wrong release or the schema guard refuses it (rc=$RC; ownership checks may also fire on CI)"; sed "s/^/    | /" "$LOG" | tail -8; fi
 
+
+# --- a stale attempt must not retarget while the running image matches the record ---
+mkroot; printf '{\n  "current_image": "account-onboarding:local-A",\n  "current_image_id": "sha256:stubimage",\n  "last_good_image": "account-onboarding:local-A",\n  "last_good_commit": "aaa",\n  "last_good_schema_version": 6,\n  "host_port": 8788\n}\n' > "$ROOT/deploy/deployment-state.json"
+printf '{\n  "attempt_id": "deploy-2",\n  "status": "mutation_started",\n  "expected_image_id": "sha256:other",\n  "previous_image": "account-onboarding:local-B",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+python3 - "$ROOT/runtime/data/state.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)")
+db.executemany("INSERT INTO schema_migrations(version) VALUES (?)", [(1,), (6,)]); db.commit(); db.close()
+PY
+run --rollback --root="$ROOT"
+if grep -q "rolling back to account-onboarding:local-A" "$LOG"; then ok "a stale attempt does not retarget the rollback"; else bad "stale attempt retargeted the rollback"; sed "s/^/    | /" "$LOG" | tail -6; fi
 printf "\nSUMMARY pass=%d fail=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo DEPLOY_TOOLING_TESTS_PASS || echo DEPLOY_TOOLING_TESTS_FAIL
 [ "$FAIL" -eq 0 ]

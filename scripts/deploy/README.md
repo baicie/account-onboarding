@@ -22,7 +22,7 @@ It never deploys by accident: the default action only builds.
 | `--build-only` (default) | preflight, build `account-onboarding:local-<short-sha>`, generate the override, validate `docker compose config`. **Never** recreates a container. |
 | `--backup-only` | encrypted snapshot with the shipped backup CLI and verify with the shipped verifier. |
 | `--deploy` | preflight, snapshot, build, config check, materialize secrets, `compose up -d --no-build --no-deps --force-recreate onboarding`, then health checks, then record state. |
-| `--rollback` | restores the previous image recorded in the state file, after a schema compatibility check. |
+| `--rollback` | returns to the last known good image, or to the release an unfinished deployment attempt replaced when the running container is that attempt; refuses when the running image disagrees with the record, when no schema version is recorded, or when the database schema is newer. |
 | `--status` | recorded state plus live container state, `/healthz`, `/readyz`, database schema. |
 
 ## Safety rules the script enforces

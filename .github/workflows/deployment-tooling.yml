@@ -150,6 +150,21 @@ jobs:
           CID="$(docker ps -q --filter label=com.docker.compose.project=account-onboarding | head -1)"
           test "$(docker inspect "$CID" --format '{{.Image}}')" = "$IMAGE_A"
 
+      - name: Negative - an attempt whose image is not the running one is refused
+        run: |
+          set -euo pipefail
+          printf '{\n  "attempt_id": "e2e-guard",\n  "status": "failed",\n  "expected_image_id": "sha256:0000",\n  "previous_image": "account-onboarding:local-none",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
+          set +e
+          bash scripts/update_account_onboarding.sh --rollback --root="$ROOT" > attempt-guard.log 2>&1
+          rc=$?
+          set -e
+          echo "rollback rc=$rc"
+          cat attempt-guard.log | tail -5
+          test "$rc" -eq 3
+          grep -q "does not match the recorded current image" attempt-guard.log
+          docker ps --filter name=account-onboarding --format "{{.Status}}" | grep -q "Up"
+          rm -f "$ROOT/deploy/deployment-attempt.json"
+
       - name: The database survived every step
         run: |
           set -euo pipefail

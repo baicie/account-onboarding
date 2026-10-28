@@ -511,6 +511,7 @@ write_attempt() { # write_attempt <status>; detail globals are set by do_deploy
 }
 
 attempt_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$ATTEMPT" 2>/dev/null | head -1; }
+attempt_num()   { sed -n "s/.*\"$1\": *\([0-9][0-9]*\).*/\1/p" "$ATTEMPT" 2>/dev/null | head -1; }
 
 
 state_field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$STATE" 2>/dev/null | head -1; }
@@ -643,12 +644,11 @@ do_rollback() {
     pending_id="$(printf %s "$pending_id" | head -1)"
     if [ -n "$pending_id" ] && [ "$running_id" = "$pending_id" ]; then
       RECOVERING=1
-      warn "the running container is the image of an unfinished deployment attempt; returning to the release that attempt replaced"
+      warn "the running container is the image of an unfinished deployment attempt; evaluating the release to return to"
     else
       die "the running image ($running_id) does not match the recorded current image ($recorded_id); refusing to roll back blindly - run --status and reconcile first" 3
     fi
   fi
-  [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
   local prev_image prev_sha prev_id recorded_schema current_schema
   prev_image="$(state_field last_good_image || true)"
   [ -n "$prev_image" ] || prev_image="$(state_field previous_image || true)"
@@ -666,7 +666,7 @@ do_rollback() {
     if [ -n "$ai" ]; then prev_id="$ai"; fi
     ai="$(attempt_field previous_commit || true)"
     if [ -n "$ai" ]; then prev_sha="$ai"; fi
-    ai="$(sed -n 's/.*"previous_schema_version": *\([0-9][0-9]*\).*/\1/p' "$ATTEMPT" 2>/dev/null | head -1)"
+    ai="$(attempt_num previous_schema_version || true)"
     if [ -n "$ai" ]; then recorded_schema="$ai"; fi
     warn "an unfinished deployment attempt is on record; returning to the release it replaced ($prev_image)"
   fi
@@ -697,7 +697,11 @@ do_rollback() {
   [ "$DRY_RUN" = "1" ] || compose up -d --no-build --no-deps --force-recreate onboarding
   [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would roll back"; return 0; }
   wait_healthy || die "rollback target $prev_image is not healthy either; the database is untouched, inspect the logs" 3
-  write_state "$prev_image" "$(dk image inspect "$prev_image" --format "{{.Id}}" 2>/dev/null || echo unknown)" "$prev_sha" "$current_schema" "" "" ""
+  local pre_image pre_commit pre_schema
+  pre_image="$(state_field current_image || true)"
+  pre_commit="$(state_field commit || true)"
+  pre_schema="$(state_num schema_version || true)"
+  write_state "$prev_image" "$(dk image inspect "$prev_image" --format "{{.Id}}" 2>/dev/null || echo unknown)" "$prev_sha" "$current_schema" "$pre_image" "$pre_commit" "${pre_schema:-0}"
   log "rolled back to $prev_image"
 }
 
@@ -721,7 +725,7 @@ do_reconcile() {
   [ -n "$schema" ] || die "cannot read schema during reconcile; no state was written" 3
   ATTEMPT_ID="$(attempt_field attempt_id)"; ATTEMPT_PREV_IMAGE="$(attempt_field previous_image)"
   ATTEMPT_PREV_ID="$(attempt_field previous_image_id)"; ATTEMPT_PREV_SHA="$(attempt_field previous_commit)"
-  ATTEMPT_PREV_SCHEMA="$(sed -n 's/.*"previous_schema_version": *\([0-9][0-9]*\).*/\1/p' "$ATTEMPT" | head -1)"
+  ATTEMPT_PREV_SCHEMA="$(attempt_num previous_schema_version || true)"
   ATTEMPT_SNAPSHOT="$(attempt_field snapshot)"
   TARGET_SHA="$(attempt_field requested_commit)"; IMAGE_TAG="$(attempt_field image_tag)"; IMAGE_ID="$expected"
   write_state "$IMAGE_TAG" "$expected" "$TARGET_SHA" "$schema" \
