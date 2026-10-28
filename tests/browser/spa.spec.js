@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-const token = process.env.ONBOARD_TEST_ADMIN_TOKEN;
+const token = (process.env.ONBOARD_TEST_ADMIN_TOKEN || '').trim();
 if (!token) throw new Error('ONBOARD_TEST_ADMIN_TOKEN is required');
 
 // Smoke coverage for the console shell: the bundle loads, the session bootstrap authenticates

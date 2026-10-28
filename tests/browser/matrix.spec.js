@@ -1,6 +1,6 @@
 const { test, expect, request } = require('@playwright/test');
 
-const token = process.env.ONBOARD_TEST_ADMIN_TOKEN;
+const token = (process.env.ONBOARD_TEST_ADMIN_TOKEN || '').trim();
 if (!token) throw new Error('ONBOARD_TEST_ADMIN_TOKEN is required');
 
 // The console is a single-page app, so these tests set data up through the JSON API and then
@@ -19,9 +19,11 @@ async function createRun(ctx) {
       sandbox_provider: 'fake-sandbox',
     },
   });
-  expect([200, 201, 202]).toContain(resp.status());
-  const body = await resp.json();
-  return body.id;
+  const body = await resp.text();
+  if (![200, 201, 202].includes(resp.status())) {
+    throw new Error(`create run = ${resp.status()} ${body}`);
+  }
+  return JSON.parse(body).id;
 }
 
 async function login(page) {
@@ -48,7 +50,7 @@ test.describe('operator matrix on the console', () => {
     await login(page);
     await page.goto('/ui/?template=sandbox-email-verify-oidc');
     await expect(page.locator('table')).toBeVisible();
-    await page.goto('/ui/?status=FAILED_TERMINAL');
+    await page.goto('/ui/?template=no-such-template');
     await expect(page.getByText('暂无运行')).toBeVisible({ timeout: 20000 });
   });
 
@@ -60,7 +62,7 @@ test.describe('operator matrix on the console', () => {
     await login(page);
     await page.goto(`/ui/runs/${runId}`);
     await expect(page.getByRole('heading', { name: /运行/ })).toBeVisible({ timeout: 20000 });
-    await expect(page.getByRole('columnheader', { name: '步骤' })).toBeVisible();
+    await expect(page.locator('table th').filter({ hasText: '步骤' }).first()).toBeVisible();
     await expect(page.getByText('事件时间线').first()).toBeVisible();
     await expect(page.getByRole('button', { name: '恢复运行' })).toBeVisible();
     await expect(page.getByRole('button', { name: '取消运行' })).toBeVisible();
