@@ -222,7 +222,8 @@ func TestRunsCursorPaginationNoDuplicates(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(body), "Next page") {
+	// Localized copy: assert the cursor link itself rather than the label.
+	if !strings.Contains(string(body), "cursor=") {
 		t.Fatal("first page has no next cursor")
 	}
 	m := regexp.MustCompile(`cursor=([^"&]+)`).FindStringSubmatch(string(body))
