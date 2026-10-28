@@ -1,12 +1,13 @@
+/// <reference types="vitest/config" />
+import path from 'path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'node:path'
+import tailwindcss from '@tailwindcss/vite'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
-// Built assets are embedded into the Go binary (internal/api/webdist) and served at /ui/.
+// The bundle is embedded by the Go binary and served at /ui/app.
+// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  // The bundle is served from /ui/app by the Go embed handler, so asset URLs must
-  // carry that prefix; with plain '/ui/' every script and style request would 404.
   base: '/ui/app/',
   build: {
     outDir: path.resolve(__dirname, '../internal/api/webdist'),
@@ -17,6 +18,19 @@ export default defineConfig({
     proxy: {
       '/v1': { target: 'http://127.0.0.1:18788', changeOrigin: false },
       '/ui/api': { target: 'http://127.0.0.1:18788', changeOrigin: false },
+    },
+  },
+  plugins: [
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+    }),
+    react(),
+    tailwindcss(),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
     },
   },
 })

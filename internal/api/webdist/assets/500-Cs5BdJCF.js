@@ -1,0 +1,1 @@
+import{s as e}from"./index-BkDp0-ir.js";var t=e;export{t as component};
