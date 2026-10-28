@@ -332,6 +332,24 @@ func (e *Engine) stepWaitEmail(ctx context.Context, rc *RunContext) (Outcome, er
 				out.MailReceipts = []storage.MailReceiptDraft{{
 					Provider: mb.Provider, MessageKey: result.MessageID,
 				}}
+				// Optionally keep what arrived so the console can show the operator the real
+				// sender, subject and link. The body is never persisted.
+				if e.cfg.MailSnapshot {
+					subject := ""
+					for _, msg := range fresh {
+						if msg.ID == result.MessageID {
+							subject = msg.Subject
+							break
+						}
+					}
+					if err := rc.Store().InsertMailSnapshot(ctx, storage.MailSnapshot{
+						RunID: rc.Run.ID, Step: rc.Step.Name, MailboxAlias: mb.Address,
+						Sender: result.Sender, Subject: subject, Link: result.Link,
+						ReceivedAtMS: result.ReceivedAt.UTC().UnixMilli(), CreatedAtMS: rc.Now.UnixMilli(),
+					}); err != nil {
+						rc.Log.Warn("wait_email: could not record the mail snapshot", "error", err)
+					}
+				}
 				return out, nil
 			}
 		}

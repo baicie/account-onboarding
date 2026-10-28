@@ -331,3 +331,30 @@ func knownRunState(status string) bool {
 	}
 	return false
 }
+
+// handleRunMails returns what a run actually received when snapshots are enabled.
+// The message body is never part of this payload.
+func (s *Server) handleRunMails(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.Store.GetRun(r.Context(), id); err != nil {
+		notFoundResponse(w, r)
+		return
+	}
+	snaps, err := s.Store.ListMailSnapshots(r.Context(), id)
+	if err != nil {
+		writeError(w, r, errs.Wrap(errs.ClassInternal, "run.mails", "could not load mail snapshots", err))
+		return
+	}
+	items := make([]map[string]any, 0, len(snaps))
+	for _, snap := range snaps {
+		items = append(items, map[string]any{
+			"step":        snap.Step,
+			"mailbox":     snap.MailboxAlias,
+			"sender":      snap.Sender,
+			"subject":     snap.Subject,
+			"link":        snap.Link,
+			"received_at": formatMS(&snap.ReceivedAtMS),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "enabled": s.Cfg.MailSnapshot})
+}

@@ -98,6 +98,7 @@ func newEnv(t *testing.T, mutate func(*config.Config, *provider.Registry)) *env 
 		Domains:         cfg.Domains,
 		SenderAllowlist: cfg.SenderAllowlist,
 		FingerprintKey:  security.DeriveKey(master, "fp"),
+		MailSnapshot:    cfg.MailSnapshot,
 	})
 	signer := security.NewSessionSigner(master, 3600)
 	server, err := api.New(cfg, store, engine, reg, sec, log, signer, security.NewRedactor(adminToken))

@@ -144,6 +144,9 @@ type Config struct {
 	RateLimitPerMinute int
 	// LoginRateLimitPerMinute bounds console login attempts per client IP.
 	LoginRateLimitPerMinute int
+	// MailSnapshot keeps the sender/subject/link of each received verification mail so
+	// the console can show it. Off by default; bodies are never stored either way.
+	MailSnapshot bool
 	// DevEphemeralKey allows running without a master key file (fake providers
 	// only, local development). Secrets become undecryptable after restart, so
 	// this is refused in production mode.
@@ -321,6 +324,9 @@ func LoadFrom(environ []string) (Config, error) {
 		return cfg, err
 	}
 	if cfg.RateLimitPerMinute, err = getInt("ONBOARD_RATE_LIMIT_PER_MINUTE", cfg.RateLimitPerMinute); err != nil {
+		return cfg, err
+	}
+	if cfg.MailSnapshot, err = getBool("ONBOARD_MAIL_SNAPSHOT", cfg.MailSnapshot); err != nil {
 		return cfg, err
 	}
 	if cfg.LoginRateLimitPerMinute, err = getInt("ONBOARD_LOGIN_RATE_LIMIT_PER_MINUTE", cfg.LoginRateLimitPerMinute); err != nil {

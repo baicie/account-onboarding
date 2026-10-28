@@ -33,6 +33,9 @@ type Config struct {
 	FingerprintKey  []byte
 	OIDCScopes      []string
 	OIDCRedirectURI string
+	// MailSnapshot records what a step actually received (sender, subject, link) so the
+	// console can show it. Bodies are still never stored.
+	MailSnapshot bool
 }
 
 // Engine is the durable workflow runner. A worker claims one step, executes it

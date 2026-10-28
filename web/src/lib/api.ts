@@ -57,6 +57,7 @@ export const api = {
   providers: () => request<{ items: any[]; mode?: string }>('/v1/providers'),
   runs: (query = '') => request<{ items: Run[]; next_cursor?: string }>('/v1/runs' + (query ? `?${query}` : '')),
   run: (id: string) => request<any>(`/v1/runs/${id}`),
+  runMails: (id: string) => request<{ items: any[]; enabled: boolean }>(`/v1/runs/${id}/mails`),
   events: (id: string) => request<{ items: any[] }>(`/v1/runs/${id}/events`),
   createRun: (body: unknown) =>
     request<any>('/v1/runs', {
