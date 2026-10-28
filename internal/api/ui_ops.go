@@ -69,7 +69,7 @@ func (s *Server) handleOpsExternalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := opsExternalPage{
-		pageData: pageData{Title: "Reconciliation", Version: Version, CSRFToken: info.CSRF,
+		pageData: pageData{Title: s.t("page.reconciliation"), Version: Version, CSRFToken: info.CSRF,
 			SignedIn: true, Actor: info.Actor, Error: r.URL.Query().Get("error"),
 			Notice: r.URL.Query().Get("notice")},
 		Status: status, Provider: provider, RunID: runID, NextCursor: page.NextCursor,

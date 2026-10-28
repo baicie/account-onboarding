@@ -346,7 +346,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.pages["dashboard"].render(w, http.StatusOK, dashboardPage{
 		pageData: pageData{
-			Title:     "Runs",
+			Title:     s.t("page.runs"),
 			Version:   s.Version,
 			CSRFToken: info.CSRF,
 			SignedIn:  true,
@@ -404,7 +404,7 @@ func (s *Server) renderDashboardError(w http.ResponseWriter, status int, message
 		templates = append(templates, templateRow{Name: t.Name, Mode: t.Mode, Steps: len(t.Steps)})
 	}
 	if err := s.pages["dashboard"].render(w, status, dashboardPage{
-		pageData:  pageData{Title: "Runs", Version: s.Version, Error: message},
+		pageData:  pageData{Title: s.t("page.runs"), Version: s.Version, Error: message},
 		Templates: templates, Providers: s.Registry.Catalog(),
 	}); err != nil {
 		s.Log.Error("render dashboard error", "error", err)

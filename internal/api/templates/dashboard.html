@@ -86,7 +86,7 @@
 <section class="card">
   <h2>{{T "dash.recent"}}</h2>
   <table>
-    <thead><tr><th>Run</th><th>{{T "dash.template"}}</th><th>Mode</th><th>Status</th><th>Step</th><th>Action</th><th>{{T "th.created"}}</th></tr></thead>
+    <thead><tr><th>{{T "t.run"}}</th><th>{{T "dash.template"}}</th><th>{{T "t.mode"}}</th><th>{{T "t.status"}}</th><th>{{T "th.step2"}}</th><th>{{T "t.actions"}}</th><th>{{T "th.created"}}</th></tr></thead>
     <tbody>
     {{range .Runs}}
       <tr>
@@ -103,7 +103,7 @@
     {{end}}
     </tbody>
   </table>
-  {{if .HasNext}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}&cursor={{urlquery .NextCursor}}">Next page →</a></p>{{end}}
+  {{if .HasNext}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}&cursor={{urlquery .NextCursor}}">{{T "t.next_page"}}</a></p>{{end}}
   {{if .Cursor}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}">{{T "dash.first"}}</a></p>{{end}}
 </section>
 {{end}}

@@ -89,7 +89,7 @@ func (s *Server) handleAlertsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := alertsPage{
-		pageData: pageData{Title: "Alerts", Version: s.Version, CSRFToken: info.CSRF,
+		pageData: pageData{Title: s.t("page.alerts"), Version: s.Version, CSRFToken: info.CSRF,
 			SignedIn: true, Actor: info.Actor, Error: r.URL.Query().Get("error"),
 			Notice: r.URL.Query().Get("notice")},
 		Counts: counts, Status: status, Offset: offset, Transport: s.AlertOutboxNotifier != nil,
