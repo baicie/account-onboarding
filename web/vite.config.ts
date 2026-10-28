@@ -5,7 +5,9 @@ import path from 'node:path'
 // Built assets are embedded into the Go binary (internal/api/webdist) and served at /ui/.
 export default defineConfig({
   plugins: [react()],
-  base: '/ui/',
+  // The bundle is served from /ui/app by the Go embed handler, so asset URLs must
+  // carry that prefix; with plain '/ui/' every script and style request would 404.
+  base: '/ui/app/',
   build: {
     outDir: path.resolve(__dirname, '../internal/api/webdist'),
     emptyOutDir: true,
