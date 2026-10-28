@@ -41,7 +41,10 @@ type CloudflareConfig struct {
 	SitePassword      string
 	AdminPasswordFile string
 	SitePasswordFile  string
-	Timeout           time.Duration
+	// AllowedHosts extends the built-in host allowlist so an operator can point the
+	// adapter at a self-hosted cloudflare_temp_email deployment.
+	AllowedHosts []string
+	Timeout      time.Duration
 }
 
 // MailpitConfig configures the local Mailpit adapter (sandbox only).
@@ -77,6 +80,8 @@ type GitHubConfig struct {
 	Token     string
 	TokenFile string
 	Timeout   time.Duration
+	// AllowedHosts extends the built-in host allowlist (for GitHub Enterprise).
+	AllowedHosts []string
 }
 
 // WorkBuddyConfig configures the permission-gated existing gateway adapter.
@@ -88,6 +93,10 @@ type WorkBuddyConfig struct {
 	TokenFile     string
 	PermissionAck string
 	Timeout       time.Duration
+	// AllowRemote permits a non-loopback gateway; AllowedHosts lists the hosts that
+	// opt-in accepts. The default keeps the adapter on a private network.
+	AllowRemote  bool
+	AllowedHosts []string
 }
 
 // OIDCConfig configures the generic sandbox OIDC test client.
@@ -135,6 +144,9 @@ type Config struct {
 	RateLimitPerMinute int
 	// LoginRateLimitPerMinute bounds console login attempts per client IP.
 	LoginRateLimitPerMinute int
+	// MailSnapshot keeps the sender/subject/link of each received verification mail so
+	// the console can show it. Off by default; bodies are never stored either way.
+	MailSnapshot bool
 	// DevEphemeralKey allows running without a master key file (fake providers
 	// only, local development). Secrets become undecryptable after restart, so
 	// this is refused in production mode.
@@ -314,6 +326,9 @@ func LoadFrom(environ []string) (Config, error) {
 	if cfg.RateLimitPerMinute, err = getInt("ONBOARD_RATE_LIMIT_PER_MINUTE", cfg.RateLimitPerMinute); err != nil {
 		return cfg, err
 	}
+	if cfg.MailSnapshot, err = getBool("ONBOARD_MAIL_SNAPSHOT", cfg.MailSnapshot); err != nil {
+		return cfg, err
+	}
 	if cfg.LoginRateLimitPerMinute, err = getInt("ONBOARD_LOGIN_RATE_LIMIT_PER_MINUTE", cfg.LoginRateLimitPerMinute); err != nil {
 		return cfg, err
 	}
@@ -344,6 +359,9 @@ func LoadFrom(environ []string) (Config, error) {
 	cfg.Cloudflare.Domain = firstNonEmpty(get("ONBOARD_CLOUDFLARE_DOMAIN"), cfg.Cloudflare.Domain)
 	cfg.Cloudflare.AdminPasswordFile = get("ONBOARD_CLOUDFLARE_ADMIN_PASSWORD_FILE")
 	cfg.Cloudflare.SitePasswordFile = get("ONBOARD_CLOUDFLARE_SITE_PASSWORD_FILE")
+	if v := get("ONBOARD_CLOUDFLARE_ALLOWED_HOSTS"); v != "" {
+		cfg.Cloudflare.AllowedHosts = splitCSV(v)
+	}
 	if cfg.Cloudflare.Enabled, err = getBool("ONBOARD_CLOUDFLARE_ENABLED", cfg.Cloudflare.Enabled); err != nil {
 		return cfg, err
 	}
@@ -372,6 +390,9 @@ func LoadFrom(environ []string) (Config, error) {
 
 	cfg.GitHub.BaseURL = firstNonEmpty(get("ONBOARD_GITHUB_BASE_URL"), cfg.GitHub.BaseURL)
 	cfg.GitHub.TokenFile = get("ONBOARD_GITHUB_TOKEN_FILE")
+	if v := get("ONBOARD_GITHUB_ALLOWED_HOSTS"); v != "" {
+		cfg.GitHub.AllowedHosts = splitCSV(v)
+	}
 	if cfg.GitHub.Enabled, err = getBool("ONBOARD_GITHUB_ENABLED", cfg.GitHub.Enabled); err != nil {
 		return cfg, err
 	}
@@ -380,6 +401,14 @@ func LoadFrom(environ []string) (Config, error) {
 	cfg.WorkBuddy.Realm = firstNonEmpty(get("ONBOARD_WORKBUDDY_REALM"), cfg.WorkBuddy.Realm)
 	cfg.WorkBuddy.TokenFile = get("ONBOARD_WORKBUDDY_TOKEN_FILE")
 	cfg.WorkBuddy.PermissionAck = get("ONBOARD_WORKBUDDY_PERMISSION_ACK")
+	if v := get("ONBOARD_WORKBUDDY_ALLOW_REMOTE"); v != "" {
+		if cfg.WorkBuddy.AllowRemote, err = getBool("ONBOARD_WORKBUDDY_ALLOW_REMOTE", cfg.WorkBuddy.AllowRemote); err != nil {
+			return cfg, err
+		}
+	}
+	if v := get("ONBOARD_WORKBUDDY_ALLOWED_HOSTS"); v != "" {
+		cfg.WorkBuddy.AllowedHosts = splitCSV(v)
+	}
 	if cfg.WorkBuddy.Enabled, err = getBool("ONBOARD_WORKBUDDY_ENABLED", cfg.WorkBuddy.Enabled); err != nil {
 		return cfg, err
 	}
@@ -683,7 +712,7 @@ func (c *Config) Validate() error {
 		return errors.New("ONBOARD_LOGIN_RATE_LIMIT_PER_MINUTE must be between 0 (disabled) and 100000")
 	}
 	if c.Cloudflare.Enabled {
-		if err := requireAllowlistedURL("ONBOARD_CLOUDFLARE_BASE_URL", c.Cloudflare.BaseURL, []string{"api.moonbyte.top"}); err != nil {
+		if err := requireAllowlistedURL("ONBOARD_CLOUDFLARE_BASE_URL", c.Cloudflare.BaseURL, append([]string{"api.moonbyte.top"}, c.Cloudflare.AllowedHosts...)); err != nil {
 			return err
 		}
 		if c.Cloudflare.AdminPassword == "" {
@@ -709,7 +738,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.GitHub.Enabled {
-		if err := requireAllowlistedURL("ONBOARD_GITHUB_BASE_URL", c.GitHub.BaseURL, []string{"api.github.com"}); err != nil {
+		if err := requireAllowlistedURL("ONBOARD_GITHUB_BASE_URL", c.GitHub.BaseURL, append([]string{"api.github.com"}, c.GitHub.AllowedHosts...)); err != nil {
 			return err
 		}
 		if c.GitHub.Token == "" {
@@ -717,7 +746,11 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.WorkBuddy.Enabled {
-		if err := requireLocalURL("ONBOARD_WORKBUDDY_BASE_URL", c.WorkBuddy.BaseURL); err != nil {
+		if c.WorkBuddy.AllowRemote {
+			if err := requireAllowlistedURL("ONBOARD_WORKBUDDY_BASE_URL", c.WorkBuddy.BaseURL, c.WorkBuddy.AllowedHosts); err != nil {
+				return fmt.Errorf("%w (set ONBOARD_WORKBUDDY_ALLOWED_HOSTS for a remote gateway)", err)
+			}
+		} else if err := requireLocalURL("ONBOARD_WORKBUDDY_BASE_URL", c.WorkBuddy.BaseURL); err != nil {
 			return fmt.Errorf("%w (the WorkBuddy adapter must target a private gateway only)", err)
 		}
 		if c.WorkBuddy.PermissionAck == "" {

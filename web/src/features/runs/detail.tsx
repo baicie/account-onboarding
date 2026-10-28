@@ -10,6 +10,7 @@ export function RunDetailPage({ runId }: { runId: string }) {
   const qc = useQueryClient()
   const run = useQuery({ queryKey: ['run', runId], queryFn: () => api.run(runId) })
   const events = useQuery({ queryKey: ['run', runId, 'events'], queryFn: () => api.events(runId) })
+  const mails = useQuery({ queryKey: ['run', runId, 'mails'], queryFn: () => api.runMails(runId) })
   const act = useMutation({
     mutationFn: (kind: 'resume' | 'cancel') =>
       kind === 'resume' ? api.resume(runId) : api.cancel(runId),
@@ -21,7 +22,10 @@ export function RunDetailPage({ runId }: { runId: string }) {
 
   const r = run.data?.run ?? run.data
   const steps: any[] = r?.steps ?? []
+  const resources: any[] = run.data?.resources ?? []
   const list: any[] = events.data?.items ?? []
+  const mailItems: any[] = mails.data?.items ?? []
+  const mailEnabled = mails.data?.enabled ?? false
 
   return (
     <div className='flex flex-col gap-4'>
@@ -41,6 +45,58 @@ export function RunDetailPage({ runId }: { runId: string }) {
 
       {act.error && <p className='text-destructive text-sm'>{(act.error as Error).message}</p>}
 
+      <Card>
+        <CardHeader className='pb-3'><CardTitle className='text-sm font-medium'>资源</CardTitle></CardHeader>
+        <CardContent className='p-0'>
+          <Table>
+            <TableHeader>
+              <TableRow><TableHead>类型</TableHead><TableHead>标识</TableHead><TableHead>创建时间</TableHead></TableRow>
+            </TableHeader>
+            <TableBody>
+              {resources.map((res: any, i: number) => (
+                <TableRow key={i}>
+                  <TableCell>{res.kind}</TableCell>
+                  <TableCell className='font-mono text-xs'>{res.display_alias ?? '—'}</TableCell>
+                  <TableCell className='text-muted-foreground'>{res.created_at ?? '—'}</TableCell>
+                </TableRow>
+              ))}
+              {resources.length === 0 && (
+                <TableRow><TableCell colSpan={3} className='text-muted-foreground py-6 text-center text-sm'>本次运行还没有创建资源</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className='pb-3'>
+          <CardTitle className='text-sm font-medium'>收到的邮件</CardTitle>
+        </CardHeader>
+        <CardContent className='p-0'>
+          <Table>
+            <TableHeader>
+              <TableRow><TableHead>发件人</TableHead><TableHead>主题</TableHead><TableHead>验证链接</TableHead><TableHead>收信时间</TableHead></TableRow>
+            </TableHeader>
+            <TableBody>
+              {mailItems.map((m: any, i: number) => (
+                <TableRow key={i}>
+                  <TableCell className='text-muted-foreground'>{m.sender}</TableCell>
+                  <TableCell>{m.subject || "（无主题）"}</TableCell>
+                  <TableCell className='max-w-[28rem] truncate font-mono text-xs'>
+                    {m.link ? <a className="underline-offset-4 hover:underline" href={m.link} target="_blank" rel="noreferrer">{m.link}</a> : "—"}
+                  </TableCell>
+                  <TableCell className='text-muted-foreground'>{m.received_at ?? '—'}</TableCell>
+                </TableRow>
+              ))}
+              {mailItems.length === 0 && (
+                <TableRow><TableCell colSpan={4} className='text-muted-foreground py-6 text-center text-sm'>
+                  {mailEnabled ? "本次运行还没有收到邮件" : "未启用邮件快照（ONBOARD_MAIL_SNAPSHOT）"}
+                </TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader className='pb-3'><CardTitle className='text-sm font-medium'>步骤</CardTitle></CardHeader>
         <CardContent className='p-0'>

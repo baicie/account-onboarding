@@ -152,6 +152,7 @@ func serve() error {
 		FingerprintKey:  security.DeriveKey(cfg.MasterKey, "run-fingerprint"),
 		OIDCScopes:      cfg.OIDC.Scopes,
 		OIDCRedirectURI: cfg.OIDC.RedirectURI,
+		MailSnapshot:    cfg.MailSnapshot,
 	})
 	signer := security.NewSessionSigner(cfg.MasterKey, int64(cfg.SessionTTL.Seconds()))
 	srv, err := api.New(cfg, store, engine, registry, sec, log, signer, redactor)

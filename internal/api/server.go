@@ -102,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs", s.apiAuth(true, true, s.handleCreateRun))
 	mux.HandleFunc("GET /v1/runs", s.apiAuth(false, false, s.handleListRuns))
 	mux.HandleFunc("GET /v1/runs/{id}", s.apiAuth(false, false, s.handleGetRun))
+	mux.HandleFunc("GET /v1/runs/{id}/mails", s.apiAuth(false, true, s.handleRunMails))
 	mux.HandleFunc("GET /v1/runs/{id}/events", s.apiAuth(false, false, s.handleListEvents))
 	mux.HandleFunc("POST /v1/runs/{id}/resume", s.apiAuth(true, true, s.handleResumeRun))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", s.apiAuth(true, true, s.handleCancelRun))

@@ -1,1 +1,0 @@
-import{t as e}from"./unauthorized-error-BlaF-Wib.js";var t=e;export{t as component};
