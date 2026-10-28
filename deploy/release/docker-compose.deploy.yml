@@ -26,6 +26,9 @@ services:
       ONBOARD_ALLOW_PUBLIC_LISTEN: "1"
       ONBOARD_DB_PATH: "/app/data/state.sqlite"
       ONBOARD_MODE: "sandbox"
+      # The service sits behind the host nginx on 127.0.0.1, so it must read the
+      # forwarded client address for the console login rate limit.
+      ONBOARD_TRUST_PROXY_HEADERS: "true"
       ONBOARD_MAX_CONCURRENCY: "2"
       ONBOARD_LOG_LEVEL: "info"
       ONBOARD_MASTER_KEY_FILE: "/run/secrets/onboarding_master_key"
