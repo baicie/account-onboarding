@@ -32,7 +32,7 @@ export async function loadSession(): Promise<Session> {
 }
 
 export const api = {
-  runs: () => request<any>('/v1/runs'),
+  runs: (query = '') => request<any>('/v1/runs' + (query ? `?${query}` : '')),
   run: (id: string) => request<any>(`/v1/runs/${id}`),
   events: (id: string) => request<any>(`/v1/runs/${id}/events`),
   createRun: (body: unknown) => request<any>('/v1/runs', { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': crypto.randomUUID() } }),
