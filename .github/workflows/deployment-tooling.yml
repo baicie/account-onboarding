@@ -154,13 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           cp "$ROOT/deploy/deployment-state.json" /tmp/state.bak
-          python3 - "$ROOT/deploy/deployment-state.json" <<'PY'
-import json, sys
-p = sys.argv[1]
-d = json.load(open(p))
-d["current_image_id"] = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-json.dump(d, open(p, "w"), indent=2)
-PY
+          python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["current_image_id"]="sha256:0000000000000000000000000000000000000000000000000000000000000000"; json.dump(d,open(p,"w"),indent=2)' "$ROOT/deploy/deployment-state.json"
           printf '{\n  "attempt_id": "e2e-guard",\n  "status": "failed",\n  "expected_image_id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",\n  "previous_image": "account-onboarding:local-none",\n  "previous_schema_version": 6\n}\n' > "$ROOT/deploy/deployment-attempt.json"
           set +e
           bash scripts/update_account_onboarding.sh --rollback --root="$ROOT" > attempt-guard.log 2>&1
