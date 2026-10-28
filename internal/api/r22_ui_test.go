@@ -78,7 +78,8 @@ func TestRunsFilterAndRunIDRedirect(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "No runs yet") {
+	// The console is localized, so assert the empty-state row rather than its copy.
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `colspan="7"`) {
 		t.Fatalf("filtered empty page = %d %s", resp.StatusCode, body)
 	}
 	if csrf == "" {
@@ -287,6 +288,29 @@ func TestAlertDetailDistinguishesNotFoundAndInvalid(t *testing.T) {
 		resp.Body.Close()
 		if resp.StatusCode != want {
 			t.Fatalf("%s = %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+}
+
+func TestUIDefaultsToChinese(t *testing.T) {
+	e := newEnv(t, nil)
+	csrf := loginUISession(t, e)
+	if csrf == "" {
+		t.Fatal("missing csrf")
+	}
+	resp, err := e.client.Get(e.ts.URL + "/ui/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	page := string(body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("dashboard = %d", resp.StatusCode)
+	}
+	for _, want := range []string{`<html lang="zh-CN">`, "账号开通控制台", "创建运行"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("default console is not Chinese; missing %q", want)
 		}
 	}
 }

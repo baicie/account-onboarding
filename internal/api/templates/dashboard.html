@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1>Runs</h1>
+<h1>{{T "dash.runs"}}</h1>
 
 <section class="cards">
   {{range .Stats}}
@@ -8,50 +8,50 @@
     <div class="stat-value">{{.Count}}</div>
   </div>
   {{else}}
-  <div class="card stat"><div class="stat-label">No runs yet</div><div class="stat-value">0</div></div>
+  <div class="card stat"><div class="stat-label">{{T "dash.no_runs"}}</div><div class="stat-value">0</div></div>
   {{end}}
 </section>
 
 <section class="grid">
   <div class="card">
-    <h2>Create a run</h2>
+    <h2>{{T "dash.create"}}</h2>
     <form method="post" action="/ui/runs" class="stack">
       <input type="hidden" name="csrf" value="{{.CSRFToken}}">
       <input type="hidden" name="idempotency_key" value="{{.IdempotencyKey}}">
-      <label for="template">Template</label>
+      <label for="template">{{T "dash.template"}}</label>
       <select id="template" name="template">
         {{range .Templates}}<option value="{{.Name}}">{{.Name}} ({{.Mode}})</option>{{end}}
       </select>
       <div class="two">
-        <div><label for="mailbox_provider">Mailbox provider</label><input id="mailbox_provider" name="mailbox_provider" value="{{.Form.MailboxProvider}}" required></div>
-        <div><label for="identity_provider">Identity provider</label><input id="identity_provider" name="identity_provider" value="{{.Form.IdentityProvider}}" required></div>
+        <div><label for="mailbox_provider">{{T "dash.mailbox"}}</label><input id="mailbox_provider" name="mailbox_provider" value="{{.Form.MailboxProvider}}" required></div>
+        <div><label for="identity_provider">{{T "dash.identity"}}</label><input id="identity_provider" name="identity_provider" value="{{.Form.IdentityProvider}}" required></div>
       </div>
       <div class="two">
-        <div><label for="oauth_provider">OAuth provider</label><input id="oauth_provider" name="oauth_provider" value="{{.Form.OAuthProvider}}" required></div>
-        <div><label for="email_provider">Email provider (GitHub)</label><input id="email_provider" name="email_provider" value="{{.Form.EmailProvider}}"></div>
+        <div><label for="oauth_provider">{{T "dash.oauth"}}</label><input id="oauth_provider" name="oauth_provider" value="{{.Form.OAuthProvider}}" required></div>
+        <div><label for="email_provider">{{T "dash.email"}}</label><input id="email_provider" name="email_provider" value="{{.Form.EmailProvider}}"></div>
       </div>
       <div class="two">
-        <div><label for="credential_provider">Credential verifier</label><input id="credential_provider" name="credential_provider" value="{{.Form.CredentialProvider}}"></div>
-        <div><label for="sandbox_provider">Sandbox driver</label><input id="sandbox_provider" name="sandbox_provider" value="{{.Form.SandboxProvider}}"></div>
+        <div><label for="credential_provider">{{T "dash.credential"}}</label><input id="credential_provider" name="credential_provider" value="{{.Form.CredentialProvider}}"></div>
+        <div><label for="sandbox_provider">{{T "dash.sandbox"}}</label><input id="sandbox_provider" name="sandbox_provider" value="{{.Form.SandboxProvider}}"></div>
       </div>
-      <label for="existing_identity_ref">Existing identity reference (real-account only)</label>
-      <input id="existing_identity_ref" name="existing_identity_ref" placeholder="existing account reference, never a password or token">
-      <p class="muted small">Real-account templates operate only on accounts you already hold. This service never creates third-party accounts and never automates consent.</p>
-      <button type="submit">Create run</button>
+      <label for="existing_identity_ref">{{T "dash.existing_ref"}}</label>
+      <input id="existing_identity_ref" name="existing_identity_ref" placeholder="{{T "dash.existing_placeholder"}}">
+      <p class="muted small">{{T "dash.real_note"}}</p>
+      <button type="submit">{{T "dash.create_button"}}</button>
     </form>
   </div>
 
   <div class="card">
-    <h2>Providers and activation gates</h2>
+    <h2>{{T "dash.providers"}}</h2>
     <table>
-      <thead><tr><th>Kind</th><th>Name</th><th>Version</th><th>Enabled</th><th>Restriction</th></tr></thead>
+      <thead><tr><th>{{T "th.kind"}}</th><th>{{T "th.name"}}</th><th>{{T "th.version"}}</th><th>{{T "th.enabled"}}</th><th>{{T "th.restriction"}}</th></tr></thead>
       <tbody>
       {{range .Providers}}
         <tr>
           <td>{{.Kind}}</td>
           <td>{{.Name}}</td>
           <td>{{.ContractVersion}}</td>
-          <td>{{if .Enabled}}<span class="pill ok">enabled</span>{{else}}<span class="pill off">disabled</span>{{end}}</td>
+          <td>{{if .Enabled}}<span class="pill ok">{{T "pill.enabled"}}</span>{{else}}<span class="pill off">{{T "pill.disabled"}}</span>{{end}}</td>
           <td class="muted small">{{.RestrictionReason}}</td>
         </tr>
       {{end}}
@@ -61,32 +61,32 @@
 </section>
 
 <section class="card">
-  <h2>Find a run</h2>
+  <h2>{{T "dash.find"}}</h2>
   <form method="get" action="/ui/" class="stack">
-    <label for="run">Run ID</label>
+    <label for="run">{{T "dash.run_id"}}</label>
     <input id="run" name="run" placeholder="run id">
-    <button type="submit">Open run</button>
+    <button type="submit">{{T "dash.open"}}</button>
   </form>
   <form id="run-filters" method="get" action="/ui/" class="stack">
-    <label for="filter_status">Status filter</label>
+    <label for="filter_status">{{T "dash.filter_status"}}</label>
     <select id="filter_status" name="status">
-      <option value="">All statuses</option>
+      <option value="">{{T "opt.all_statuses"}}</option>
       {{range .Stats}}<option value="{{.Status}}"{{if eq .Status $.StatusFilter}} selected{{end}}>{{.Status}}</option>{{end}}
     </select>
-    <label for="filter_template">Template filter</label>
+    <label for="filter_template">{{T "dash.filter_template"}}</label>
     <select id="filter_template" name="template">
-      <option value="">All templates</option>
+      <option value="">{{T "opt.all_templates"}}</option>
       {{range .Templates}}<option value="{{.Name}}"{{if eq .Name $.TemplateFilter}} selected{{end}}>{{.Name}}</option>{{end}}
     </select>
-    <button type="submit">Apply filters</button>
-    <a href="/ui/">Clear</a>
+    <button type="submit">{{T "dash.apply"}}</button>
+    <a href="/ui/">{{T "dash.clear"}}</a>
   </form>
 </section>
 
 <section class="card">
-  <h2>Recent runs</h2>
+  <h2>{{T "dash.recent"}}</h2>
   <table>
-    <thead><tr><th>Run</th><th>Template</th><th>Mode</th><th>Status</th><th>Step</th><th>Action</th><th>Created (UTC)</th></tr></thead>
+    <thead><tr><th>Run</th><th>{{T "dash.template"}}</th><th>Mode</th><th>Status</th><th>Step</th><th>Action</th><th>{{T "th.created"}}</th></tr></thead>
     <tbody>
     {{range .Runs}}
       <tr>
@@ -95,15 +95,15 @@
         <td>{{.Mode}}</td>
         <td><span class="pill state-{{stateClass .Status}}">{{.Status}}</span></td>
         <td>{{.CurrentStep}}</td>
-        <td>{{if .ActionRequired}}<span class="pill warn">operator action</span>{{end}}{{if .ErrorClass}}<span class="pill off">{{.ErrorClass}}</span>{{end}}</td>
+        <td>{{if .ActionRequired}}<span class="pill warn">{{T "pill.operator"}}</span>{{end}}{{if .ErrorClass}}<span class="pill off">{{.ErrorClass}}</span>{{end}}</td>
         <td>{{fmtUnix .CreatedAt}}</td>
       </tr>
     {{else}}
-      <tr><td colspan="7" class="muted">No runs yet — create one above with the fake providers to exercise the engine offline.</td></tr>
+      <tr><td colspan="7" class="muted">{{T "dash.empty_recent"}}</td></tr>
     {{end}}
     </tbody>
   </table>
   {{if .HasNext}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}&cursor={{urlquery .NextCursor}}">Next page →</a></p>{{end}}
-  {{if .Cursor}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}">← First page</a></p>{{end}}
+  {{if .Cursor}}<p><a href="/ui/?status={{urlquery .StatusFilter}}&template={{urlquery .TemplateFilter}}">{{T "dash.first"}}</a></p>{{end}}
 </section>
 {{end}}
