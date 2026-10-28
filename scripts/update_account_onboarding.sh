@@ -436,6 +436,20 @@ build_image() {
 }
 
 # ---- state -----------------------------------------------------------------------
+write_pending() { # write_pending <tag> <image_id> <sha>
+  [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would record a pending deployment"; return 0; }
+  {
+    printf "{\n"
+    printf "  \"tag\": \"%s\",\n" "$1"
+    printf "  \"image_id\": \"%s\",\n" "$2"
+    printf "  \"commit\": \"%s\",\n" "$3"
+    printf "  \"started_at\": \"%s\"\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf "}\n"
+  } > "$STATE.pending.tmp"
+  sync "$STATE.pending.tmp" 2>/dev/null || true
+  mv -f "$STATE.pending.tmp" "$STATE.pending"
+}
+
 write_state() { # write_state <image_tag> <image_id> <sha> <schema_version> [previous_image] [previous_sha] [previous_schema] [previous_image_id]
   [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would record $1 $3"; return 0; }
   local ts; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -451,12 +465,19 @@ write_state() { # write_state <image_tag> <image_id> <sha> <schema_version> [pre
     printf "  \"root\": \"%s\",\n" "$ROOT"
     printf "  \"host_port\": %s,\n" "$HOST_PORT"
     printf "  \"previous_image\": \"%s\",\n" "$prev_image"
+    printf "  \"last_good_image\": \"%s\",\n" "$prev_image"
+    printf "  \"last_good_commit\": \"%s\",\n" "$prev_sha"
+    printf "  \"last_good_schema_version\": %s,\n" "${prev_schema:-0}"
+    printf "  \"current_image\": \"%s\",\n" "$1"
+    printf "  \"current_image_id\": \"%s\",\n" "$2"
     printf "  \"previous_image_id\": \"%s\",\n" "$prev_id"
     printf "  \"previous_commit\": \"%s\",\n" "$prev_sha"
     printf "  \"previous_schema_version\": %s\n" "${prev_schema:-0}"
     printf "}\n"
   } > "$STATE.tmp"
+  sync "$STATE.tmp" 2>/dev/null || true
   mv -f "$STATE.tmp" "$STATE"
+  rm -f "$STATE.pending"
   sync 2>/dev/null || true
 }
 
@@ -607,7 +628,10 @@ do_rollback() {
   detect_docker
   [ -f "$STATE" ] || die "no deployment state; nothing to roll back to" 1
   local prev_image prev_sha recorded_schema current_schema
-  prev_image="$(state_field previous_image || true)"; prev_sha="$(state_field previous_commit || true)"
+  prev_image="$(state_field last_good_image || true)"
+  [ -n "$prev_image" ] || prev_image="$(state_field previous_image || true)"
+  prev_sha="$(state_field last_good_commit || true)"
+  [ -n "$prev_sha" ] || prev_sha="$(state_field previous_commit || true)"
   recorded_schema="$(state_num previous_schema_version || true)"
   [ -n "$prev_image" ] || die "no previous image recorded; roll back by restoring a snapshot with the documented procedure" 1
   current_schema="$(sqlite_user_version "$DATA/state.sqlite" || true)"
@@ -626,6 +650,7 @@ do_rollback() {
   write_overrides "$prev_image"
   compose_valid
   materialize_secrets "$prev_image"
+  write_pending "$IMAGE_TAG" "$IMAGE_ID" "$TARGET_SHA"
   [ "$DRY_RUN" = "1" ] || compose up -d --no-build --no-deps --force-recreate onboarding
   [ "$DRY_RUN" = "1" ] && { log "DRY-RUN would roll back"; return 0; }
   wait_healthy || die "rollback target $prev_image is not healthy either; the database is untouched, inspect the logs" 3
@@ -675,6 +700,7 @@ do_status() {
   detect_docker 2>/dev/null || { warn "docker unavailable: live state unknown"; return 0; }
   local c; c="$(detect_existing_container)"
   if [ -z "$c" ]; then log "no container for the account-onboarding compose project"; return 0; fi
+  if [ -f "$STATE.pending" ]; then log "pending deployment (unfinished switch):"; cat "$STATE.pending"; fi
   log "container: $c"
   dk inspect "$c" --format "{{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} image={{.Config.Image}} id={{.Image}}"
   log "healthz: $(api_probe /healthz)  readyz: $(api_probe /readyz)"
